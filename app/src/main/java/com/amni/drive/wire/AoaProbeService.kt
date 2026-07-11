@@ -150,49 +150,64 @@ return
 }
 accessoryFd.set(pfd)
 log("OPENED fd=${pfd.fd} ${desc(acc)}")
-updateNotif("AOA OPEN · sniffing")
-sniffThread = Thread({ sniff(pfd) }, "aoa-sniff").also { it.isDaemon = true; it.start() }
+updateNotif("AOA OPEN · TLS attempt")
+sniffThread = Thread({ sessionAfterOpen(pfd) }, "aoa-session").also { it.isDaemon = true; it.start() }
 } catch (e: Exception) {
 log("open error: ${e.message}")
 updateNotif("AOA error ${e.message}")
 }
 }
-private fun sniff(pfd: ParcelFileDescriptor) {
+private fun sessionAfterOpen(pfd: ParcelFileDescriptor) {
 try {
 val fis = FileInputStream(pfd.fileDescriptor)
 val fos = FileOutputStream(pfd.fileDescriptor)
-val buf = ByteArray(4096)
-var total = 0
 val dump = File(filesDir, "aoa_probe/first_chunk.bin")
 dump.parentFile?.mkdirs()
+// Phase A: brief passive sniff (some HU send version before TLS)
+val buf = ByteArray(4096)
+var total = 0
 val t0 = System.currentTimeMillis()
-log("sniff start — passive RX + optional probe (HU may wait for phone TLS)")
+log("phase A passive sniff 2s")
 FileOutputStream(dump).use { out ->
-while (accessoryFd.get() != null && System.currentTimeMillis() - t0 < 30_000L) {
-fis.channel?.let { }
-val available = try { fis.available() } catch (_: Exception) { 0 }
-if (available <= 0) {
-try { Thread.sleep(50) } catch (_: Exception) {}
-continue
-}
+while (accessoryFd.get() != null && System.currentTimeMillis() - t0 < 2_000L) {
+val avail = try { fis.available() } catch (_: Exception) { 0 }
+if (avail <= 0) { Thread.sleep(30); continue }
 val n = try { fis.read(buf) } catch (_: Exception) { -1 }
-if (n <= 0) {
-log("RX EOF n=$n total=$total")
-break
-}
+if (n <= 0) break
 total += n
 out.write(buf, 0, n)
-val hex = buf.take(n.coerceAtMost(48)).joinToString(" ") { b -> "%02x".format(b.toInt() and 0xFF) }
-log("RX $n bytes (total=$total) head=$hex")
-if (total >= 512_000) break
+log("RX $n head=${buf.take(n.coerceAtMost(32)).joinToString(" ") { "%02x".format(it.toInt() and 0xFF) }}")
 }
 }
-log("sniff end total=$total heldMs=${System.currentTimeMillis() - t0} file=${dump.absolutePath}")
-updateNotif(if (total > 0) "AOA sniffed ${total}B" else "AOA open · 0B (need TLS speak)")
+log("phase A total=$total — starting TLS server attempt")
+updateNotif("AOA · TLS handshake…")
+// Phase B: TLS server (research self-signed; expect cert fail on real HU)
+try {
+val ssl = AoaSslSession.fromFd(fis, fos) { log(it) }
+val ok = ssl.handshake(12_000L)
+log("TLS result ok=$ok")
+updateNotif(if (ok) "AOA TLS OK (research)" else "AOA TLS fail/timeout (expected w/ self-signed)")
+} catch (e: Exception) {
+log("TLS error ${e.message}")
+updateNotif("AOA TLS error ${e.message}")
+}
+// Phase C: hold + continue sniff residual
+val t1 = System.currentTimeMillis()
+while (accessoryFd.get() != null && System.currentTimeMillis() - t1 < 10_000L) {
+val avail = try { fis.available() } catch (_: Exception) { 0 }
+if (avail > 0) {
+val n = try { fis.read(buf) } catch (_: Exception) { -1 }
+if (n > 0) {
+total += n
+log("post-TLS RX $n total=$total")
+}
+} else Thread.sleep(50)
+}
+log("session end totalRX=$total")
 try { fos.close() } catch (_: Exception) {}
 try { fis.close() } catch (_: Exception) {}
 } catch (e: Exception) {
-log("sniff error ${e.message}")
+log("session error ${e.message}")
 }
 }
 private fun closeAccessory() {

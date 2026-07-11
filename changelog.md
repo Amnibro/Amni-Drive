@@ -1,5 +1,12 @@
 # Amni-Drive — Changelog
 
+## v1.3.4 — 2026-07-11 — TLS server attempt after AOA OPEN
+**After Always-allow OPENED with 0B RX:** phone must speak as TLS server.
+
+**Added:** `AoaSslSession` (SSLEngine server mode, research self-signed KM) · probe runs phase A passive 2s → phase B TLS handshake → phase C residual sniff. Expect OEM cert rejection; goal is log ClientHello / alerts. versionCode 17 / 1.3.4.
+
+---
+
 ## v1.3.3 — 2026-07-11 — AOA OPENED (Always allow works)
 **Live milestone:** User granted Always allow.
 
