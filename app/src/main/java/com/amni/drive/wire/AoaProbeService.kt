@@ -2,6 +2,7 @@ package com.amni.drive.wire
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -14,13 +15,16 @@ import android.os.IBinder
 import android.os.ParcelFileDescriptor
 import android.util.Log
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicReference
 class AoaProbeService : Service() {
 private var receiver: BroadcastReceiver? = null
-private var accessoryFd: ParcelFileDescriptor? = null
+private val accessoryFd = AtomicReference<ParcelFileDescriptor?>(null)
+private var sniffThread: Thread? = null
 override fun onBind(intent: Intent?): IBinder? = null
 override fun onCreate() {
 super.onCreate()
@@ -30,6 +34,7 @@ val filter = IntentFilter().apply {
 addAction(UsbManager.ACTION_USB_ACCESSORY_ATTACHED)
 addAction(UsbManager.ACTION_USB_ACCESSORY_DETACHED)
 addAction(ACTION_USB_STATE)
+addAction(ACTION_USB_PERMISSION)
 }
 receiver = object : BroadcastReceiver() {
 override fun onReceive(ctx: Context?, intent: Intent?) {
@@ -38,30 +43,42 @@ when (intent.action) {
 UsbManager.ACTION_USB_ACCESSORY_ATTACHED -> {
 val acc = readAccessory(intent)
 log("ATTACHED ${desc(acc)}")
-tryOpen(acc)
+requestOrOpen(acc)
 }
 UsbManager.ACTION_USB_ACCESSORY_DETACHED -> {
-val acc = readAccessory(intent)
-log("DETACHED ${desc(acc)}")
+log("DETACHED ${desc(readAccessory(intent))}")
 closeAccessory()
+updateNotif("AOA detached")
 }
 ACTION_USB_STATE -> {
 val connected = intent.getBooleanExtra("connected", false)
 val configured = intent.getBooleanExtra("configured", false)
 val accessory = intent.getBooleanExtra("accessory", false)
 log("USB_STATE connected=$connected configured=$configured accessory=$accessory")
-if (accessory) pollAccessories()
+if (accessory) pollAccessories(requestPerm = true)
+}
+ACTION_USB_PERMISSION -> {
+val acc = readAccessory(intent)
+val granted = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)
+log("PERMISSION granted=$granted ${desc(acc)}")
+if (granted) tryOpen(acc) else updateNotif("AOA permission denied")
 }
 }
 }
 }
 if (Build.VERSION.SDK_INT >= 33) registerReceiver(receiver, filter, RECEIVER_NOT_EXPORTED)
 else @Suppress("UnspecifiedRegisterReceiverFlag") registerReceiver(receiver, filter)
-pollAccessories()
+pollAccessories(requestPerm = true)
 log("probe service started")
 }
 override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-if (intent?.action == ACTION_POLL) pollAccessories()
+when (intent?.action) {
+ACTION_POLL -> pollAccessories(requestPerm = true)
+ACTION_CLAIM -> {
+log("CLAIM requested")
+pollAccessories(requestPerm = true)
+}
+}
 return START_STICKY
 }
 override fun onDestroy() {
@@ -69,7 +86,7 @@ runCatching { unregisterReceiver(receiver) }
 closeAccessory()
 super.onDestroy()
 }
-private fun pollAccessories() {
+private fun pollAccessories(requestPerm: Boolean) {
 val usb = getSystemService(USB_SERVICE) as UsbManager
 val list = usb.accessoryList
 if (list.isNullOrEmpty()) {
@@ -78,30 +95,54 @@ updateNotif("AOA probe · no accessory")
 return
 }
 list.forEach { acc ->
-log("poll: ${desc(acc)} perm=${usb.hasPermission(acc)}")
-if (usb.hasPermission(acc)) tryOpen(acc)
+val has = usb.hasPermission(acc)
+log("poll: ${desc(acc)} perm=$has")
+if (has) tryOpen(acc)
+else if (requestPerm) requestOrOpen(acc)
+}
+}
+private fun requestOrOpen(acc: UsbAccessory?) {
+if (acc == null) return
+val usb = getSystemService(USB_SERVICE) as UsbManager
+if (usb.hasPermission(acc)) {
+tryOpen(acc)
+return
+}
+log("requesting USB accessory permission…")
+updateNotif("AOA · requesting permission")
+val flags = PendingIntent.FLAG_UPDATE_CURRENT or
+if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0
+val pi = PendingIntent.getBroadcast(
+this, 0,
+Intent(ACTION_USB_PERMISSION).setPackage(packageName),
+flags
+)
+try {
+usb.requestPermission(acc, pi)
+} catch (e: Exception) {
+log("requestPermission error: ${e.message}")
 }
 }
 private fun tryOpen(acc: UsbAccessory?) {
 if (acc == null) return
 val usb = getSystemService(USB_SERVICE) as UsbManager
 if (!usb.hasPermission(acc)) {
-log("no permission for ${desc(acc)} (gearhead may own session)")
-updateNotif("AOA seen · no permission (gearhead owns?)")
+log("no permission for ${desc(acc)}")
+updateNotif("AOA seen · no permission")
 return
 }
 closeAccessory()
 try {
 val pfd = usb.openAccessory(acc)
 if (pfd == null) {
-log("openAccessory returned null for ${desc(acc)}")
-updateNotif("AOA open failed")
+log("openAccessory null (gearhead may hold FD) ${desc(acc)}")
+updateNotif("AOA open null · gearhead holds?")
 return
 }
-accessoryFd = pfd
-log("OPENED accessory fd=${pfd.fd} ${desc(acc)}")
-updateNotif("AOA OPEN · ${acc.model}")
-Thread({ sniff(pfd) }, "aoa-sniff").also { it.isDaemon = true; it.start() }
+accessoryFd.set(pfd)
+log("OPENED fd=${pfd.fd} ${desc(acc)}")
+updateNotif("AOA OPEN · sniffing")
+sniffThread = Thread({ sniff(pfd) }, "aoa-sniff").also { it.isDaemon = true; it.start() }
 } catch (e: Exception) {
 log("open error: ${e.message}")
 updateNotif("AOA error ${e.message}")
@@ -109,25 +150,38 @@ updateNotif("AOA error ${e.message}")
 }
 private fun sniff(pfd: ParcelFileDescriptor) {
 try {
-val inp = ParcelFileDescriptor.AutoCloseInputStream(pfd)
+val fis = FileInputStream(pfd.fileDescriptor)
 val buf = ByteArray(4096)
 var total = 0
-while (accessoryFd != null) {
-val n = try { inp.read(buf) } catch (_: Exception) { break }
-if (n <= 0) break
-total += n
-val hex = buf.take(n.coerceAtMost(32)).joinToString(" ") { b -> "%02x".format(b) }
-log("RX $n bytes (total=$total) head=$hex")
-if (total > 256_000) break
+val dump = File(filesDir, "aoa_probe/first_chunk.bin")
+dump.parentFile?.mkdirs()
+FileOutputStream(dump).use { out ->
+while (accessoryFd.get() != null) {
+val n = try { fis.read(buf) } catch (_: Exception) { break }
+if (n <= 0) {
+log("RX EOF n=$n total=$total")
+break
 }
-log("sniff end total=$total")
+total += n
+out.write(buf, 0, n)
+val hex = buf.take(n.coerceAtMost(48)).joinToString(" ") { b -> "%02x".format(b.toInt() and 0xFF) }
+log("RX $n bytes (total=$total) head=$hex")
+if (total >= 512_000) {
+log("sniff cap reached total=$total")
+break
+}
+}
+}
+log("sniff end total=$total file=${dump.absolutePath}")
+updateNotif("AOA sniffed ${total}B")
 } catch (e: Exception) {
 log("sniff error ${e.message}")
 }
 }
 private fun closeAccessory() {
-try { accessoryFd?.close() } catch (_: Exception) {}
-accessoryFd = null
+sniffThread = null
+val fd = accessoryFd.getAndSet(null)
+try { fd?.close() } catch (_: Exception) {}
 }
 private fun readAccessory(intent: Intent): UsbAccessory? =
 if (Build.VERSION.SDK_INT >= 33) intent.getParcelableExtra(UsbManager.EXTRA_ACCESSORY, UsbAccessory::class.java)
@@ -169,13 +223,19 @@ const val TAG = "Amni.AoaProbe"
 const val CHANNEL = "amni_wire_aoa"
 const val NOTIF_ID = 7731
 const val ACTION_POLL = "com.amni.drive.wire.POLL_AOA"
+const val ACTION_CLAIM = "com.amni.drive.wire.CLAIM_AOA"
 const val ACTION_USB_STATE = "android.hardware.usb.action.USB_STATE"
+const val ACTION_USB_PERMISSION = "com.amni.drive.wire.USB_PERMISSION"
 fun start(ctx: Context) {
 val i = Intent(ctx, AoaProbeService::class.java)
 if (Build.VERSION.SDK_INT >= 26) ctx.startForegroundService(i) else ctx.startService(i)
 }
 fun poll(ctx: Context) {
 ctx.startService(Intent(ctx, AoaProbeService::class.java).setAction(ACTION_POLL))
+}
+fun claim(ctx: Context) {
+start(ctx)
+ctx.startService(Intent(ctx, AoaProbeService::class.java).setAction(ACTION_CLAIM))
 }
 }
 }

@@ -1,5 +1,20 @@
 # Amni-Drive — Changelog
 
+## v1.3.2 — 2026-07-11 — AOA permission request + claim script
+**M3 progress:** Accessory visible but `perm=false` (gearhead exclusive).
+
+**Added:**
+- `UsbManager.requestPermission` path in `AoaProbeService` (PendingIntent + broadcast)
+- `ACTION_CLAIM` + Settings button **START AOA PROBE + REQUEST PERMISSION**
+- Dump first RX bytes to `files/aoa_probe/first_chunk.bin` when open succeeds
+- `AoaBulkTransport` (AaTransport over accessory FD)
+- `scripts/claim_aoa_research.ps1` — force-stop gearhead, start probe, poll for OPEN/PERMISSION
+- versionCode 15 / 1.3.2
+
+**Live result:** after force-stop gearhead, probe logs `requesting USB accessory permission…` — user must accept dialog on phone; then re-poll for OPEN + sniffer.
+
+---
+
 ## v1.3.1 — 2026-07-11 — Open source kit + AOA probe + /loop
 **Mandate:** Loop until Amni replaces Android Auto; make it open source.
 

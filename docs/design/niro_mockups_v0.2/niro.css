@@ -1,0 +1,48 @@
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:1920px;height:720px;overflow:hidden;background:#0B0F14;color:#EAF4FF;font-family:'Segoe UI Variable Display','Segoe UI',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+.screen{width:1920px;height:720px;display:flex;flex-direction:column;background:radial-gradient(1400px 900px at 88% -25%,#142230 0%,#0B0F14 60%)}
+.topbar{height:68px;display:flex;align-items:center;gap:22px;padding:0 36px;font-size:22px;color:#8FA6BD;flex:none}
+.clock{font-size:28px;font-weight:700;color:#EAF4FF;letter-spacing:.5px}
+.spacer{flex:1}
+.chip{display:inline-flex;align-items:center;gap:10px;padding:8px 20px;border-radius:999px;font-size:20px;font-weight:600}
+.state-moving{background:rgba(255,180,84,.13);color:#FFB454;border:1px solid rgba(255,180,84,.4)}
+.state-parked{background:rgba(126,240,138,.12);color:#7EF08A;border:1px solid rgba(126,240,138,.4)}
+.chip .dot{width:10px;height:10px;border-radius:50%;background:currentColor;box-shadow:0 0 10px currentColor}
+.main{flex:1;display:flex;gap:20px;padding:4px 32px 14px;min-height:0}
+.main>.card{min-height:0}
+.card{background:linear-gradient(180deg,#141D29 0%,#101823 100%);border:1px solid rgba(127,207,255,.09);border-radius:26px;overflow:hidden;position:relative}
+.dock{height:100px;flex:none;display:flex;align-items:center;justify-content:center;gap:14px;padding:0 32px}
+.dockbtn{width:172px;height:76px;border-radius:22px;background:#141D29;border:1px solid rgba(127,207,255,.10);display:flex;align-items:center;justify-content:center;gap:12px;font-size:21px;font-weight:600;color:#C9DBEC}
+.dockbtn .ic{font-size:28px}
+.dockbtn.active{background:linear-gradient(135deg,rgba(127,207,255,.22),rgba(127,207,255,.08));border-color:rgba(127,207,255,.45);color:#7FCFFF}
+.dockbtn.gate-on{background:linear-gradient(135deg,rgba(184,240,74,.16),rgba(184,240,74,.05));border-color:rgba(184,240,74,.45);color:#B8F04A}
+.tile{border-radius:24px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;position:relative;border:1px solid rgba(255,255,255,.07)}
+.tile .glyph{font-size:52px;line-height:1}
+.tile .name{font-size:20px;font-weight:600;color:#EAF4FF;text-shadow:0 1px 4px rgba(0,0,0,.5)}
+.tile .cat{font-size:15px;color:rgba(234,244,255,.65)}
+.lockbadge{position:absolute;top:12px;right:12px;background:rgba(11,15,20,.78);border:1px solid rgba(255,122,102,.6);color:#FF7A66;border-radius:999px;padding:5px 12px;font-size:15px;font-weight:700;display:flex;align-items:center;gap:6px}
+.g1{background:linear-gradient(145deg,#173A2E,#0F2A24)}
+.g2{background:linear-gradient(145deg,#1E2E52,#15203C)}
+.g3{background:linear-gradient(145deg,#4A1D28,#301220)}
+.g4{background:linear-gradient(145deg,#40301A,#2B2012)}
+.g5{background:linear-gradient(145deg,#22194A,#171136)}
+.g6{background:linear-gradient(145deg,#0F3A44,#0B2831)}
+.g7{background:linear-gradient(145deg,#3C1A44,#280F30)}
+.g8{background:linear-gradient(145deg,#1A3A5C,#122840)}
+.railbtn{display:flex;align-items:center;gap:18px;padding:20px 24px;border-radius:20px;font-size:23px;font-weight:600;color:#C9DBEC}
+.railbtn .ic{font-size:30px;width:44px;text-align:center}
+.railbtn .sub{font-size:16px;font-weight:400;color:#8FA6BD;margin-top:2px}
+.railbtn.sel{background:linear-gradient(135deg,rgba(127,207,255,.18),rgba(127,207,255,.05));border:1px solid rgba(127,207,255,.4);color:#7FCFFF}
+.railbtn.sel .sub{color:rgba(127,207,255,.75)}
+.setcard{background:#141D29;border:1px solid rgba(127,207,255,.10);border-radius:22px;padding:22px 28px;display:flex;align-items:center;gap:22px}
+.setcard .t{font-size:23px;font-weight:600}
+.setcard .d{font-size:17px;color:#8FA6BD;margin-top:4px;line-height:1.35}
+.sw{width:76px;height:40px;border-radius:999px;position:relative;flex:none}
+.sw.on{background:#B8F04A}
+.sw.on::after{content:'';position:absolute;right:5px;top:5px;width:30px;height:30px;border-radius:50%;background:#0B0F14}
+.sw.off{background:#2A3646}
+.sw.off::after{content:'';position:absolute;left:5px;top:5px;width:30px;height:30px;border-radius:50%;background:#60718A}
+.pillnote{background:rgba(127,207,255,.07);border:1px solid rgba(127,207,255,.18);border-radius:18px;padding:16px 22px;font-size:17px;color:#A9C3DB;line-height:1.45}
+.h1{font-size:30px;font-weight:700}
+.h2{font-size:24px;font-weight:700;color:#EAF4FF}
+.dim{color:#8FA6BD}

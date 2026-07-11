@@ -160,11 +160,11 @@ private fun WirePane() {
     Text("• wire/ frame+session+host · multi-channel Link · H264 scaffold · AOA probe service\n• Open source: Apache-2.0 · ROADMAP · live car captures in docs/research/", color = p.soft, fontSize = 11.sp, lineHeight = 16.sp)
     val ctx = LocalContext.current
     Box(Modifier.clip(RoundedCornerShape(12.dp)).background(p.acc).clickable {
-        com.amni.drive.wire.AoaProbeService.start(ctx)
-        com.amni.drive.wire.AoaProbeService.poll(ctx)
+        com.amni.drive.wire.AoaProbeService.claim(ctx)
     }.padding(horizontal = 16.dp, vertical = 12.dp)) {
-        Text("START AOA PROBE (FOREGROUND)", color = if (p.isLight) Color.White else Color(0xFF05070A), fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+        Text("START AOA PROBE + REQUEST PERMISSION", color = if (p.isLight) Color.White else Color(0xFF05070A), fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
     }
+    Text("If gearhead holds the session, run scripts/claim_aoa_research.ps1 from the PC (force-stops AA, restarts probe). Accept the USB permission dialog on the phone when it appears.", color = p.dim, fontSize = 10.sp, lineHeight = 14.sp)
     Text("NEXT ON THE CAR", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 9.sp, letterSpacing = 1.5.sp)
     Text("1. Plug USB while ADB wireless debug stays up.\n2. We capture AOA probes / session attempts in logcat.\n3. Align protobuf payloads with aasdk message set.\n4. First IDR accepted by factory HU = milestone.\nUntil then: CAR uses Car App Library soft path; LINK uses full Amni UI on Android receivers.", color = p.soft, fontSize = 11.sp, lineHeight = 16.sp)
     Text("Personal testing project. Built on published reverse-engineering for interop — not a Play-certified Google host.", color = p.dim, fontSize = 10.sp, lineHeight = 14.sp)

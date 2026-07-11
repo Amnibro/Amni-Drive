@@ -1,0 +1,26 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="niro.css"></head><body>
+<div class="screen">
+<div class="topbar"><span style="font-size:30px;color:#7FCFFF">‹</span><span class="h1">Settings</span><span class="spacer"></span><span class="chip state-moving"><span class="dot"></span>MOVING · 43 MPH</span><span class="clock">2:47</span></div>
+<div class="main" style="gap:24px">
+<div class="card" style="width:440px;flex:none;padding:16px;display:flex;flex-direction:column;gap:8px">
+<div class="railbtn"><span class="ic">🖥️</span><span>Displays<div class="sub">Driver + 1 rear detected</div></span></div>
+<div class="railbtn"><span class="ic">🛡️</span><span>Distraction Gate<div class="sub">Per-display · light gate, no hard locks</div></span></div>
+<div class="railbtn sel"><span class="ic">📡</span><span>Motion &amp; Speed<div class="sub">GPS · fail-closed</div></span></div>
+<div class="railbtn"><span class="ic">🗂️</span><span>Apps &amp; Categories<div class="sub">Reclassify any app</div></span></div>
+<div class="railbtn"><span class="ic">🎨</span><span>Appearance<div class="sub">Theme · tiles · greeting</div></span></div>
+<div class="railbtn"><span class="ic">ℹ️</span><span>About<div class="sub">Amni-Drive v0.2.0</div></span></div>
+</div>
+<div class="card" style="flex:1;padding:26px 32px;display:flex;flex-direction:column;gap:14px">
+<div style="display:flex;align-items:center;gap:20px;background:rgba(255,180,84,.10);border:1px solid rgba(255,180,84,.35);border-radius:20px;padding:16px 24px">
+<span style="font-size:36px">🚦</span><div style="flex:1"><div style="font-size:24px;font-weight:700;color:#FFB454">MOVING — 43 mph via GPS (±0.4 m/s)</div><div style="font-size:17px;color:#8FA6BD">Quick to gate: 1 fast sample · Slow to ungate: 3 slow samples in a row</div></div>
+</div>
+<div class="setcard" style="border-color:rgba(184,240,74,.4)"><span style="font-size:38px">📡</span><div style="flex:1"><div class="t">GPS speed — FusedLocation</div><div class="d">1 Hz, high accuracy. Universal — works on any unit, this one included.</div></div><span class="chip" style="background:rgba(184,240,74,.15);color:#B8F04A;border:1px solid rgba(184,240,74,.45)">ACTIVE</span></div>
+<div class="setcard"><span style="font-size:38px">🔌</span><div style="flex:1"><div class="t">OBD-II adapter (ELM327)</div><div class="d">Real wheel speed straight from the car — tunnel-proof and garage-proof. Takes over from GPS once paired.</div></div><span class="chip" style="background:rgba(127,207,255,.15);color:#7FCFFF;border:1px solid rgba(127,207,255,.4)">Pair</span></div>
+<div class="setcard" style="opacity:.55"><span style="font-size:38px">🚘</span><div style="flex:1"><div class="t">Car API (AAOS)</div><div class="d">Speed + gear + parking brake from the vehicle bus. Auto-detected — lights up by itself on an AAOS unit.</div></div><span class="chip" style="background:#1B2634;color:#8FA6BD">Not present</span></div>
+<div class="setcard"><span style="font-size:38px">✋</span><div style="flex:1"><div class="t">Manual toggle</div><div class="d">Bench testing only — flips PARKED/MOVING by hand.</div></div><div class="sw off"></div></div>
+<div class="pillnote">Fail-closed: no GPS fix, no signal, no idea = treated as MOVING. The gate never guesses in your blind spot.</div>
+</div>
+</div>
+</div>
+</body></html>
