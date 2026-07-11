@@ -1,0 +1,3 @@
+-keepattributes *Annotation*
+-keep class android.car.** { *; }
+-dontwarn android.car.**

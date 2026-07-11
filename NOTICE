@@ -1,0 +1,20 @@
+Amni-Drive
+Copyright 2026 Amni-Drive contributors
+
+This product is an independent open-source project. It is not affiliated with,
+endorsed by, or sponsored by Google LLC, Alphabet Inc., or any vehicle OEM.
+
+"Android Auto", "Android", and related marks are trademarks of Google LLC.
+They appear only for descriptive interoperability purposes.
+
+Portions of the wire-protocol design are informed by publicly available
+reverse-engineering work in the open-source community, including (without
+claiming code reuse unless vendored separately):
+
+  - opencardev/aasdk and related forks
+  - opencardev/openauto
+  - mossyhub/openautolink documentation
+  - Community protocol notes and live device captures
+
+Map tiles and routing depend on third-party services with their own terms:
+  OpenStreetMap, CARTO, Esri, OSRM, Photon/Nominatim, Open-Meteo.
