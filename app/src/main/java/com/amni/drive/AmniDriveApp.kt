@@ -5,6 +5,7 @@ import com.amni.drive.map.LocationTracker
 import com.amni.drive.map.ReportStore
 import com.amni.drive.map.TileStore
 import com.amni.drive.ui.ThemeStore
+import com.amni.drive.wire.AoaProbeService
 class AmniDriveApp : Application() {
     lateinit var configStore: ConfigStore
         private set
@@ -23,5 +24,6 @@ class AmniDriveApp : Application() {
         tileStore = TileStore(this)
         reportStore = ReportStore(this)
         tracker = LocationTracker(this)
+        runCatching { AoaProbeService.start(this) }
     }
 }

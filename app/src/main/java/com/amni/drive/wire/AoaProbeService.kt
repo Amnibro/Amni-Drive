@@ -61,7 +61,14 @@ ACTION_USB_PERMISSION -> {
 val acc = readAccessory(intent)
 val granted = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)
 log("PERMISSION granted=$granted ${desc(acc)}")
-if (granted) tryOpen(acc) else updateNotif("AOA permission denied")
+if (granted) {
+updateNotif("AOA permission OK · opening")
+tryOpen(acc)
+if (accessoryFd.get() == null) {
+log("open failed after grant — retrying poll")
+pollAccessories(requestPerm = false)
+}
+} else updateNotif("AOA permission denied")
 }
 }
 }
@@ -95,10 +102,12 @@ updateNotif("AOA probe · no accessory")
 return
 }
 list.forEach { acc ->
-val has = usb.hasPermission(acc)
+val has = try { usb.hasPermission(acc) } catch (_: Exception) { false }
 log("poll: ${desc(acc)} perm=$has")
-if (has) tryOpen(acc)
-else if (requestPerm) requestOrOpen(acc)
+if (has) {
+updateNotif("AOA perm OK · opening")
+tryOpen(acc)
+} else if (requestPerm) requestOrOpen(acc)
 }
 }
 private fun requestOrOpen(acc: UsbAccessory?) {
@@ -151,13 +160,22 @@ updateNotif("AOA error ${e.message}")
 private fun sniff(pfd: ParcelFileDescriptor) {
 try {
 val fis = FileInputStream(pfd.fileDescriptor)
+val fos = FileOutputStream(pfd.fileDescriptor)
 val buf = ByteArray(4096)
 var total = 0
 val dump = File(filesDir, "aoa_probe/first_chunk.bin")
 dump.parentFile?.mkdirs()
+val t0 = System.currentTimeMillis()
+log("sniff start — passive RX + optional probe (HU may wait for phone TLS)")
 FileOutputStream(dump).use { out ->
-while (accessoryFd.get() != null) {
-val n = try { fis.read(buf) } catch (_: Exception) { break }
+while (accessoryFd.get() != null && System.currentTimeMillis() - t0 < 30_000L) {
+fis.channel?.let { }
+val available = try { fis.available() } catch (_: Exception) { 0 }
+if (available <= 0) {
+try { Thread.sleep(50) } catch (_: Exception) {}
+continue
+}
+val n = try { fis.read(buf) } catch (_: Exception) { -1 }
 if (n <= 0) {
 log("RX EOF n=$n total=$total")
 break
@@ -166,14 +184,13 @@ total += n
 out.write(buf, 0, n)
 val hex = buf.take(n.coerceAtMost(48)).joinToString(" ") { b -> "%02x".format(b.toInt() and 0xFF) }
 log("RX $n bytes (total=$total) head=$hex")
-if (total >= 512_000) {
-log("sniff cap reached total=$total")
-break
+if (total >= 512_000) break
 }
 }
-}
-log("sniff end total=$total file=${dump.absolutePath}")
-updateNotif("AOA sniffed ${total}B")
+log("sniff end total=$total heldMs=${System.currentTimeMillis() - t0} file=${dump.absolutePath}")
+updateNotif(if (total > 0) "AOA sniffed ${total}B" else "AOA open · 0B (need TLS speak)")
+try { fos.close() } catch (_: Exception) {}
+try { fis.close() } catch (_: Exception) {}
 } catch (e: Exception) {
 log("sniff error ${e.message}")
 }

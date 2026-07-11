@@ -1,5 +1,20 @@
 # Amni-Drive — Changelog
 
+## v1.3.3 — 2026-07-11 — AOA OPENED (Always allow works)
+**Live milestone:** User granted Always allow.
+
+```
+PERMISSION granted=true ... Android Auto
+OPENED fd=113
+sniff end total=0
+```
+
+**Meaning:** We own the accessory FD. Zero RX is expected until we **speak** (phone is TLS server in AA). DETACH followed shortly after (session reset / gearhead reclaim).
+
+**Code:** Auto-start probe on app launch; hold open 30s; clearer notif; research note `docs/research/06_aoa_open_granted.md`. Next: SSLEngine on accessory duplex.
+
+---
+
 ## v1.3.2 — 2026-07-11 — AOA permission request + claim script
 **M3 progress:** Accessory visible but `perm=false` (gearhead exclusive).
 
