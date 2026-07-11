@@ -50,6 +50,12 @@ assertEquals(AaSessionState.ERROR, a.state)
 assertFalse(a.canStream())
 }
 @Test
+fun controlTypesStable() {
+assertEquals(1, AaControlType.HELLO.toInt())
+assertEquals(7, AaControlType.KEYFRAME_REQ.toInt())
+assertEquals(3, AaChannels.VIDEO_SINK)
+}
+@Test
 fun streamTransportHello() {
 val pin = PipedInputStream(1 shl 16)
 val pout = PipedOutputStream(pin)

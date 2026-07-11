@@ -31,3 +31,7 @@ Phone: SM-F966U · Amni-Drive probe · user selected **Always allow** for USB ac
 
 **M3 partial ✅** — open accessory with user grant.  
 **M4 next** — speak on the wire (TLS + framing), not only listen.
+
+## Loop note (15m scheduler)
+
+When phone ADB offline: build/tests only; no install. Re-claim on next online cycle with Always-allow + `claim_aoa_research.ps1` if gearhead reclaims FD.
