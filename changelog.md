@@ -1,5 +1,10 @@
 # Amni-Drive — Changelog
 
+## v1.3.5 — 2026-07-11 — Real AndroidKeyStore TLS identity for AOA
+**Fix:** empty KeyManager meant SSLEngine could not WRAP ServerHello. Now generates RSA key+self-signed cert in AndroidKeyStore (`amni_aa_tls_v1`) for research server mode. OEM will still reject CA; we want ClientHello/alert logs on next plug. versionCode 18.
+
+---
+
 ## v1.3.4 — 2026-07-11 — TLS server attempt after AOA OPEN
 **After Always-allow OPENED with 0B RX:** phone must speak as TLS server.
 
