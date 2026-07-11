@@ -134,7 +134,8 @@ if (Build.VERSION.SDK_INT >= 33) intent.getParcelableExtra(UsbManager.EXTRA_ACCE
 else @Suppress("DEPRECATION") intent.getParcelableExtra(UsbManager.EXTRA_ACCESSORY)
 private fun desc(acc: UsbAccessory?): String {
 if (acc == null) return "null"
-return "mfr=${acc.manufacturer} model=${acc.model} ver=${acc.version} desc=${acc.description} uri=${acc.uri} sn=${acc.serial}"
+val sn = try { acc.serial } catch (_: SecurityException) { "(no-perm)" }
+return "mfr=${acc.manufacturer} model=${acc.model} ver=${acc.version} desc=${acc.description} uri=${acc.uri} sn=$sn"
 }
 private fun log(msg: String) {
 Log.i(TAG, msg)

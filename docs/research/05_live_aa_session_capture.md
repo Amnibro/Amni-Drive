@@ -49,3 +49,19 @@ To replace AA on this car we must:
 4. Accept input from HU input source channel
 
 Live capture confirms wired AOA path is what this Niro uses (not wireless AA for this session).
+
+## Update — Amni AOA probe (v1.3.1, same session)
+
+`AoaProbeService` running on phone while car still in ACCESSORY mode:
+
+```
+poll: mfr=Android model=Android Auto ver=1.0 ... perm=false
+USB_STATE connected=true configured=true accessory=true
+```
+
+**Finding:** Accessory is visible to Amni, but **permission is false** — Google gearhead holds exclusive open rights for the active session. Replacing AA requires either:
+1. User grants Amni accessory permission (and gearhead not holding FD), or
+2. Become the preferred accessory handler before gearhead claims it, or
+3. Coordinate force-stop of gearhead for research (breaks stock AA until restart)
+
+Loop continues toward M3 permission + open path without claiming M5 yet.
