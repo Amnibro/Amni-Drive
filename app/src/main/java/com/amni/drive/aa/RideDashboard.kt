@@ -71,7 +71,14 @@ onOpenSettings = { },
 initialPage = initialPage,
 carSurface = true,
 surfaceDisplayId = surfaceDisplayId,
-onSetTileLayout = { v -> scope.launch { app.themeStore.setTileLayout(v) } }
+onSetTileLayout = { v -> scope.launch { app.themeStore.setTileLayout(v) } },
+onCycleTheme = {
+android.util.Log.i("Amni.Theme", "cycle from ${theme.preset}")
+scope.launch {
+runCatching { app.themeStore.setPreset(com.amni.drive.ui.AmniPreset.entries[(theme.preset.ordinal + 1) % com.amni.drive.ui.AmniPreset.entries.size]) }
+.onFailure { android.util.Log.e("Amni.Theme", "setPreset fail ${it.message}", it) }
+}
+}
 )
 }
 }

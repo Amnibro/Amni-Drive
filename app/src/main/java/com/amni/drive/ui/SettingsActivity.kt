@@ -124,6 +124,7 @@ private fun GatePane(store: ConfigStore) {
     SetRow("⚡", "Master gate", "Kills every gate for this drive — re-arms next ignition.", cfg.masterGateEnabled) { scope.launch { store.setMaster(it) } }
     Text("NAV · MEDIA · PHONE ARE NEVER GATED. EVERY DECISION FLOWS THROUGH GATEMANAGER.DECIDE() — WHAT OUI SEE IS WHAT RUNS.", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 9.sp, lineHeight = 13.sp, modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(p.accDim).padding(10.dp))
 }
+@android.annotation.SuppressLint("MissingPermission")
 @Composable
 private fun AutoPane(store: ConfigStore) {
     val p = LocalAmni.current

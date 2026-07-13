@@ -74,6 +74,7 @@ class CarConnectionService : Service() {
             .build()
         (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(NOTE_LAUNCH, note)
     }
+    @android.annotation.SuppressLint("WrongConstant")
     private fun onDisconnect() {
         if (cfg.autoEnterCarMode) runCatching { (getSystemService(Context.UI_MODE_SERVICE) as UiModeManager).disableCarMode(0) }
         (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(NOTE_LAUNCH)

@@ -18,6 +18,8 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -42,6 +44,7 @@ import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Phone
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Settings
@@ -120,7 +123,8 @@ onOpenSettings: () -> Unit,
 initialPage: DrivePage = DrivePage.HOME,
 carSurface: Boolean = false,
 surfaceDisplayId: Int? = null,
-onSetTileLayout: (TileLayout) -> Unit = {}
+onSetTileLayout: (TileLayout) -> Unit = {},
+onCycleTheme: () -> Unit = {}
 ) {
 val p = rememberPalette(theme)
 val ctxRoot = LocalContext.current
@@ -270,7 +274,7 @@ onOpenMediaPicker = { mediaPicker = true }
 if (menuOpen) MenuDrawer(page, rearAvailable, cfg.driverGateEnabled && cfg.masterGateEnabled, theme.weatherBg, carSurface, theme.tileLayout,
 onPage = { page = it; menuOpen = false }, onToggleGate = onToggleGate, onToggleWeather = onToggleWeather,
 onSettings = { menuOpen = false; onOpenSettings() }, onClose = { menuOpen = false }, onMedia = { menuOpen = false; page = DrivePage.HOME; AaNavState.openMedia() },
-onTileLayout = { menuOpen = false; layoutPicker = true })
+onTileLayout = { menuOpen = false; layoutPicker = true }, themeLabel = theme.preset.label, onTheme = onCycleTheme)
 if (layoutPicker) TileLayoutPicker(theme.tileLayout, layout, { onSetTileLayout(it); layoutPicker = false }, { layoutPicker = false })
 if (mediaPicker) MediaSourceSheet(mediaAppsList, { mediaPicker = false }, { pickMedia(it); mediaPicker = false })
 blocked?.let { app ->
@@ -534,12 +538,12 @@ Text(clock, color = p.ink, fontFamily = FontFamily.Monospace, fontSize = 14.sp, 
 }
 }
 @Composable
-private fun MenuDrawer(page: DrivePage, rearAvailable: Boolean, gateOn: Boolean, weatherOn: Boolean, carSurface: Boolean, tileLayout: TileLayout, onPage: (DrivePage) -> Unit, onToggleGate: () -> Unit, onToggleWeather: (Boolean) -> Unit, onSettings: () -> Unit, onClose: () -> Unit, onMedia: () -> Unit, onTileLayout: () -> Unit) {
+private fun MenuDrawer(page: DrivePage, rearAvailable: Boolean, gateOn: Boolean, weatherOn: Boolean, carSurface: Boolean, tileLayout: TileLayout, onPage: (DrivePage) -> Unit, onToggleGate: () -> Unit, onToggleWeather: (Boolean) -> Unit, onSettings: () -> Unit, onClose: () -> Unit, onMedia: () -> Unit, onTileLayout: () -> Unit, themeLabel: String = "", onTheme: () -> Unit = {}) {
 val p = LocalAmni.current
 val ctx = LocalContext.current
 Row(Modifier.fillMaxSize().background(p.scrim)) {
 SoftSurface(Modifier.width(320.dp).fillMaxHeight().padding(10.dp), radius = 24.dp) {
-Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+Column(Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
 Box(Modifier.size(8.dp).clip(CircleShape).background(p.acc))
 Text("AMNI DRIVE", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 15.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
@@ -553,24 +557,29 @@ MenuRow(Icons.Rounded.Home, "Home", "Dashboard & map", page == DrivePage.HOME) {
 MenuRow(Icons.Rounded.Apps, "All Apps", "Everything installed", page == DrivePage.APPS) { onPage(DrivePage.APPS) }
 MenuRow(Icons.Rounded.Map, "Navigation", "Full-screen map", page == DrivePage.NAV) { onPage(DrivePage.NAV) }
 MenuRow(Icons.Rounded.MusicNote, "Media", if (carSurface) "Controls beside map" else "In-dash media panel", false) { onMedia() }
+MenuRow(Icons.Rounded.Palette, "Theme", "$themeLabel · tap to cycle", false) { onTheme() }
 MenuRow(Icons.Rounded.ViewModule, "Tile layout", tileLayout.label + " · fit glass", false) { onTileLayout() }
+if (!carSurface) {
 MenuRow(Icons.Rounded.Phone, "Phone", "Dialer", false) {
-if (!carSurface) runCatching { ctx.startActivity(Intent(Intent.ACTION_DIAL).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+runCatching { ctx.startActivity(Intent(Intent.ACTION_DIAL).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
 onClose()
 }
 MenuRow(Icons.Rounded.Tv, "Rear Screen", if (rearAvailable) "Detected — auto-routes gated apps" else "No rear display detected", false) {}
 MenuRow(Icons.Rounded.Cast, "Amni Link", "Phone host · head-unit receiver", false) {
 ctx.startActivity(Intent(ctx, LinkActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); onClose()
 }
+}
 Box(Modifier.fillMaxWidth().height(1.dp).background(p.hairline).padding(vertical = 6.dp))
 MenuSwitch(Icons.Rounded.Security, "Driver gate", gateOn) { onToggleGate() }
 MenuSwitch(Icons.Rounded.WaterDrop, "Weather background", weatherOn) { onToggleWeather(it) }
+if (!carSurface) {
 Box(Modifier.fillMaxWidth().height(1.dp).background(p.hairline))
 MenuRow(Icons.Rounded.Settings, "Settings", "Gate · themes · car · link", false, onSettings)
 Spacer(Modifier.weight(1f))
 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
 Icon(Icons.Rounded.Info, null, Modifier.size(14.dp), tint = p.dim)
 Text("v1.2.0 · modern shell · AA · link", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 8.sp)
+}
 }
 }
 }

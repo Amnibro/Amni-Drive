@@ -23,6 +23,7 @@ s.isActive = true
 s.setPlaybackState(state(PlaybackStateCompat.STATE_STOPPED))
 }
 override fun onPlayFromMediaId(mediaId: String?, extras: Bundle?) { markPlaying() }
+override fun onPlayFromSearch(query: String?, extras: Bundle?) { markPlaying() }
 })
 s.setPlaybackState(state(PlaybackStateCompat.STATE_PAUSED))
 s.setMetadata(
