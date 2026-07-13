@@ -1,4 +1,7 @@
-﻿## v1.6.16 — 2026-07-13 — In-dash theme cycle + car drawer fits without scroll
+﻿## v1.6.17 — 2026-07-13 — On-glass tap keyboard: full search→route chain works in-car
+**Gap:** AA surface has no IME — SearchPanel's BasicTextField was untypeable on the car.
+**Ship:** compact QWERTY+digits+SPACE/⌫ tap keyboard inside SearchPanel when dense (we own every pixel + touch). **DHU-verified end-to-end:** magnifier → type "aec" → live Photon results → GO → OSRM route "24 min · 14.0 mi" traffic-colored on the road, TRIP tile synced, END clears. Note: rapid host clicks can drop (~1 in 3 at 1.2s spacing) — keys are tolerant, users retap. versionCode **67**.
+## v1.6.16 — 2026-07-13 — In-dash theme cycle + car drawer fits without scroll
 **Ship:** MenuDrawer THEME row (tap cycles 6 presets live — DHU-verified Amni Light→Crypt→…→Amni Dark, whole dash recolors instantly); carSurface drawer drops phone-only rows (Phone/Rear/Amni Link/Settings/footer) so everything fits the 480px glass — no scrolling (AA `onScroll` has NO position data, injected drags anchor at last click = inherently flaky; avoid scroll-dependent UI on carSurface). Drawer Column verticalScroll for phone. `dhu_click_cap.ps1` gains -Drag. versionCode **66**.
 ## v1.6.15 — 2026-07-13 — FIX RIDE flicker + dead touch (main-thread latch deadlock) · host-chrome insets
 **User:** UI flickering; can't access apps or change media; host APP_ICON square covers clock/weather.

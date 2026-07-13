@@ -9,8 +9,8 @@ android {
         applicationId = "com.amni.drive"
         minSdk = 26
         targetSdk = 34
-        versionCode = 66
-        versionName = "1.6.16"
+        versionCode = 67
+        versionName = "1.6.17"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildTypes {

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -150,6 +151,25 @@ private fun SearchPanel(location: Location?, hasRoute: Boolean, dense: Boolean, 
                 Text("🔎", fontSize = 13.sp)
                 BasicTextField(query, { query = it }, Modifier.weight(1f), textStyle = TextStyle(color = p.ink, fontFamily = FontFamily.Monospace, fontSize = 12.sp), cursorBrush = SolidColor(p.acc), singleLine = true, decorationBox = { inner -> Box { if (query.isEmpty()) Text("SEARCH PLACES & ADDRESSES", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 10.sp, letterSpacing = 1.sp); inner() } })
                 if (query.isNotEmpty()) Text("✕", color = p.dim, fontSize = 12.sp, modifier = Modifier.clickable { query = "" })
+            }
+            if (dense) {
+                listOf("1234567890", "QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM").forEach { keys ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                        keys.forEach { ch ->
+                            Box(Modifier.weight(1f).height(28.dp).clip(RoundedCornerShape(6.dp)).background(p.panel2).border(1.dp, p.hairline, RoundedCornerShape(6.dp)).clickable { query += ch.lowercaseChar() }, contentAlignment = Alignment.Center) {
+                                Text(ch.toString(), color = p.ink, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Box(Modifier.weight(4f).height(28.dp).clip(RoundedCornerShape(6.dp)).background(p.panel2).border(1.dp, p.hairline, RoundedCornerShape(6.dp)).clickable { query += " " }, contentAlignment = Alignment.Center) {
+                        Text("SPACE", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 9.sp, letterSpacing = 1.sp)
+                    }
+                    Box(Modifier.weight(1f).height(28.dp).clip(RoundedCornerShape(6.dp)).background(p.panel2).border(1.dp, p.err.copy(alpha = 0.35f), RoundedCornerShape(6.dp)).clickable { query = query.dropLast(1) }, contentAlignment = Alignment.Center) {
+                        Text("⌫", color = p.err, fontSize = 12.sp)
+                    }
+                }
             }
             if (searching) Text("SEARCHING…", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 9.sp, letterSpacing = 1.sp)
             results.take(5).forEach { place ->
