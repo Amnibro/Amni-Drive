@@ -187,6 +187,8 @@ val cue = remember(route, location, stepIdx) { route?.let { r -> location?.let {
 LaunchedEffect(cue) { cue?.let { c -> if (c.idx != stepIdx) stepIdx = c.idx; voice.maybeSpeak(c, cfg.voiceNav) } }
 val navScope = rememberCoroutineScope()
 val onToggleVoice: () -> Unit = { navScope.launch { ConfigStore(ctxRoot).setVoiceNav(!cfg.voiceNav) } }
+val pendingGo by AaNavState.pendingGo.collectAsState()
+LaunchedEffect(pendingGo) { pendingGo?.let { g -> page = DrivePage.NAV; onGo(g); AaNavState.consumeGo() } }
 var offCount by remember { mutableStateOf(0) }
 var lastRerouteAt by remember { mutableStateOf(0L) }
 LaunchedEffect(location) {
@@ -266,7 +268,7 @@ else if (carSurface && surfaceDisplayId != null) mediaHint = "On dash · ${app.l
 }
 }
 DrivePage.NAV -> Box(Modifier.fillMaxSize().padding(pad)) {
-MapCard(Modifier.fillMaxSize(), camera, tiles, route, reports, stops, location, routing, true, netOk, showLayers, showReport, { showLayers = it }, { showReport = it }, reportStore, addPoint, onGo, onAddStop, onEnd, dense || micro)
+MapCard(Modifier.fillMaxSize(), camera, tiles, route, reports, stops, location, routing, true, netOk, showLayers, showReport, { showLayers = it }, { showReport = it }, reportStore, addPoint, onGo, onAddStop, onEnd, dense || micro, if (carSurface) ({ AaNavState.openHostSearch() }) else null)
 }
 DrivePage.HOME -> HomeTiles(
 layout = layout,
@@ -299,7 +301,8 @@ weather = weather,
 speedMph = speedMph,
 cfg = cfg,
 mediaApps = mediaAppsList,
-onOpenMediaPicker = { mediaPicker = true }
+onOpenMediaPicker = { mediaPicker = true },
+hostKeyboard = if (carSurface) ({ AaNavState.openHostSearch() }) else null
 )
 }
 }
@@ -369,11 +372,12 @@ weather: WeatherNow?,
 speedMph: Int,
 cfg: DriveConfig,
 mediaApps: List<AppEntry> = emptyList(),
-onOpenMediaPicker: () -> Unit = {}
+onOpenMediaPicker: () -> Unit = {},
+hostKeyboard: (() -> Unit)? = null
 ) {
 val p = LocalAmni.current
 val map: @Composable (Modifier) -> Unit = { mod ->
-MapCard(mod, camera, tiles, route, reports, stops, location, routing, false, netOk, showLayers, showReport, onShowLayers, onShowReport, reportStore, addPoint, onGo, onAddStop, onEnd, dense)
+MapCard(mod, camera, tiles, route, reports, stops, location, routing, false, netOk, showLayers, showReport, onShowLayers, onShowReport, reportStore, addPoint, onGo, onAddStop, onEnd, dense, hostKeyboard)
 }
 val mediaMod = Modifier.then(if (mediaFlash) Modifier.border(2.dp, p.acc, RoundedCornerShape(18.dp)) else Modifier)
 val widgets: @Composable (Modifier) -> Unit = { mod ->

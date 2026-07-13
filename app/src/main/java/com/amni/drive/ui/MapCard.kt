@@ -79,7 +79,8 @@ fun MapCard(
     onGo: (Place) -> Unit,
     onAddStop: (Place) -> Unit,
     onEndRoute: () -> Unit,
-    dense: Boolean = false
+    dense: Boolean = false,
+    hostKeyboard: (() -> Unit)? = null
 ) {
     val p = LocalAmni.current
     var searchOpen by remember { mutableStateOf(false) }
@@ -120,7 +121,7 @@ fun MapCard(
             if (routing) Box(Modifier.align(Alignment.TopStart).padding(10.dp).clip(RoundedCornerShape(99.dp)).background(p.accDim).border(1.dp, p.acc.copy(alpha = 0.3f), RoundedCornerShape(99.dp)).padding(horizontal = 14.dp, vertical = 7.dp)) { Text("Routing…", color = p.acc, fontSize = 12.sp, fontWeight = FontWeight.Medium) }
             if (route == null && !routing && !searchOpen) Box(Modifier.align(Alignment.BottomStart).padding(10.dp).clip(RoundedCornerShape(99.dp)).background(chromeBg).border(1.dp, chromeLine, RoundedCornerShape(99.dp)).padding(horizontal = 12.dp, vertical = 7.dp)) { Text("Search or long-press for destination", color = p.dim, fontSize = 11.sp) }
             if (!netOk) Box(Modifier.align(Alignment.BottomCenter).padding(10.dp).clip(RoundedCornerShape(99.dp)).background(Color(0xEE3A2808)).border(1.dp, Color(0xFFFFB454).copy(alpha = 0.45f), RoundedCornerShape(99.dp)).padding(horizontal = 14.dp, vertical = 8.dp)) { Text("No network — map, search & routing need Wi‑Fi/hotspot", color = Color(0xFFFFB454), fontSize = 11.sp, fontWeight = FontWeight.SemiBold) }
-            if (searchOpen) SearchPanel(location, route != null, dense, Modifier.align(Alignment.TopCenter).fillMaxWidth(if (dense) 0.92f else 0.7f).padding(top = 8.dp, start = 8.dp, end = if (dense) 48.dp else 8.dp), { searchOpen = false; onGo(it) }, { searchOpen = false; onAddStop(it) }, { searchOpen = false })
+            if (searchOpen) SearchPanel(location, route != null, dense, Modifier.align(Alignment.TopCenter).fillMaxWidth(if (dense) 0.92f else 0.7f).padding(top = 8.dp, start = 8.dp, end = if (dense) 48.dp else 8.dp), { searchOpen = false; onGo(it) }, { searchOpen = false; onAddStop(it) }, { searchOpen = false }, hostKeyboard?.let { hk -> { searchOpen = false; hk() } })
             if (showLayers) LayersPanel(camera, tiles, Modifier.align(Alignment.TopEnd).padding(end = 62.dp, top = 8.dp))
             if (showReport) ReportPanel(location, reportStore, Modifier.align(if (fullNav) Alignment.BottomCenter else Alignment.BottomEnd).padding(8.dp)) { onShowReport(false) }
             Text("© OSM · CARTO · ESRI", color = Color(0xFF5B6A7D), fontFamily = FontFamily.Monospace, fontSize = 7.sp, modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp))
@@ -128,7 +129,7 @@ fun MapCard(
     }
 }
 @Composable
-private fun SearchPanel(location: Location?, hasRoute: Boolean, dense: Boolean, modifier: Modifier, onGo: (Place) -> Unit, onAddStop: (Place) -> Unit, onClose: () -> Unit) {
+private fun SearchPanel(location: Location?, hasRoute: Boolean, dense: Boolean, modifier: Modifier, onGo: (Place) -> Unit, onAddStop: (Place) -> Unit, onClose: () -> Unit, onHostKeyboard: (() -> Unit)? = null) {
     val p = LocalAmni.current
     var query by remember { mutableStateOf(AaNavState.lastQuery) }
     var results by remember { mutableStateOf<List<Place>>(emptyList()) }
@@ -145,6 +146,7 @@ private fun SearchPanel(location: Location?, hasRoute: Boolean, dense: Boolean, 
         Column(Modifier.padding(if (dense) 8.dp else 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("MAP SEARCH", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.weight(1f))
+                if (onHostKeyboard != null) Box(Modifier.clip(RoundedCornerShape(99.dp)).background(p.accDim).border(1.dp, p.acc.copy(alpha = 0.4f), RoundedCornerShape(99.dp)).clickable { onHostKeyboard() }.padding(horizontal = 8.dp, vertical = 3.dp)) { Text("⌨ CAR KEYBOARD", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 8.sp, fontWeight = FontWeight.Bold) }
                 Text("✕", color = p.dim, fontSize = 14.sp, modifier = Modifier.clickable { onClose() })
             }
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(99.dp)).background(p.panel2).border(1.dp, p.line2, RoundedCornerShape(99.dp)).padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {

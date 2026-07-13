@@ -12,7 +12,14 @@ private val _searchPulse = MutableStateFlow(0L)
 val searchPulse: StateFlow<Long> = _searchPulse.asStateFlow()
 private val _mediaPulse = MutableStateFlow(0L)
 val mediaPulse: StateFlow<Long> = _mediaPulse.asStateFlow()
+private val _hostSearchPulse = MutableStateFlow(0L)
+val hostSearchPulse: StateFlow<Long> = _hostSearchPulse.asStateFlow()
+private val _pendingGo = MutableStateFlow<Place?>(null)
+val pendingGo: StateFlow<Place?> = _pendingGo.asStateFlow()
 fun clear() { destination = null; route = null }
 fun openSearch() { lastQuery = lastQuery; _searchPulse.value = System.currentTimeMillis() }
 fun openMedia() { _mediaPulse.value = System.currentTimeMillis() }
+fun openHostSearch() { _hostSearchPulse.value = System.currentTimeMillis() }
+fun requestGo(p: Place) { _pendingGo.value = p }
+fun consumeGo() { _pendingGo.value = null }
 }

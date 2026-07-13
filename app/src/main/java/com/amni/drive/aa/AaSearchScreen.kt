@@ -56,7 +56,8 @@ Place.Builder(CarLocation.create(p.lat, p.lon))
 )
 .setOnClickListener {
 AaNavState.lastQuery = query
-screenManager.push(AaRouteScreen(carContext, p))
+AaNavState.requestGo(p)
+screenManager.pop()
 }
 .build()
 list.addItem(row)
