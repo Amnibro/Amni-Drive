@@ -86,6 +86,31 @@ distM < 70 -> 2
 distM < 320 -> 1
 else -> 0
 }
+fun distToRouteM(points: List<RoutePoint>, lat: Double, lon: Double): Double {
+if (points.isEmpty()) return Double.MAX_VALUE
+if (points.size == 1) return haversineM(lat, lon, points[0].lat, points[0].lon)
+val mPerLat = 111320.0
+val mPerLon = 111320.0 * cos(Math.toRadians(lat))
+var best = Double.MAX_VALUE
+for (i in 0 until points.size - 1) {
+val ax = (points[i].lon - lon) * mPerLon
+val ay = (points[i].lat - lat) * mPerLat
+val bx = (points[i + 1].lon - lon) * mPerLon
+val by = (points[i + 1].lat - lat) * mPerLat
+val dx = bx - ax
+val dy = by - ay
+val len2 = dx * dx + dy * dy
+val t = if (len2 < 1e-9) 0.0 else ((-ax * dx - ay * dy) / len2).coerceIn(0.0, 1.0)
+val px = ax + t * dx
+val py = ay + t * dy
+val d = sqrt(px * px + py * py)
+if (d < best) best = d
+}
+return best
+}
+const val OFF_ROUTE_M = 60.0
+const val OFF_ROUTE_SAMPLES = 3
+const val REROUTE_COOLDOWN_MS = 15000L
 }
 class VoiceGuide(ctx: Context) {
 private val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -101,6 +126,11 @@ override fun onStart(id: String?) {}
 override fun onDone(id: String?) { am.abandonAudioFocusRequest(focus) }
 @Deprecated("api") override fun onError(id: String?) { am.abandonAudioFocusRequest(focus) }
 })
+}
+fun say(text: String, enabled: Boolean) {
+if (!enabled || !ready) return
+am.requestAudioFocus(focus)
+tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "amni_say_${text.hashCode()}")
 }
 fun maybeSpeak(cue: TurnGuidance.Cue?, enabled: Boolean) {
 if (cue == null || !enabled || !ready) return

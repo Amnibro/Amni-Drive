@@ -61,6 +61,19 @@ class TurnGuidanceTest {
     @Test fun emptyStepsGivesNull() {
         assertNull(TurnGuidance.cue(route(), 30.0, -97.0, 0))
     }
+    @Test fun distToRouteOnRouteIsSmall() {
+        val pts = listOf(RoutePoint(30.0, -97.0), RoutePoint(30.01, -97.0))
+        assertTrue(TurnGuidance.distToRouteM(pts, 30.005, -97.0) < 5.0)
+    }
+    @Test fun distToRouteOffsetDetected() {
+        val pts = listOf(RoutePoint(30.0, -97.0), RoutePoint(30.01, -97.0))
+        val d = TurnGuidance.distToRouteM(pts, 30.005, -97.001)
+        assertTrue(d > TurnGuidance.OFF_ROUTE_M && d < 150.0)
+    }
+    @Test fun distToRouteBeyondEndClamps() {
+        val pts = listOf(RoutePoint(30.0, -97.0), RoutePoint(30.001, -97.0))
+        assertTrue(TurnGuidance.distToRouteM(pts, 30.003, -97.0) > 200.0)
+    }
     @Test fun stages() {
         assertEquals(0, TurnGuidance.stageFor(500.0))
         assertEquals(1, TurnGuidance.stageFor(200.0))

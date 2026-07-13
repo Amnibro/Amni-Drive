@@ -10,6 +10,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -186,6 +187,24 @@ val cue = remember(route, location, stepIdx) { route?.let { r -> location?.let {
 LaunchedEffect(cue) { cue?.let { c -> if (c.idx != stepIdx) stepIdx = c.idx; voice.maybeSpeak(c, cfg.voiceNav) } }
 val navScope = rememberCoroutineScope()
 val onToggleVoice: () -> Unit = { navScope.launch { ConfigStore(ctxRoot).setVoiceNav(!cfg.voiceNav) } }
+var offCount by remember { mutableStateOf(0) }
+var lastRerouteAt by remember { mutableStateOf(0L) }
+LaunchedEffect(location) {
+val r = route ?: return@LaunchedEffect
+val l = location ?: return@LaunchedEffect
+if (stops.isEmpty() || routing) return@LaunchedEffect
+offCount = if (TurnGuidance.distToRouteM(r.points, l.latitude, l.longitude) > TurnGuidance.OFF_ROUTE_M) offCount + 1 else 0
+val now = System.currentTimeMillis()
+if (offCount >= TurnGuidance.OFF_ROUTE_SAMPLES && now - lastRerouteAt > TurnGuidance.REROUTE_COOLDOWN_MS) {
+lastRerouteAt = now
+offCount = 0
+voice.say("Rerouting", cfg.voiceNav)
+routing = true
+route = OsrmRouting.route(listOf(RoutePoint(l.latitude, l.longitude)) + stops.toList())
+AaNavState.route = route
+routing = false
+}
+}
 val ctx = LocalContext.current
 val netOk by produceState(true) {
 val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -215,7 +234,7 @@ val mediaPulse by AaNavState.mediaPulse.collectAsState()
 var mediaFlash by remember { mutableStateOf(false) }
 LaunchedEffect(mediaPulse) { if (mediaPulse > 0L) { mediaFlash = true; page = DrivePage.HOME; delay(1200); mediaFlash = false } }
 val layout = resolveTileLayout(theme.tileLayout, micro, dense, contentW, maxHeight, carSurface)
-if (theme.weatherBg && !micro) WeatherLayer(weather?.wx ?: Wx.NONE, moving, Modifier.fillMaxSize())
+if (theme.weatherBg && !micro && !carSurface) WeatherLayer(weather?.wx ?: Wx.NONE, moving, Modifier.fillMaxSize())
 Row(Modifier.fillMaxSize()) {
 Rail(page, cfg.driverGateEnabled && cfg.masterGateEnabled, { menuOpen = true }, { page = it }, onToggleGate, railW, dense || micro)
 Column(Modifier.weight(1f).fillMaxHeight()) {
@@ -225,7 +244,8 @@ Box(Modifier.weight(1f).fillMaxWidth()) {
 AnimatedContent(
 targetState = page,
 transitionSpec = {
-(fadeIn(spring(stiffness = Spring.StiffnessMediumLow)) + slideInHorizontally { it / 24 }) togetherWith
+if (carSurface) fadeIn(tween(90)) togetherWith fadeOut(tween(90))
+else (fadeIn(spring(stiffness = Spring.StiffnessMediumLow)) + slideInHorizontally { it / 24 }) togetherWith
 (fadeOut() + slideOutHorizontally { -it / 24 })
 },
 modifier = Modifier.fillMaxSize(),
@@ -894,7 +914,7 @@ Text("TRIP", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = if (de
 }
 Row(Modifier.padding(top = if (dense) 4.dp else 8.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
 Text(if (route != null) "${(route.durationS / 60).roundToInt()}m" else "$speedMph", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = if (dense) 22.sp else 30.sp, fontWeight = FontWeight.Bold)
-Text(if (route != null) "%.1f mi".format(route.distanceM / 1609.34) else "MPH", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = if (dense) 10.sp else 12.sp, modifier = Modifier.padding(bottom = 3.dp))
+Text(if (route != null) "%.1f mi · ${LocalTime.now().plusSeconds(route.durationS.toLong()).format(DateTimeFormatter.ofPattern("h:mm a"))}".format(route.distanceM / 1609.34) else "MPH", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = if (dense) 10.sp else 12.sp, modifier = Modifier.padding(bottom = 3.dp))
 }
 if (!dense) Text(if (route != null) "Search or long-press to add stops" else "Search or long-press the map to go", color = p.dim, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
 }
