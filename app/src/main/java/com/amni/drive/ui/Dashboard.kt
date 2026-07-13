@@ -99,6 +99,7 @@ import com.amni.drive.map.Place
 import com.amni.drive.map.ReportStore
 import com.amni.drive.map.RoutePoint
 import com.amni.drive.map.RouteResult
+import com.amni.drive.map.RouteStep
 import com.amni.drive.map.TileStore
 import com.amni.drive.map.TurnGuidance
 import com.amni.drive.map.VoiceGuide
@@ -310,7 +311,7 @@ hostKeyboard = if (carSurface) ({ AaNavState.openHostSearch() }) else null
 )
 }
 }
-cue?.let { c -> if (page != DrivePage.APPS) TurnBanner(c, cfg.voiceNav, onToggleVoice, dense || micro, Modifier.align(Alignment.TopCenter).padding(top = if (carSurface) 6.dp else 8.dp)) }
+cue?.let { c -> if (page != DrivePage.APPS) TurnBanner(c, route?.steps?.getOrNull(c.idx + 1), cfg.voiceNav, onToggleVoice, dense || micro, Modifier.align(Alignment.TopCenter).padding(top = if (carSurface) 6.dp else 8.dp)) }
 }
 }
 }
@@ -909,7 +910,7 @@ Text("WIND ${w?.windMph ?: "--"} · HUM ${w?.humidity ?: "--"}%", color = p.dim,
 }
 }
 @Composable
-private fun TurnBanner(cue: TurnGuidance.Cue, voiceOn: Boolean, onToggleVoice: () -> Unit, dense: Boolean, modifier: Modifier = Modifier) {
+private fun TurnBanner(cue: TurnGuidance.Cue, next: RouteStep?, voiceOn: Boolean, onToggleVoice: () -> Unit, dense: Boolean, modifier: Modifier = Modifier) {
 val p = LocalAmni.current
 GlassCard(modifier) {
 Row(Modifier.padding(horizontal = if (dense) 10.dp else 16.dp, vertical = if (dense) 6.dp else 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -918,6 +919,12 @@ Spacer(Modifier.width(if (dense) 8.dp else 12.dp))
 Column {
 Text(TurnGuidance.distText(cue.distM), color = p.acc, fontFamily = FontFamily.Monospace, fontSize = if (dense) 14.sp else 18.sp, fontWeight = FontWeight.Bold)
 Text(TurnGuidance.phrase(cue.step.type, cue.step.modifier, cue.step.name), color = p.soft, fontFamily = FontFamily.Monospace, fontSize = if (dense) 10.sp else 13.sp, maxLines = 1)
+}
+if (next != null && cue.distM < 400) {
+Spacer(Modifier.width(if (dense) 8.dp else 12.dp))
+Box(Modifier.clip(RoundedCornerShape(99.dp)).background(p.accDim).padding(horizontal = 8.dp, vertical = 3.dp)) {
+Text("then ${TurnGuidance.arrowFor(next.type, next.modifier)}", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = if (dense) 10.sp else 12.sp, fontWeight = FontWeight.Bold)
+}
 }
 Spacer(Modifier.width(if (dense) 10.dp else 16.dp))
 Text(if (voiceOn) "🔊" else "🔇", fontSize = if (dense) 14.sp else 18.sp, modifier = Modifier.clickable { onToggleVoice() })

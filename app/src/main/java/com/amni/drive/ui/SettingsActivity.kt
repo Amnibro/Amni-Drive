@@ -55,6 +55,7 @@ import com.amni.drive.link.LinkProto
 import kotlinx.coroutines.launch
 private enum class SettingsPage(val icon: String, val title: String, val sub: String) {
     GATE("🛡️", "DISTRACTION GATE", "Per-display · no hard locks"),
+    NAV("🧭", "NAVIGATION", "Voice prompts · rerouting"),
     AUTO("🔌", "AUTO-START", "Plug in & go · wireless & go"),
     LOOKS("🎨", "APPEARANCE", "Presets · accent · weather · tiles"),
     CAR("🚗", "CAR / USB", "Plug phone into factory Android Auto"),
@@ -101,6 +102,7 @@ private fun SettingsScreen(store: ConfigStore, themes: ThemeStore, theme: UiThem
                 Column(Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     when (page) {
                         SettingsPage.GATE -> GatePane(store)
+                        SettingsPage.NAV -> NavPane(store)
                         SettingsPage.AUTO -> AutoPane(store)
                         SettingsPage.LOOKS -> LooksPane(themes, theme)
                         SettingsPage.CAR -> CarUsbPane()
@@ -123,6 +125,14 @@ private fun GatePane(store: ConfigStore) {
     SetRow("↪️", "Auto-route to rear", "A gated launch up front jumps straight to the rear screen instead of dead-ending.", cfg.autoRouteRearDisplay) { scope.launch { store.setAutoRoute(it) } }
     SetRow("⚡", "Master gate", "Kills every gate for this drive — re-arms next ignition.", cfg.masterGateEnabled) { scope.launch { store.setMaster(it) } }
     Text("NAV · MEDIA · PHONE ARE NEVER GATED. EVERY DECISION FLOWS THROUGH GATEMANAGER.DECIDE() — WHAT OUI SEE IS WHAT RUNS.", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 9.sp, lineHeight = 13.sp, modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(p.accDim).padding(10.dp))
+}
+@Composable
+private fun NavPane(store: ConfigStore) {
+    val p = LocalAmni.current
+    val scope = rememberCoroutineScope()
+    val cfg by store.config.collectAsStateWithLifecycle(DriveConfig())
+    SetRow("🔊", "Voice guidance", "Spoken turn-by-turn — 'In a quarter mile, turn right'. Ducks music while speaking. Also toggleable from the turn banner.", cfg.voiceNav) { scope.launch { store.setVoiceNav(it) } }
+    Text("AUTO-REROUTE IS ALWAYS ON: DRIFT 60 M OFF THE LINE FOR 3 GPS FIXES AND A FRESH OSRM ROUTE IS PULLED (15 S COOLDOWN). SEARCH ON THE CAR GLASS: TAP ⌨ CAR KEYBOARD FOR THE HOST'S NATIVE KEYBOARD.", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 9.sp, lineHeight = 13.sp, modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(p.accDim).padding(10.dp))
 }
 @android.annotation.SuppressLint("MissingPermission")
 @Composable

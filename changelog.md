@@ -436,3 +436,7 @@ Built **release** (isDebuggable=false, debug-key signed, 11.9 MB); merged manife
 ## v1.7.3 — 2026-07-13 — Real Now Playing: MediaSession bridge (Grok pass 3)
 **Description:** Spotify (any media app) title/artist/album-art now first-class in Amni. `media/MediaSessionBridge`: `AmniNotifListener` (NotificationListenerService, manifest-registered) unlocks `MediaSessionManager.getActiveSessions`; bridge follows the best active controller (PLAYING > PAUSED), publishes `NowPlaying(pkg,label,title,artist,art,playing)` StateFlow, re-attaches on session change. MediaCard renders real track + artist + album art (Image crop over the tile), transport buttons drive `transportControls` directly with media-key fallback, "ENABLE MEDIA ACCESS" chip (phone) opens notification-listener settings. Post-flash one-time grant (or via adb: `cmd notification allow_listener com.amni.drive/com.amni.drive.media.AmniNotifListener`).
 **Verified:** tests green, lint 0 errors, release APK. NOT flashed — Kia session still live; v1.7.0–3 queued.
+
+## v1.7.4 — 2026-07-13 — "then ↰" preview + NAVIGATION settings pane
+**Description:** TurnBanner shows a "then ↰" chip when the next-next maneuver is coming (<400 m to current turn) — classic AA/Maps behavior. New Settings › NAVIGATION pane: Voice guidance toggle (same voiceNav as the banner 🔊) + plain-words notes on auto-reroute and the ⌨ CAR KEYBOARD path.
+**Verified:** tests green, lint 0 errors, release APK. v1.7.0–4 queued for flash on Kia session drop.
