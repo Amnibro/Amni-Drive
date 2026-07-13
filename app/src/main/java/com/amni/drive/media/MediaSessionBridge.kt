@@ -1,4 +1,5 @@
 package com.amni.drive.media
+import android.app.Notification
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -8,12 +9,36 @@ import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.service.notification.NotificationListenerService
+import android.service.notification.StatusBarNotification
 import android.util.Log
 import androidx.core.app.NotificationManagerCompat
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-class AmniNotifListener : NotificationListenerService()
+data class IncomingMsg(val pkg: String, val appLabel: String, val sender: String, val text: String, val at: Long)
+object MessageFeed {
+private val _latest = MutableStateFlow<IncomingMsg?>(null)
+val latest: StateFlow<IncomingMsg?> = _latest.asStateFlow()
+private var lastKey = ""
+fun post(m: IncomingMsg, key: String) { if (key == lastKey) return; lastKey = key; _latest.value = m }
+fun dismiss() { _latest.value = null }
+}
+class AmniNotifListener : NotificationListenerService() {
+override fun onNotificationPosted(sbn: StatusBarNotification) {
+runCatching {
+if (sbn.packageName == packageName) return
+val n = sbn.notification ?: return
+val known = MSG_PKGS.any { sbn.packageName.contains(it, true) }
+if (n.category != Notification.CATEGORY_MESSAGE && !known) return
+if (n.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
+val sender = n.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.takeIf { it.isNotBlank() } ?: return
+val text = n.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: ""
+val label = runCatching { packageManager.getApplicationLabel(packageManager.getApplicationInfo(sbn.packageName, 0)).toString() }.getOrDefault(sbn.packageName.substringAfterLast('.'))
+MessageFeed.post(IncomingMsg(sbn.packageName, label, sender, text, sbn.postTime), "${sbn.key}|${sbn.postTime}")
+}
+}
+companion object { private val MSG_PKGS = listOf("messaging", ".mms", "whatsapp", "telegram", "signal", "messenger", "amni.chat") }
+}
 data class NowPlaying(val pkg: String, val appLabel: String, val title: String, val artist: String, val art: Bitmap?, val playing: Boolean)
 object MediaSessionBridge {
 private const val TAG = "Amni.MediaBridge"

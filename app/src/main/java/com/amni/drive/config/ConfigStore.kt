@@ -27,7 +27,9 @@ it[CARMAC] ?: "",
 it[CARMODE] ?: true,
 DriveConfig.normalizePath(it[AAPATH]),
 it[MESH] ?: true,
-it[VOICENAV] ?: true
+it[VOICENAV] ?: true,
+it[MSGBANNER] ?: true,
+it[MSGREAD] ?: false
 )
 }
 suspend fun setMaster(v: Boolean) = write { it[MASTER] = v }
@@ -42,6 +44,8 @@ suspend fun setAutoCarMode(v: Boolean) = write { it[CARMODE] = v }
 suspend fun setAaPathMode(v: String) = write { it[AAPATH] = DriveConfig.normalizePath(v) }
 suspend fun setMeshBridge(v: Boolean) = write { it[MESH] = v }
 suspend fun setVoiceNav(v: Boolean) = write { it[VOICENAV] = v }
+suspend fun setMsgBanner(v: Boolean) = write { it[MSGBANNER] = v }
+suspend fun setMsgAutoRead(v: Boolean) = write { it[MSGREAD] = v }
 suspend fun applyGateOffDefaultOnce() = context.dataStore.edit {
 if (it[GATE_OFF_V13] != true) {
 it[MASTER] = false
@@ -64,6 +68,8 @@ private val CARMODE = booleanPreferencesKey("carmode")
 private val AAPATH = stringPreferencesKey("aapath")
 private val MESH = booleanPreferencesKey("meshbridge")
 private val VOICENAV = booleanPreferencesKey("voicenav")
+private val MSGBANNER = booleanPreferencesKey("msgbanner")
+private val MSGREAD = booleanPreferencesKey("msgread")
 private val GATE_OFF_V13 = booleanPreferencesKey("gate_off_default_v13")
 }
 }

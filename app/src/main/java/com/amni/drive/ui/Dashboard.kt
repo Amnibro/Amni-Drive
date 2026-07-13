@@ -104,7 +104,9 @@ import com.amni.drive.map.TileStore
 import com.amni.drive.map.TurnGuidance
 import com.amni.drive.map.VoiceGuide
 import com.amni.drive.map.rememberMapCamera
+import com.amni.drive.media.IncomingMsg
 import com.amni.drive.media.MediaSessionBridge
+import com.amni.drive.media.MessageFeed
 import com.amni.drive.weather.WeatherNow
 import com.amni.drive.weather.Wx
 import kotlinx.coroutines.delay
@@ -192,6 +194,14 @@ val cue = remember(route, location, stepIdx) { route?.let { r -> location?.let {
 LaunchedEffect(cue) { cue?.let { c -> if (c.idx != stepIdx) stepIdx = c.idx; voice.maybeSpeak(c, cfg.voiceNav) } }
 val navScope = rememberCoroutineScope()
 val onToggleVoice: () -> Unit = { navScope.launch { ConfigStore(ctxRoot).setVoiceNav(!cfg.voiceNav) } }
+val incoming by MessageFeed.latest.collectAsState()
+LaunchedEffect(incoming) {
+incoming?.let { m ->
+if (cfg.msgAutoRead) voice.say("Message from ${m.sender}. ${m.text}", true)
+delay(12000)
+MessageFeed.dismiss()
+}
+}
 val pendingGo by AaNavState.pendingGo.collectAsState()
 LaunchedEffect(pendingGo) { pendingGo?.let { g -> page = DrivePage.NAV; onGo(g); AaNavState.consumeGo() } }
 var offCount by remember { mutableStateOf(0) }
@@ -312,6 +322,7 @@ hostKeyboard = if (carSurface) ({ AaNavState.openHostSearch() }) else null
 }
 }
 cue?.let { c -> if (page != DrivePage.APPS) TurnBanner(c, route?.steps?.getOrNull(c.idx + 1), cfg.voiceNav, onToggleVoice, dense || micro, Modifier.align(Alignment.TopCenter).padding(top = if (carSurface) 6.dp else 8.dp)) }
+incoming?.let { m -> if (cfg.msgBanner) MsgBanner(m, { voice.say("Message from ${m.sender}. ${m.text}", true) }, { MessageFeed.dismiss() }, dense || micro, Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp)) }
 }
 }
 }
@@ -906,6 +917,23 @@ Text(w?.label ?: "Waiting for GPS…", color = p.ink, fontSize = 13.sp, fontWeig
 Text("WIND ${w?.windMph ?: "--"} · HUM ${w?.humidity ?: "--"}%", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 10.sp)
 } else Text(w?.label ?: "GPS…", color = p.dim, fontSize = 10.sp, maxLines = 1, modifier = Modifier.weight(1f))
 }
+}
+}
+}
+@Composable
+private fun MsgBanner(m: IncomingMsg, onRead: () -> Unit, onDismiss: () -> Unit, dense: Boolean, modifier: Modifier = Modifier) {
+val p = LocalAmni.current
+GlassCard(modifier) {
+Row(Modifier.padding(horizontal = if (dense) 10.dp else 14.dp, vertical = if (dense) 6.dp else 9.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(if (dense) 8.dp else 12.dp)) {
+Text("💬", fontSize = if (dense) 14.sp else 18.sp)
+Column {
+Text(m.sender, color = p.ink, fontSize = if (dense) 12.sp else 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+Text(m.appLabel, color = p.dim, fontFamily = FontFamily.Monospace, fontSize = if (dense) 8.sp else 10.sp)
+}
+Box(Modifier.clip(RoundedCornerShape(99.dp)).background(p.accDim).border(1.dp, p.acc.copy(alpha = 0.4f), RoundedCornerShape(99.dp)).clickable { onRead() }.padding(horizontal = 10.dp, vertical = 5.dp)) {
+Text("🔊 READ", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = if (dense) 9.sp else 10.sp, fontWeight = FontWeight.Bold)
+}
+Text("✕", color = p.dim, fontSize = if (dense) 12.sp else 14.sp, modifier = Modifier.clickable { onDismiss() })
 }
 }
 }
