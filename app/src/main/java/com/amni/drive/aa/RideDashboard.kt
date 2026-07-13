@@ -64,7 +64,11 @@ reportStore = app.reportStore,
 rearAvailable = false,
 onLaunch = { controller.onLaunch(it, cfg, state, passenger, surfaceDisplayId) },
 onLaunchRear = { },
-onToggleGate = { scope.launch { controller.setDriverGate(!cfg.driverGateEnabled) } },
+onToggleGate = {
+val eff = cfg.driverGateEnabled && cfg.masterGateEnabled
+android.util.Log.i("Amni.Gate", "toggle eff=$eff driver=${cfg.driverGateEnabled} master=${cfg.masterGateEnabled}")
+scope.launch { controller.setDriverGate(!eff) }
+},
 onToggleWeather = { v -> scope.launch { app.themeStore.setWeather(v) } },
 onConfirmPassenger = { controller.confirmPassenger() },
 onOpenSettings = { },

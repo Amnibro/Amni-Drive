@@ -36,7 +36,7 @@ class DriveController(context: Context, private val store: ConfigStore) {
     fun confirmPassenger() { _passenger.value = true }
     fun clearPassenger() { _passenger.value = false }
     fun rearDisplayId(): Int? = router.rearDisplayId()
-    suspend fun setDriverGate(enabled: Boolean) = store.setDriver(enabled)
+    suspend fun setDriverGate(enabled: Boolean) { store.setDriver(enabled); store.setMaster(enabled) }
     fun launchRear(entry: AppEntry): Boolean {
         val rearId = rearDisplayId() ?: return false
         launcher.launch(entry, rearId)

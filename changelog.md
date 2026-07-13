@@ -1,4 +1,7 @@
-﻿## v1.6.17 — 2026-07-13 — On-glass tap keyboard: full search→route chain works in-car
+﻿## v1.6.18 — 2026-07-13 — Gate one-tap toggle actually works (driver+master, effective-state based)
+**Bug:** rail shield/menu toggle flipped only `driverGateEnabled`; UI + GateResolver require `driver && master` (master defaults false since gate-off-by-default) → toggle could never show ON.
+**Ship:** `setDriverGate` sets BOTH flags; RideDashboard toggles `!(driver && master)`. onClick debug log (coords + surface dims). **DHU-verified:** tap → green shield + "62 gated" chip; tap again → OFF. Facts: DHU surface = **800x400** (host bar eats 80px); host drops ~1-in-3 rapid scripted clicks. versionCode **68**.
+## v1.6.17 — 2026-07-13 — On-glass tap keyboard: full search→route chain works in-car
 **Gap:** AA surface has no IME — SearchPanel's BasicTextField was untypeable on the car.
 **Ship:** compact QWERTY+digits+SPACE/⌫ tap keyboard inside SearchPanel when dense (we own every pixel + touch). **DHU-verified end-to-end:** magnifier → type "aec" → live Photon results → GO → OSRM route "24 min · 14.0 mi" traffic-colored on the road, TRIP tile synced, END clears. Note: rapid host clicks can drop (~1 in 3 at 1.2s spacing) — keys are tolerant, users retap. versionCode **67**.
 ## v1.6.16 — 2026-07-13 — In-dash theme cycle + car drawer fits without scroll

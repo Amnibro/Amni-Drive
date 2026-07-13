@@ -114,6 +114,7 @@ panY += distanceY
 }
 }
 override fun onClick(x: Float, y: Float) {
+Log.i(TAG, "onClick $x,$y fullUi=$fullUi surface=${container?.width}x${container?.height}")
 if (fullUi) {
 if (pointerDown) {
 injectTouch(lastTouchX, lastTouchY, MotionEvent.ACTION_UP, gestureDownTime, SystemClock.uptimeMillis())
