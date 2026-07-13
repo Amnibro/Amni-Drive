@@ -158,7 +158,8 @@ onLaunchRear = { controller.launchRear(it) },
 onToggleGate = { lifecycleScope.launch { controller.setDriverGate(!cfg.driverGateEnabled) } },
 onToggleWeather = { v -> lifecycleScope.launch { app.themeStore.setWeather(v) } },
 onConfirmPassenger = { controller.confirmPassenger() },
-onOpenSettings = { startActivity(Intent(this@LinkActivity, SettingsActivity::class.java)) }
+onOpenSettings = { startActivity(Intent(this@LinkActivity, SettingsActivity::class.java)) },
+onSetTileLayout = { v -> lifecycleScope.launch { app.themeStore.setTileLayout(v) } }
 )
 }
 }

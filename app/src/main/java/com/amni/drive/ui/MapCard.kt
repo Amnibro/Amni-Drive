@@ -28,6 +28,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,6 +44,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.amni.drive.aa.AaNavState
 import com.amni.drive.map.AmniMap
 import com.amni.drive.map.Geocoder
 import com.amni.drive.map.MapCamera
@@ -75,22 +77,34 @@ fun MapCard(
     onLongPress: (Double, Double) -> Unit,
     onGo: (Place) -> Unit,
     onAddStop: (Place) -> Unit,
-    onEndRoute: () -> Unit
+    onEndRoute: () -> Unit,
+    dense: Boolean = false
 ) {
     val p = LocalAmni.current
     var searchOpen by remember { mutableStateOf(false) }
+    val searchPulse by AaNavState.searchPulse.collectAsState()
+    LaunchedEffect(searchPulse) {
+        if (searchPulse > 0L) {
+            searchOpen = true
+            onShowLayers(false)
+            onShowReport(false)
+        }
+    }
     val chromeBg = if (p.isLight) Color(0xF5FFFFFF) else Color(0xF012151C)
     val chromeLine = p.hairline
+    val corner = if (dense) 12.dp else 20.dp
+    val btnPad = if (dense) 6.dp else 10.dp
+    val btnGap = if (dense) 4.dp else 8.dp
     GlassCard(modifier) {
-        Box(Modifier.fillMaxSize().clip(RoundedCornerShape(20.dp))) {
+        Box(Modifier.fillMaxSize().clip(RoundedCornerShape(corner))) {
             AmniMap(camera, tiles, route, reports, stops, stops.lastOrNull(), location, p.acc, p.panel2, onLongPress, Modifier.fillMaxSize())
-            Column(Modifier.align(Alignment.TopEnd).padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                MapBtn(Icons.Rounded.Search, "FIND", searchOpen, p.acc) { searchOpen = !searchOpen; onShowLayers(false); onShowReport(false) }
-                MapBtn(Icons.Rounded.Warning, "REPORT", showReport, p.err) { onShowReport(!showReport); onShowLayers(false); searchOpen = false }
-                MapBtn(Icons.Rounded.MyLocation, "FOLLOW", camera.follow, p.acc) { camera.follow = true }
-                MapBtn(Icons.Rounded.Layers, "MAP", showLayers, p.acc) { onShowLayers(!showLayers); onShowReport(false); searchOpen = false }
-                MapBtn(Icons.Rounded.Add, "", false, p.acc) { camera.zoom = (camera.zoom + 1).coerceAtMost(17) }
-                MapBtn(Icons.Rounded.Remove, "", false, p.acc) { camera.zoom = (camera.zoom - 1).coerceAtLeast(11) }
+            Column(Modifier.align(Alignment.TopEnd).padding(btnPad), verticalArrangement = Arrangement.spacedBy(btnGap), horizontalAlignment = Alignment.CenterHorizontally) {
+                MapBtn(Icons.Rounded.Search, if (dense) "" else "FIND", searchOpen, p.acc, dense) { searchOpen = !searchOpen; onShowLayers(false); onShowReport(false) }
+                if (!dense) MapBtn(Icons.Rounded.Warning, "REPORT", showReport, p.err, dense) { onShowReport(!showReport); onShowLayers(false); searchOpen = false }
+                MapBtn(Icons.Rounded.MyLocation, if (dense) "" else "FOLLOW", camera.follow, p.acc, dense) { camera.follow = true }
+                MapBtn(Icons.Rounded.Layers, if (dense) "" else "MAP", showLayers, p.acc, dense) { onShowLayers(!showLayers); onShowReport(false); searchOpen = false }
+                MapBtn(Icons.Rounded.Add, "", false, p.acc, dense) { camera.zoom = (camera.zoom + 1).coerceAtMost(17) }
+                MapBtn(Icons.Rounded.Remove, "", false, p.acc, dense) { camera.zoom = (camera.zoom - 1).coerceAtLeast(11) }
             }
             route?.let { r ->
                 Row(Modifier.align(Alignment.TopStart).padding(10.dp).clip(RoundedCornerShape(16.dp)).background(chromeBg).border(1.dp, p.acc.copy(alpha = 0.2f), RoundedCornerShape(16.dp)).padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -103,9 +117,9 @@ fun MapCard(
                 }
             }
             if (routing) Box(Modifier.align(Alignment.TopStart).padding(10.dp).clip(RoundedCornerShape(99.dp)).background(p.accDim).border(1.dp, p.acc.copy(alpha = 0.3f), RoundedCornerShape(99.dp)).padding(horizontal = 14.dp, vertical = 7.dp)) { Text("Routing…", color = p.acc, fontSize = 12.sp, fontWeight = FontWeight.Medium) }
-            if (route == null && !routing) Box(Modifier.align(Alignment.BottomStart).padding(10.dp).clip(RoundedCornerShape(99.dp)).background(chromeBg).border(1.dp, chromeLine, RoundedCornerShape(99.dp)).padding(horizontal = 12.dp, vertical = 7.dp)) { Text("Search or long-press for destination", color = p.dim, fontSize = 11.sp) }
+            if (route == null && !routing && !searchOpen) Box(Modifier.align(Alignment.BottomStart).padding(10.dp).clip(RoundedCornerShape(99.dp)).background(chromeBg).border(1.dp, chromeLine, RoundedCornerShape(99.dp)).padding(horizontal = 12.dp, vertical = 7.dp)) { Text("Search or long-press for destination", color = p.dim, fontSize = 11.sp) }
             if (!netOk) Box(Modifier.align(Alignment.BottomCenter).padding(10.dp).clip(RoundedCornerShape(99.dp)).background(Color(0xEE3A2808)).border(1.dp, Color(0xFFFFB454).copy(alpha = 0.45f), RoundedCornerShape(99.dp)).padding(horizontal = 14.dp, vertical = 8.dp)) { Text("No network — map, search & routing need Wi‑Fi/hotspot", color = Color(0xFFFFB454), fontSize = 11.sp, fontWeight = FontWeight.SemiBold) }
-            if (searchOpen) SearchPanel(location, route != null, Modifier.align(Alignment.TopCenter).padding(top = 8.dp), { searchOpen = false; onGo(it) }, { searchOpen = false; onAddStop(it) })
+            if (searchOpen) SearchPanel(location, route != null, dense, Modifier.align(Alignment.TopCenter).fillMaxWidth(if (dense) 0.92f else 0.7f).padding(top = 8.dp, start = 8.dp, end = if (dense) 48.dp else 8.dp), { searchOpen = false; onGo(it) }, { searchOpen = false; onAddStop(it) }, { searchOpen = false })
             if (showLayers) LayersPanel(camera, tiles, Modifier.align(Alignment.TopEnd).padding(end = 62.dp, top = 8.dp))
             if (showReport) ReportPanel(location, reportStore, Modifier.align(if (fullNav) Alignment.BottomCenter else Alignment.BottomEnd).padding(8.dp)) { onShowReport(false) }
             Text("© OSM · CARTO · ESRI", color = Color(0xFF5B6A7D), fontFamily = FontFamily.Monospace, fontSize = 7.sp, modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp))
@@ -113,20 +127,25 @@ fun MapCard(
     }
 }
 @Composable
-private fun SearchPanel(location: Location?, hasRoute: Boolean, modifier: Modifier, onGo: (Place) -> Unit, onAddStop: (Place) -> Unit) {
+private fun SearchPanel(location: Location?, hasRoute: Boolean, dense: Boolean, modifier: Modifier, onGo: (Place) -> Unit, onAddStop: (Place) -> Unit, onClose: () -> Unit) {
     val p = LocalAmni.current
-    var query by remember { mutableStateOf("") }
+    var query by remember { mutableStateOf(AaNavState.lastQuery) }
     var results by remember { mutableStateOf<List<Place>>(emptyList()) }
     var searching by remember { mutableStateOf(false) }
     LaunchedEffect(query) {
+        AaNavState.lastQuery = query
         if (query.length < 3) { results = emptyList(); return@LaunchedEffect }
         searching = true
         delay(450)
         results = Geocoder.search(query, location?.latitude, location?.longitude)
         searching = false
     }
-    GlassCard(modifier.width(360.dp)) {
-        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    GlassCard(modifier) {
+        Column(Modifier.padding(if (dense) 8.dp else 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("MAP SEARCH", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.weight(1f))
+                Text("✕", color = p.dim, fontSize = 14.sp, modifier = Modifier.clickable { onClose() })
+            }
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(99.dp)).background(p.panel2).border(1.dp, p.line2, RoundedCornerShape(99.dp)).padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("🔎", fontSize = 13.sp)
                 BasicTextField(query, { query = it }, Modifier.weight(1f), textStyle = TextStyle(color = p.ink, fontFamily = FontFamily.Monospace, fontSize = 12.sp), cursorBrush = SolidColor(p.acc), singleLine = true, decorationBox = { inner -> Box { if (query.isEmpty()) Text("SEARCH PLACES & ADDRESSES", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 10.sp, letterSpacing = 1.sp); inner() } })
@@ -148,16 +167,19 @@ private fun SearchPanel(location: Location?, hasRoute: Boolean, modifier: Modifi
     }
 }
 @Composable
-private fun MapBtn(icon: ImageVector, label: String, active: Boolean, tint: Color, onClick: () -> Unit) {
+private fun MapBtn(icon: ImageVector, label: String, active: Boolean, tint: Color, dense: Boolean = false, onClick: () -> Unit) {
     val p = LocalAmni.current
+    val sz = if (dense) 40.dp else 58.dp
+    val r = if (dense) 12.dp else 16.dp
+    val ic = if (dense) 18.dp else 22.dp
     Column(
-        Modifier.size(58.dp).clip(RoundedCornerShape(16.dp))
+        Modifier.size(sz).clip(RoundedCornerShape(r))
             .background(if (active) tint.copy(alpha = 0.18f) else if (p.isLight) Color(0xF0FFFFFF) else Color(0xE012151C))
-            .border(1.dp, if (active) tint.copy(alpha = 0.5f) else p.hairline, RoundedCornerShape(16.dp))
+            .border(1.dp, if (active) tint.copy(alpha = 0.5f) else p.hairline, RoundedCornerShape(r))
             .clickable { onClick() },
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
     ) {
-        Icon(icon, label, Modifier.size(22.dp), tint = if (active) tint else p.soft)
+        Icon(icon, label, Modifier.size(ic), tint = if (active) tint else p.soft)
         if (label.isNotEmpty()) Text(label, color = if (active) tint else p.dim, fontFamily = FontFamily.Monospace, fontSize = 7.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
     }
 }

@@ -1,8 +1,11 @@
 package com.amni.drive.ui
 import android.app.role.RoleManager
+import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -52,11 +55,12 @@ import com.amni.drive.link.LinkProto
 import kotlinx.coroutines.launch
 private enum class SettingsPage(val icon: String, val title: String, val sub: String) {
     GATE("🛡️", "DISTRACTION GATE", "Per-display · no hard locks"),
+    AUTO("🔌", "AUTO-START", "Plug in & go · wireless & go"),
     LOOKS("🎨", "APPEARANCE", "Presets · accent · weather · tiles"),
     CAR("🚗", "CAR / USB", "Plug phone into factory Android Auto"),
     WIRE("⚡", "AMNI WIRE", "Replace Android Auto on the wire"),
     LINK("🔗", "AMNI LINK", "Phone host · Android head unit"),
-    ABOUT("ℹ️", "ABOUT", "Amni-Drive v1.3.0 · AA replacement")
+    ABOUT("ℹ️", "ABOUT", "Amni-Drive v1.4.0 · AA replacement")
 }
 class SettingsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -97,6 +101,7 @@ private fun SettingsScreen(store: ConfigStore, themes: ThemeStore, theme: UiThem
                 Column(Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     when (page) {
                         SettingsPage.GATE -> GatePane(store)
+                        SettingsPage.AUTO -> AutoPane(store)
                         SettingsPage.LOOKS -> LooksPane(themes, theme)
                         SettingsPage.CAR -> CarUsbPane()
                         SettingsPage.WIRE -> WirePane()
@@ -118,6 +123,31 @@ private fun GatePane(store: ConfigStore) {
     SetRow("↪️", "Auto-route to rear", "A gated launch up front jumps straight to the rear screen instead of dead-ending.", cfg.autoRouteRearDisplay) { scope.launch { store.setAutoRoute(it) } }
     SetRow("⚡", "Master gate", "Kills every gate for this drive — re-arms next ignition.", cfg.masterGateEnabled) { scope.launch { store.setMaster(it) } }
     Text("NAV · MEDIA · PHONE ARE NEVER GATED. EVERY DECISION FLOWS THROUGH GATEMANAGER.DECIDE() — WHAT OUI SEE IS WHAT RUNS.", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 9.sp, lineHeight = 13.sp, modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(p.accDim).padding(10.dp))
+}
+@Composable
+private fun AutoPane(store: ConfigStore) {
+    val p = LocalAmni.current
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val cfg by store.config.collectAsStateWithLifecycle(DriveConfig())
+    val bonded = remember { runCatching { (ctx.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager).adapter?.bondedDevices?.toList() ?: emptyList() }.getOrDefault(emptyList()) }
+    val overlayOk = Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(ctx)
+    SetRow("🔌", "Start on power (plug in & go)", "Cable into the car → the dash opens itself. On a dedicated tablet dash this is all you need.", cfg.autoStartOnPower) { scope.launch { store.setAutoPower(it) } }
+    SetRow("📶", "Start on Bluetooth (wireless & go)", "Phone links to the car stereo → the dash opens. Pick your car below so headphones don't trigger it.", cfg.autoStartOnBluetooth) { scope.launch { store.setAutoBt(it) } }
+    SetRow("🚗", "Enter system car mode", "Also flips Android into CAR_DOCK / car UI on connect for bigger touch targets.", cfg.autoEnterCarMode) { scope.launch { store.setAutoCarMode(it) } }
+    Text("MY CAR'S BLUETOOTH" + if (cfg.carBtMac.isNotBlank()) " · SET" else "", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+    if (bonded.isEmpty()) Text("No paired Bluetooth devices found (grant Nearby devices / pair your car first).", color = p.dim, fontSize = 10.sp)
+    bonded.forEach { d ->
+        val mac = runCatching { d.address }.getOrDefault("")
+        val name = runCatching { d.name }.getOrNull() ?: mac
+        val sel = mac.equals(cfg.carBtMac, true)
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(if (sel) p.accDim else Color.Transparent).border(1.dp, if (sel) p.acc.copy(alpha = 0.4f) else p.dim.copy(alpha = 0.2f), RoundedCornerShape(10.dp)).clickable { scope.launch { store.setCarMac(if (sel) "" else mac); store.setAutoBt(!sel) } }.padding(10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(if (sel) "✓" else "📻", fontSize = 14.sp)
+            Column { Text(name, color = if (sel) p.acc else p.ink, fontSize = 12.sp, fontWeight = FontWeight.Bold); Text(mac, color = p.dim, fontSize = 9.sp, fontFamily = FontFamily.Monospace) }
+        }
+    }
+    if (!overlayOk) Text("⚠ TAP: allow 'Display over other apps' — required so the dash can open while the screen is locked/asleep.", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 10.sp, lineHeight = 14.sp, modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(p.accDim).padding(10.dp).clickable { runCatching { ctx.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + ctx.packageName)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } })
+    Text("LIKE CARPLAY/AA: CONNECT → DASH. RUNS AS A BACKGROUND WATCH SERVICE + BOOT RESTART. THE DISTRACTION GATE STILL GOVERNS WHAT PLAYS.", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 9.sp, lineHeight = 13.sp, modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(p.accDim).padding(10.dp))
 }
 @Composable
 private fun LooksPane(themes: ThemeStore, theme: UiTheme) {
@@ -146,6 +176,14 @@ private fun LooksPane(themes: ThemeStore, theme: UiTheme) {
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         listOf("COMPACT", "COZY", "BIG").forEachIndexed { i, label -> Seg(label, theme.tileScale == i) { scope.launch { themes.setScale(i) } } }
     }
+    Text("TILE LAYOUT — DASH ARRANGEMENT", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 9.sp, letterSpacing = 1.5.sp)
+    Text("Tiles resize to window · Auto re-picks for phone / DHU / car glass", color = p.soft, fontSize = 11.sp)
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        TileLayout.entries.take(3).forEach { mode -> Seg(mode.label.uppercase(), theme.tileLayout == mode) { scope.launch { themes.setTileLayout(mode) } } }
+    }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        TileLayout.entries.drop(3).forEach { mode -> Seg(mode.label.uppercase(), theme.tileLayout == mode) { scope.launch { themes.setTileLayout(mode) } } }
+    }
     Text("MAP STYLE", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 9.sp, letterSpacing = 1.5.sp)
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         listOf("AUTO — MATCH THEME" to -1, "DARK" to 0, "LIGHT" to 1, "SATELLITE" to 2).forEach { (label, v) -> Seg(label, theme.basemap == v) { scope.launch { themes.setBasemap(v) } } }
@@ -154,20 +192,60 @@ private fun LooksPane(themes: ThemeStore, theme: UiTheme) {
 @Composable
 private fun WirePane() {
     val p = LocalAmni.current
-    Text("AMNI WIRE — REPLACE ANDROID AUTO", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-    Text("Goal: phone runs Amni as the AA host. Factory head units get our H.264 UI + touch over the same class of wire Google uses (AOA/USB or wireless), grounded in the public reverse-engineered stack (aasdk/OpenAuto lineage).", color = p.soft, fontSize = 12.sp, lineHeight = 17.sp)
-    Text("SHIPPED", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 9.sp, letterSpacing = 1.5.sp)
-    Text("• wire/ frame+session+host · multi-channel Link · H264 scaffold · AOA probe service\n• Open source: Apache-2.0 · ROADMAP · live car captures in docs/research/", color = p.soft, fontSize = 11.sp, lineHeight = 16.sp)
     val ctx = LocalContext.current
+    val app = ctx.applicationContext as AmniDriveApp
+    val cfg by app.configStore.config.collectAsStateWithLifecycle(DriveConfig())
+    val scope = rememberCoroutineScope()
+    Text("DUAL-PATH — FULL AMNI UI ON THE CAR", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+    Text("Path A RIDE: Gearhead keeps USB/TLS; Amni paints full UI on AA nav Surface. Path B OWN: Amni is AA phone-host (AOA+video). AUTO prefers A when gearhead is alive, B when free. Pivot only on hard walls.", color = p.soft, fontSize = 12.sp, lineHeight = 17.sp)
+    Text("MODE: ${cfg.aaPathMode.uppercase()}", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        listOf(
+            "AUTO" to DriveConfig.PATH_AUTO,
+            "RIDE (A)" to DriveConfig.PATH_RIDE,
+            "OWN (B)" to DriveConfig.PATH_OWN
+        ).forEach { (label, mode) ->
+            val on = cfg.aaPathMode == mode
+            Box(Modifier.clip(RoundedCornerShape(10.dp)).background(if (on) p.acc else p.panel2).border(1.dp, p.acc, RoundedCornerShape(10.dp)).clickable {
+                scope.launch { app.configStore.setAaPathMode(mode) }
+            }.padding(horizontal = 12.dp, vertical = 10.dp)) {
+                Text(label, color = if (on && p.isLight) Color.White else if (on) Color(0xFF05070A) else p.acc, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
     Box(Modifier.clip(RoundedCornerShape(12.dp)).background(p.acc).clickable {
+        com.amni.drive.wire.ProjectionHostService.start(ctx)
+    }.padding(horizontal = 16.dp, vertical = 12.dp)) {
+        Text("START FULL UI PROJECTION (VIRTUAL DISPLAY)", color = if (p.isLight) Color.White else Color(0xFF05070A), fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+    }
+    Box(Modifier.clip(RoundedCornerShape(12.dp)).background(p.panel2).border(1.dp, p.acc, RoundedCornerShape(12.dp)).clickable {
+        scope.launch { app.configStore.setAaPathMode(DriveConfig.PATH_OWN) }
         com.amni.drive.wire.AoaProbeService.claim(ctx)
     }.padding(horizontal = 16.dp, vertical = 12.dp)) {
-        Text("START AOA PROBE + REQUEST PERMISSION", color = if (p.isLight) Color.White else Color(0xFF05070A), fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+        Text("PATH B · CLAIM AOA (SETS MODE=OWN)", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
     }
-    Text("If gearhead holds the session, run scripts/claim_aoa_research.ps1 from the PC (force-stops AA, restarts probe). Accept the USB permission dialog on the phone when it appears.", color = p.dim, fontSize = 10.sp, lineHeight = 14.sp)
-    Text("NEXT ON THE CAR", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 9.sp, letterSpacing = 1.5.sp)
-    Text("1. Plug USB while ADB wireless debug stays up.\n2. We capture AOA probes / session attempts in logcat.\n3. Align protobuf payloads with aasdk message set.\n4. First IDR accepted by factory HU = milestone.\nUntil then: CAR uses Car App Library soft path; LINK uses full Amni UI on Android receivers.", color = p.soft, fontSize = 11.sp, lineHeight = 16.sp)
-    Text("Personal testing project. Built on published reverse-engineering for interop — not a Play-certified Google host.", color = p.dim, fontSize = 10.sp, lineHeight = 14.sp)
+    Box(Modifier.clip(RoundedCornerShape(12.dp)).background(p.panel2).border(1.dp, p.acc, RoundedCornerShape(12.dp)).clickable {
+        com.amni.drive.wire.AaSessionWatchService.tick(ctx)
+    }.padding(horizontal = 16.dp, vertical = 12.dp)) {
+        Text("FORCE DUAL-PATH WATCH TICK", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+    }
+    Text("MESHNET DEV BRIDGE", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+    Text("HTTP on all ifaces port ${com.amni.drive.wire.MeshDevBridgeService.PORT} (Nord Meshnet / LAN). Default RIDE never opens USB — keeps wifi adb alive. Agent uses /status /logs /action over mesh.", color = p.soft, fontSize = 12.sp, lineHeight = 17.sp)
+    val meshTok = remember { com.amni.drive.wire.MeshDevBridgeService.token(ctx) }
+    Text("token=$meshTok", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 10.sp)
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Box(Modifier.clip(RoundedCornerShape(10.dp)).background(p.acc).clickable {
+            com.amni.drive.wire.MeshDevBridgeService.start(ctx)
+        }.padding(horizontal = 12.dp, vertical = 10.dp)) {
+            Text("START BRIDGE", color = if (p.isLight) Color.White else Color(0xFF05070A), fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        }
+        Box(Modifier.clip(RoundedCornerShape(10.dp)).background(p.panel2).border(1.dp, p.acc, RoundedCornerShape(10.dp)).clickable {
+            com.amni.drive.wire.MeshDevBridgeService.stop(ctx)
+        }.padding(horizontal = 12.dp, vertical = 10.dp)) {
+            Text("STOP BRIDGE", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        }
+    }
+    Text("RIDE default: no openAccessory on launch/attach (fixes wifi adb death). OWN only via button above. Mesh: http://PHONE_MESH_IP:7931/status?token=…", color = p.dim, fontSize = 10.sp, lineHeight = 14.sp)
 }
 @Composable
 private fun CarUsbPane() {

@@ -1,4 +1,5 @@
 <resources>
     <string name="app_name">Amni-Drive</string>
+    <string name="media_label">Amni (media stub)</string>
     <string name="settings_title">Amni-Drive Settings</string>
 </resources>

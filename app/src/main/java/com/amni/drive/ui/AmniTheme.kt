@@ -59,22 +59,46 @@ Color(0xFF07090C), Color(0xFF11151C), Color(0xFF171C25), Color(0xFF252A34), Colo
 acc, Color(0xFFEEF1F5), Color(0xFFA8B0BB), Color(0xFF6E7684), Color(0xFFFFD166), Color(0xFFFF5C7A), false
 )
 }
-data class UiTheme(val preset: AmniPreset = AmniPreset.AMNI_DARK, val accent: Long? = null, val weatherBg: Boolean = true, val tileScale: Int = 1, val basemap: Int = -1)
+enum class TileLayout(val label: String, val blurb: String) {
+AUTO("Auto", "Adapt size & position to window"),
+MAP_FOCUS("Map focus", "Big map · slim side tiles"),
+MEDIA_FOCUS("Media focus", "Map + large now-playing"),
+BALANCED("Balanced", "Map · media · widgets"),
+STACKED("Stacked", "Map top · tiles bottom"),
+MAP_ONLY("Map only", "Full-bleed map")
+}
+data class UiTheme(
+val preset: AmniPreset = AmniPreset.AMNI_DARK,
+val accent: Long? = null,
+val weatherBg: Boolean = true,
+val tileScale: Int = 1,
+val basemap: Int = -1,
+val tileLayout: TileLayout = TileLayout.AUTO
+)
 class ThemeStore(private val context: Context) {
 val theme: Flow<UiTheme> = context.themeStore.data.map {
-UiTheme(runCatching { AmniPreset.valueOf(it[PRESET] ?: "AMNI_DARK") }.getOrDefault(AmniPreset.AMNI_DARK), it[ACCENT]?.toLongOrNull(), it[WEATHER] ?: true, it[SCALE] ?: 1, it[BASEMAP] ?: -1)
+UiTheme(
+runCatching { AmniPreset.valueOf(it[PRESET] ?: "AMNI_DARK") }.getOrDefault(AmniPreset.AMNI_DARK),
+it[ACCENT]?.toLongOrNull(),
+it[WEATHER] ?: true,
+it[SCALE] ?: 1,
+it[BASEMAP] ?: -1,
+runCatching { TileLayout.valueOf(it[LAYOUT] ?: "AUTO") }.getOrDefault(TileLayout.AUTO)
+)
 }
 suspend fun setPreset(p: AmniPreset) = context.themeStore.edit { it[PRESET] = p.name; it.remove(ACCENT) }
 suspend fun setAccent(a: Long?) = context.themeStore.edit { if (a == null) it.remove(ACCENT) else it[ACCENT] = a.toString() }
 suspend fun setWeather(v: Boolean) = context.themeStore.edit { it[WEATHER] = v }
 suspend fun setScale(v: Int) = context.themeStore.edit { it[SCALE] = v }
 suspend fun setBasemap(v: Int) = context.themeStore.edit { it[BASEMAP] = v }
+suspend fun setTileLayout(v: TileLayout) = context.themeStore.edit { it[LAYOUT] = v.name }
 companion object {
 private val PRESET = stringPreferencesKey("preset")
 private val ACCENT = stringPreferencesKey("accent")
 private val WEATHER = booleanPreferencesKey("weather_bg")
 private val SCALE = intPreferencesKey("tile_scale")
 private val BASEMAP = intPreferencesKey("basemap")
+private val LAYOUT = stringPreferencesKey("tile_layout")
 }
 }
 val LocalAmni = staticCompositionLocalOf { paletteFor(AmniPreset.AMNI_DARK, null) }

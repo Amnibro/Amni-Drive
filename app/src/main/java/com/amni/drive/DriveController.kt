@@ -42,12 +42,20 @@ class DriveController(context: Context, private val store: ConfigStore) {
         launcher.launch(entry, rearId)
         return true
     }
-    fun onLaunch(entry: AppEntry, cfg: DriveConfig, state: DriveState, passenger: Boolean): GateDecision {
+    fun onLaunch(entry: AppEntry, cfg: DriveConfig, state: DriveState, passenger: Boolean, surfaceDisplayId: Int? = null): GateDecision {
         val rearId = if (cfg.autoRouteRearDisplay) rearDisplayId() else null
-        val useRear = entry.category.distracting && rearId != null
+        val useRear = entry.category.distracting && rearId != null && surfaceDisplayId == null
         val role = if (useRear) DisplayRole.REAR_PASSENGER else DisplayRole.PRIMARY_DRIVER
         val decision = GateManager.decide(GateResolver.input(entry.category, role, state, cfg, passenger))
-        if (decision.allow) launcher.launch(entry, if (useRear) rearId else null)
+        if (decision.allow) {
+            val target = when {
+                surfaceDisplayId != null -> surfaceDisplayId
+                useRear -> rearId
+                else -> null
+            }
+            val ok = launcher.launch(entry, target)
+            if (!ok && surfaceDisplayId != null) launcher.launch(entry, null)
+        }
         return decision
     }
     private fun buildSources(): List<MotionSource> {

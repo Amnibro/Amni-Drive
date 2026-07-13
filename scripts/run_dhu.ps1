@@ -1,27 +1,32 @@
-$ErrorActionPreference = "Continue"
+﻿$ErrorActionPreference = "Continue"
 $sdk = "$env:LOCALAPPDATA\Android\Sdk"
 $adb = Join-Path $sdk "platform-tools\adb.exe"
 $dhuDir = Join-Path $sdk "extras\google\auto"
 $dhu = Join-Path $dhuDir "desktop-head-unit.exe"
 if (-not (Test-Path $dhu)) {
-  Write-Host "DHU not installed. Run Android Studio SDK Manager → SDK Tools → Android Auto Desktop Head Unit Emulator"
-  Write-Host "Or: sdkmanager `"extras;google;auto`""
+  Write-Host "Install SDK package: extras;google;auto (Android Auto Desktop Head Unit Emulator)"
   exit 1
 }
-if (-not (Test-Path $adb)) { Write-Host "adb missing at $adb"; exit 1 }
-Write-Host "=== Amni Drive · Desktop Head Unit ==="
-Write-Host "1) On phone: Android Auto → ⋮ → Start head unit server (notification appears)"
-Write-Host "2) Developer settings: Unknown sources ON, Application mode = Developer"
-Write-Host "3) Phone unlocked, USB or wireless debugging connected to this PC"
-Write-Host ""
-$dev = (& $adb devices 2>&1 | Out-String)
-if ($dev -notmatch "\tdevice") {
-  Write-Host "No adb device. Connect wireless debugging / USB, then re-run."
-  Write-Host $dev
+$devs = & $adb devices 2>&1 | Out-String
+if ($devs -notmatch "\tdevice") {
+  Write-Host "No adb device. Connect wireless debugging first."
+  Write-Host $devs
   exit 2
 }
-Write-Host "Device online. Forwarding 5277 and launching DHU..."
-& $adb forward tcp:5277 tcp:5277 2>&1 | Write-Host
+Write-Host ""
+Write-Host "=== Amni Drive · Desktop Head Unit (fake car) ==="
+Write-Host "On PHONE first:"
+Write-Host "  Android Auto settings → tap Version 10x → Developer mode"
+Write-Host "  Developer settings → Unknown sources ON"
+Write-Host "  Developer settings → Start head unit server (keep notification)"
+Write-Host "  Leave phone unlocked"
+Write-Host ""
+Write-Host "Then this script: adb forward 5277 + launch DHU"
+Write-Host ""
+& $adb forward --remove tcp:5277 2>$null
+& $adb forward tcp:5277 tcp:5277
+Write-Host "Forward list: $(& $adb forward --list)"
+& $adb shell am startservice -n com.amni.drive/.aa.AmniMediaService 2>$null
+Write-Host "Starting DHU window..."
 Set-Location $dhuDir
-Write-Host "Starting: $dhu"
-& $dhu
+& $dhu -a localhost:5277

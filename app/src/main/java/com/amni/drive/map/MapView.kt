@@ -138,10 +138,21 @@ fun AmniMap(
                     val path = Path().apply { moveTo(pts[0].x, pts[0].y); for (i in 1 until pts.size) lineTo(pts[i].x, pts[i].y) }
                     drawPath(path, Color.Black.copy(alpha = 0.55f), style = Stroke(13.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
                     drawPath(path, accent.copy(alpha = 0.16f), style = Stroke(20.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
-                    if (r.segmentSpeeds.size >= pts.size - 1) for (i in 0 until pts.size - 1) {
-                        val s = r.segmentSpeeds[i]
-                        drawLine(if (s < 4.0) Color(0xFFFF5A5A) else if (s < 8.0) Color(0xFFFFB454) else accent, pts[i], pts[i + 1], strokeWidth = 6.dp.toPx(), cap = StrokeCap.Round)
-                    } else drawPath(path, accent, style = Stroke(6.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+                    if (r.segmentSpeeds.isNotEmpty()) {
+                        val n = pts.size - 1
+                        for (i in 0 until n) {
+                            val s = r.segmentSpeeds.getOrElse(i) {
+                                r.segmentSpeeds[((i.toDouble() / n.coerceAtLeast(1)) * r.segmentSpeeds.size).toInt().coerceIn(0, r.segmentSpeeds.lastIndex)]
+                            }
+                            val col = when {
+                                s < 2.5 -> Color(0xFFFF3B3B)
+                                s < 7.0 -> Color(0xFFFF8A3D)
+                                s < 13.0 -> Color(0xFFFFD54A)
+                                else -> accent
+                            }
+                            drawLine(col, pts[i], pts[i + 1], strokeWidth = 7.dp.toPx(), cap = StrokeCap.Round)
+                        }
+                    } else drawPath(path, accent, style = Stroke(7.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
                 }
             }
             stops.dropLast(1).forEachIndexed { i, s ->

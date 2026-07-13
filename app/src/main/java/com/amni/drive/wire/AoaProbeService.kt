@@ -20,11 +20,18 @@ import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.amni.drive.config.ConfigStore
+import com.amni.drive.config.DriveConfig
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import java.util.concurrent.atomic.AtomicReference
 class AoaProbeService : Service() {
 private var receiver: BroadcastReceiver? = null
 private val accessoryFd = AtomicReference<ParcelFileDescriptor?>(null)
 private var sniffThread: Thread? = null
+private var freePollThread: Thread? = null
+private val freePollActive = AtomicReference(false)
+private val sessionRunning = AtomicReference(false)
 override fun onBind(intent: Intent?): IBinder? = null
 override fun onCreate() {
 super.onCreate()
@@ -43,52 +50,73 @@ when (intent.action) {
 UsbManager.ACTION_USB_ACCESSORY_ATTACHED -> {
 val acc = readAccessory(intent)
 log("ATTACHED ${desc(acc)}")
-requestOrOpen(acc)
+if (pathMode() == DriveConfig.PATH_OWN) requestOrOpen(acc)
+else log("ATTACHED ignored · mode=${pathMode()} (protect wifi adb)")
 }
 UsbManager.ACTION_USB_ACCESSORY_DETACHED -> {
 log("DETACHED ${desc(readAccessory(intent))}")
 closeAccessory()
 updateNotif("AOA detached")
+if (pathMode() == DriveConfig.PATH_OWN) scheduleFreePoll()
 }
 ACTION_USB_STATE -> {
 val connected = intent.getBooleanExtra("connected", false)
 val configured = intent.getBooleanExtra("configured", false)
 val accessory = intent.getBooleanExtra("accessory", false)
-log("USB_STATE connected=$connected configured=$configured accessory=$accessory")
-if (accessory) pollAccessories(requestPerm = true)
+log("USB_STATE connected=$connected configured=$configured accessory=$accessory mode=${pathMode()}")
+if (pathMode() == DriveConfig.PATH_OWN && accessory) {
+pollAccessories(requestPerm = true)
+if (accessoryFd.get() == null) scheduleFreePoll()
+}
 }
 ACTION_USB_PERMISSION -> {
 val acc = readAccessory(intent)
 val granted = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)
 log("PERMISSION granted=$granted ${desc(acc)}")
-if (granted) {
+if (granted && pathMode() == DriveConfig.PATH_OWN) {
 updateNotif("AOA permission OK · opening")
 tryOpen(acc)
-if (accessoryFd.get() == null) {
-log("open failed after grant — retrying poll")
-pollAccessories(requestPerm = false)
-}
-} else updateNotif("AOA permission denied")
+if (accessoryFd.get() == null) scheduleFreePoll()
+} else if (!granted) updateNotif("AOA permission denied")
+else log("PERMISSION ignored · mode=${pathMode()}")
 }
 }
 }
 }
 if (Build.VERSION.SDK_INT >= 33) registerReceiver(receiver, filter, RECEIVER_NOT_EXPORTED)
 else @Suppress("UnspecifiedRegisterReceiverFlag") registerReceiver(receiver, filter)
+if (pathMode() == DriveConfig.PATH_OWN) {
 pollAccessories(requestPerm = true)
-log("probe service started")
+if (accessoryFd.get() == null) scheduleFreePoll()
+}
+log("probe service started mode=${pathMode()} gearhead=${gearheadProjectionAlive()}")
 }
 override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 when (intent?.action) {
-ACTION_POLL -> pollAccessories(requestPerm = true)
-ACTION_CLAIM -> {
-log("CLAIM requested")
+ACTION_POLL -> {
+if (pathMode() == DriveConfig.PATH_OWN) {
 pollAccessories(requestPerm = true)
+if (accessoryFd.get() == null) scheduleFreePoll()
+} else log("POLL ignored · mode=${pathMode()}")
 }
+ACTION_CLAIM -> {
+log("CLAIM → force OWN session open gearhead=${gearheadProjectionAlive()}")
+runBlocking {
+try { ConfigStore(this@AoaProbeService).setAaPathMode(DriveConfig.PATH_OWN) } catch (_: Exception) {}
+}
+freePollActive.set(false)
+sessionRunning.set(false)
+closeAccessory()
+log("CLAIM reset FD/session for fresh open")
+pollAccessories(requestPerm = true)
+if (accessoryFd.get() == null) scheduleFreePoll()
+}
+else -> { }
 }
 return START_STICKY
 }
 override fun onDestroy() {
+freePollActive.set(false)
 runCatching { unregisterReceiver(receiver) }
 closeAccessory()
 super.onDestroy()
@@ -97,13 +125,13 @@ private fun pollAccessories(requestPerm: Boolean) {
 val usb = getSystemService(USB_SERVICE) as UsbManager
 val list = usb.accessoryList
 if (list.isNullOrEmpty()) {
-log("poll: no accessories")
+log("poll: no accessories gearhead=${gearheadProjectionAlive()}")
 updateNotif("AOA probe · no accessory")
 return
 }
 list.forEach { acc ->
 val has = try { usb.hasPermission(acc) } catch (_: Exception) { false }
-log("poll: ${desc(acc)} perm=$has")
+log("poll: ${desc(acc)} perm=$has gearhead=${gearheadProjectionAlive()}")
 if (has) {
 updateNotif("AOA perm OK · opening")
 tryOpen(acc)
@@ -132,82 +160,268 @@ usb.requestPermission(acc, pi)
 log("requestPermission error: ${e.message}")
 }
 }
+private fun pathMode(): String = try {
+runBlocking { ConfigStore(this@AoaProbeService).config.first().aaPathMode }
+} catch (_: Exception) { DriveConfig.PATH_AUTO }
 private fun tryOpen(acc: UsbAccessory?) {
 if (acc == null) return
+val mode = pathMode()
+val ghCar = gearheadCarSessionAlive()
+if (mode == DriveConfig.PATH_RIDE) {
+log("RIDE mode · refuse openAccessory gearheadCar=$ghCar ${desc(acc)}")
+updateNotif("RIDE · Gearhead owns session")
+return
+}
+if (mode == DriveConfig.PATH_AUTO && ghCar) {
+log("AUTO · gearhead:car session · Path A hold (no FD steal) ${desc(acc)}")
+updateNotif("AUTO→RIDE · gearhead:car")
+scheduleFreePoll()
+return
+}
 val usb = getSystemService(USB_SERVICE) as UsbManager
 if (!usb.hasPermission(acc)) {
 log("no permission for ${desc(acc)}")
 updateNotif("AOA seen · no permission")
 return
 }
-closeAccessory()
+if (accessoryFd.get() != null || sessionRunning.get()) {
+log("already holding FD/session — skip re-open")
+return
+}
 try {
 val pfd = usb.openAccessory(acc)
 if (pfd == null) {
-log("openAccessory null (gearhead may hold FD) ${desc(acc)}")
-updateNotif("AOA open null · gearhead holds?")
+log("openAccessory null dual-path wait free gearheadCar=$ghCar mode=$mode ${desc(acc)}")
+updateNotif(if (ghCar) "AOA busy · gearhead holds FD" else "AOA open null · retry later")
+scheduleFreePoll()
 return
 }
 accessoryFd.set(pfd)
-log("OPENED fd=${pfd.fd} ${desc(acc)}")
-updateNotif("AOA OPEN · TLS attempt")
+freePollActive.set(false)
+log("OPENED fd=${pfd.fd} mode=$mode gearheadCar=${gearheadCarSessionAlive()} ${desc(acc)}")
+updateNotif("OWN · AOA OPEN · TLS")
 sniffThread = Thread({ sessionAfterOpen(pfd) }, "aoa-session").also { it.isDaemon = true; it.start() }
 } catch (e: Exception) {
 log("open error: ${e.message}")
 updateNotif("AOA error ${e.message}")
+scheduleFreePoll()
 }
+}
+private fun gearheadProjectionAlive(): Boolean {
+return try {
+val am = getSystemService(ACTIVITY_SERVICE) as android.app.ActivityManager
+@Suppress("DEPRECATION")
+am.runningAppProcesses?.any {
+it.processName.startsWith("com.google.android.projection.gearhead")
+} == true
+} catch (_: Exception) {
+false
+}
+}
+private fun gearheadCarSessionAlive(): Boolean {
+return try {
+val am = getSystemService(ACTIVITY_SERVICE) as android.app.ActivityManager
+@Suppress("DEPRECATION")
+am.runningAppProcesses?.any {
+it.processName == "com.google.android.projection.gearhead:car" ||
+it.processName == "com.google.android.projection.gearhead:projection"
+} == true
+} catch (_: Exception) {
+false
+}
+}
+private fun scheduleFreePoll() {
+if (!freePollActive.compareAndSet(false, true)) return
+log("dual-path free-poll armed sticky (non-destructive, no gearhead kill)")
+freePollThread = Thread({
+var n = 0
+while (freePollActive.get() && accessoryFd.get() == null) {
+Thread.sleep(if (n < 20) 2_000L else 5_000L)
+n++
+if (!freePollActive.get() || accessoryFd.get() != null) break
+val gh = gearheadProjectionAlive()
+if (n % 5 == 0 || n <= 3) log("free-poll #$n gearhead=$gh")
+pollAccessories(requestPerm = !gh)
+if (gh) updateNotif("AOA wait · gearhead busy ($n)")
+else updateNotif("AOA free-poll #$n")
+}
+freePollActive.set(false)
+log("dual-path free-poll end held=${accessoryFd.get() != null}")
+}, "aoa-free-poll").also { it.isDaemon = true; it.start() }
 }
 private fun sessionAfterOpen(pfd: ParcelFileDescriptor) {
+if (!sessionRunning.compareAndSet(false, true)) {
+log("session already running — skip re-open (exclusive FD)")
+try { pfd.close() } catch (_: Exception) {}
+return
+}
+val io = AoaBulkIo(pfd) { log(it) }
+var total = 0
+var aapOk = false
+var tlsOk = false
+var postOk = false
+var videoChannel = AaPostTls.CH_VIDEO
 try {
-val fis = FileInputStream(pfd.fileDescriptor)
-val fos = FileOutputStream(pfd.fileDescriptor)
 val dump = File(filesDir, "aoa_probe/first_chunk.bin")
 dump.parentFile?.mkdirs()
-// Phase A: brief passive sniff (some HU send version before TLS)
-val buf = ByteArray(4096)
-var total = 0
+val seed = java.io.ByteArrayOutputStream()
+var repliedVersion = false
+var sslSeed = emptyList<ByteArray>()
+log("phase A active sniff ≤1.2s (reply VersionRequest immediately)")
 val t0 = System.currentTimeMillis()
-log("phase A passive sniff 2s")
 FileOutputStream(dump).use { out ->
-while (accessoryFd.get() != null && System.currentTimeMillis() - t0 < 2_000L) {
-val avail = try { fis.available() } catch (_: Exception) { 0 }
-if (avail <= 0) { Thread.sleep(30); continue }
-val n = try { fis.read(buf) } catch (_: Exception) { -1 }
-if (n <= 0) break
-total += n
-out.write(buf, 0, n)
-log("RX $n head=${buf.take(n.coerceAtMost(32)).joinToString(" ") { "%02x".format(it.toInt() and 0xFF) }}")
+while (accessoryFd.get() != null && System.currentTimeMillis() - t0 < 1_200L) {
+val chunk = io.waitDrain(80)
+if (chunk.isEmpty()) continue
+total += chunk.size
+out.write(chunk)
+seed.write(chunk)
+log("phase A bulk got ${chunk.size} total=$total")
+val frames = AaAapVersion.scanFrames(seed.toByteArray(), { log(it) }, "phaseA")
+val req = frames.firstOrNull { it.msgId == AaAapVersion.MSG_VERSION_REQUEST }
+if (req != null && !repliedVersion) {
+val maj = if (req.payload.size >= 2) ((req.payload[0].toInt() and 0xFF) shl 8) or (req.payload[1].toInt() and 0xFF) else 1
+val min = if (req.payload.size >= 4) ((req.payload[2].toInt() and 0xFF) shl 8) or (req.payload[3].toInt() and 0xFF) else 1
+val rsp = AaAapVersion.versionResponse(maj, min, AaAapVersion.STATUS_OK)
+io.write(rsp)
+repliedVersion = true
+aapOk = true
+log("phase A TX VersionResponse echo=$maj.$min ${rsp.size}B hex=${AaAapVersion.hexHead(rsp)}")
+seed.reset()
+}
+val ssl = AaAapVersion.sslBodiesOf(frames)
+if (ssl.isNotEmpty()) {
+sslSeed = ssl
+log("phase A got SSL_HANDSHAKE bodies=${ssl.size}")
+if (repliedVersion) {
+log("phase A jump TLS with seed")
+break
 }
 }
-log("phase A total=$total — starting TLS server attempt")
-updateNotif("AOA · TLS handshake…")
-// Phase B: TLS server (research self-signed; expect cert fail on real HU)
+if (repliedVersion && System.currentTimeMillis() - t0 > 600L && sslSeed.isNotEmpty()) break
+if (repliedVersion && System.currentTimeMillis() - t0 > 1_000L) break
+}
+}
+log("phase A total=$total repliedVersion=$repliedVersion sslSeed=${sslSeed.size}")
+updateNotif("AOA · AAP bulk")
 try {
-val ssl = AoaSslSession.fromFd(fis, fos) { log(it) }
-val ok = ssl.handshake(12_000L)
-log("TLS result ok=$ok")
-updateNotif(if (ok) "AOA TLS OK (research)" else "AOA TLS fail/timeout (expected w/ self-signed)")
+if (repliedVersion) {
+if (sslSeed.isEmpty()) {
+log("AAP version answered — wait ClientHello")
+val wait = java.io.ByteArrayOutputStream()
+val tw = System.currentTimeMillis()
+while (System.currentTimeMillis() - tw < 2_500L) {
+val c = io.waitDrain(80)
+if (c.isNotEmpty()) {
+total += c.size
+wait.write(c)
+log("AAP post-version RX ${c.size}")
+}
+val fr = AaAapVersion.scanFrames(wait.toByteArray(), { log(it) }, "AAP")
+sslSeed = AaAapVersion.sslBodiesOf(fr)
+if (sslSeed.isNotEmpty()) break
+}
+}
+aapOk = true
+log("AAP post-version sslBodies=${sslSeed.size}")
+} else {
+val neg = AaAapVersion.negotiateBulk(io, { log(it) }, 12_000L, seed.toByteArray())
+aapOk = neg.ok
+if (sslSeed.isEmpty()) sslSeed = neg.sslBodies
+log("AAP negotiate bulk result=$aapOk sslBodies=${sslSeed.size}")
+}
 } catch (e: Exception) {
-log("TLS error ${e.message}")
-updateNotif("AOA TLS error ${e.message}")
+log("AAP negotiate bulk error ${e.message}")
 }
-// Phase C: hold + continue sniff residual
-val t1 = System.currentTimeMillis()
-while (accessoryFd.get() != null && System.currentTimeMillis() - t1 < 10_000L) {
-val avail = try { fis.available() } catch (_: Exception) { 0 }
-if (avail > 0) {
-val n = try { fis.read(buf) } catch (_: Exception) { -1 }
-if (n > 0) {
-total += n
-log("post-TLS RX $n total=$total")
+updateNotif("AOA · TLS framed bulk")
+var ssl: AoaSslSession? = null
+try {
+ssl = AoaSslSession.fromBulk(this, io) { log(it) }
+tlsOk = ssl.handshakeFramedBulk(io, 12_000L, sslSeed)
+log("TLS framed bulk ok=$tlsOk aap=$aapOk")
+if (!tlsOk) log("TLS framed bulk fail — raw path skipped (reader owns FD)")
+updateNotif(if (tlsOk) "AOA TLS OK · post-TLS" else "AOA TLS fail · project anyway")
+} catch (e: Exception) {
+log("TLS bulk error ${e.message}")
+updateNotif("AOA TLS error · project anyway")
 }
-} else Thread.sleep(50)
+if (tlsOk && ssl != null) {
+updateNotif("AOA · Auth/Discovery")
+try {
+val post = AaPostTls.run(io, ssl, { log(it) }, 18_000L) { ch ->
+videoChannel = ch
+log("POST-TLS video channel armed=$ch")
 }
-log("session end totalRX=$total")
-try { fos.close() } catch (_: Exception) {}
-try { fis.close() } catch (_: Exception) {}
+postOk = post.discovery || post.rxFrames > 0
+videoChannel = post.videoChannel
+log("POST-TLS result discovery=${post.discovery} videoCh=${post.videoChannel} rx=${post.rxFrames} notes=${post.notes}")
+updateNotif("AOA post-TLS · rx=${post.rxFrames} sd=${post.discovery}")
+} catch (e: Exception) {
+log("POST-TLS error ${e.message}")
+}
+}
+try {
+val eng = AmniProjectionEngine(applicationContext)
+eng.onLog = { log("proj $it") }
+val sslRef = ssl
+val vCh = videoChannel
+eng.setFrameSink { nalu, key ->
+try {
+if (tlsOk && sslRef != null) {
+val plain = ByteArray(2 + 8 + nalu.size)
+plain[0] = 0
+plain[1] = 0
+val ts = System.nanoTime() / 1000
+java.nio.ByteBuffer.wrap(plain, 2, 8).order(java.nio.ByteOrder.BIG_ENDIAN).putLong(ts)
+System.arraycopy(nalu, 0, plain, 10, nalu.size)
+val cipher = sslRef.encryptApp(plain)
+val flags = AaAapVersion.FRAME_BULK or AaAapVersion.ENC_ENCRYPTED
+io.write(AaAapVersion.encodeFrame(vCh, flags, cipher))
+} else {
+val frame = AaFrameCodec.video(nalu, key)
+io.write(AaFrameCodec.encode(frame))
+}
+} catch (e: Exception) {
+log("wire write fail: ${e.message}")
+}
+}
+if (eng.start()) {
+log("FULL UI projection attached to AOA bulk tls=$tlsOk videoCh=$vCh")
+updateNotif(if (tlsOk) "OWN STACK · TLS+UI → AOA" else "OWN STACK · UI → AOA")
+ProjectionHostService.active = eng
+val tHold = System.currentTimeMillis()
+while (accessoryFd.get() != null && System.currentTimeMillis() - tHold < 45_000L) {
+val chunk = io.waitDrain(200)
+if (chunk.isNotEmpty()) {
+total += chunk.size
+log("RX during project ${chunk.size} total=$total hex=${AaAapVersion.hexHead(chunk)}")
+if (tlsOk && ssl != null) {
+try {
+val fr = AaAapVersion.scanFrames(chunk, { }, "proj")
+for (p in fr) {
+if ((p.flags and AaAapVersion.ENC_ENCRYPTED) != 0) {
+val plain = ssl.decryptApp(p.payload)
+log("proj RX enc msg head=${AaAapVersion.hexHead(plain)}")
+} else log("proj RX plain msg=0x${p.msgId.toString(16)} body=${p.payload.size}")
+}
+} catch (_: Exception) {}
+}
+}
+}
+eng.stop()
+if (ProjectionHostService.active === eng) ProjectionHostService.active = null
+} else log("projection engine failed to start")
+} catch (e: Exception) {
+log("projection phase error ${e.message}")
+}
+log("session end totalRX=$total tls=$tlsOk aap=$aapOk post=$postOk bulkAlive=${io.isAlive()}")
 } catch (e: Exception) {
 log("session error ${e.message}")
+} finally {
+sessionRunning.set(false)
+io.close()
+closeAccessory()
+scheduleFreePoll()
 }
 }
 private fun closeAccessory() {
@@ -225,12 +439,19 @@ return "mfr=${acc.manufacturer} model=${acc.model} ver=${acc.version} desc=${acc
 }
 private fun log(msg: String) {
 Log.i(TAG, msg)
+val day = SimpleDateFormat("yyyyMMdd", Locale.US).format(Date())
+val line = "${SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(Date())} $msg\n"
+val bytes = line.toByteArray()
 try {
 val dir = File(filesDir, "aoa_probe")
 if (!dir.exists()) dir.mkdirs()
-val day = SimpleDateFormat("yyyyMMdd", Locale.US).format(Date())
-val line = "${SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(Date())} $msg\n"
-FileOutputStream(File(dir, "probe-$day.log"), true).use { it.write(line.toByteArray()) }
+FileOutputStream(File(dir, "probe-$day.log"), true).use { it.write(bytes) }
+} catch (_: Exception) {}
+try {
+val ext = getExternalFilesDir(null) ?: return
+val dir = File(ext, "aoa_probe")
+if (!dir.exists()) dir.mkdirs()
+FileOutputStream(File(dir, "probe-$day.log"), true).use { it.write(bytes) }
 } catch (_: Exception) {}
 }
 private fun ensureChannel() {
