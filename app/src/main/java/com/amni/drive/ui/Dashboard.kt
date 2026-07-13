@@ -275,7 +275,7 @@ if (menuOpen) MenuDrawer(page, rearAvailable, cfg.driverGateEnabled && cfg.maste
 onPage = { page = it; menuOpen = false }, onToggleGate = onToggleGate, onToggleWeather = onToggleWeather,
 onSettings = { menuOpen = false; onOpenSettings() }, onClose = { menuOpen = false }, onMedia = { menuOpen = false; page = DrivePage.HOME; AaNavState.openMedia() },
 onTileLayout = { menuOpen = false; layoutPicker = true }, themeLabel = theme.preset.label, onTheme = onCycleTheme)
-if (layoutPicker) TileLayoutPicker(theme.tileLayout, layout, { onSetTileLayout(it); layoutPicker = false }, { layoutPicker = false })
+if (layoutPicker) TileLayoutPicker(theme.tileLayout, layout, { onSetTileLayout(it); layoutPicker = false }, { layoutPicker = false }, carSurface)
 if (mediaPicker) MediaSourceSheet(mediaAppsList, { mediaPicker = false }, { pickMedia(it); mediaPicker = false })
 blocked?.let { app ->
 GateSheet(app, rearAvailable,
@@ -394,36 +394,37 @@ widgets(Modifier.width(widgetW).fillMaxHeight().padding(top = carTopPad))
 }
 }
 @Composable
-private fun TileLayoutPicker(selected: TileLayout, effective: TileLayout, onPick: (TileLayout) -> Unit, onClose: () -> Unit) {
+private fun TileLayoutPicker(selected: TileLayout, effective: TileLayout, onPick: (TileLayout) -> Unit, onClose: () -> Unit, compact: Boolean = false) {
 val p = LocalAmni.current
+val rowH = if (compact) 38.dp else 52.dp
 Box(Modifier.fillMaxSize().background(p.scrim).clickable { onClose() }, contentAlignment = Alignment.Center) {
-SoftSurface(Modifier.fillMaxWidth(0.72f).padding(12.dp), radius = 22.dp) {
-Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+SoftSurface(Modifier.fillMaxWidth(if (compact) 0.6f else 0.72f).padding(if (compact) 6.dp else 12.dp), radius = 22.dp) {
+Column(Modifier.padding(if (compact) 10.dp else 16.dp), verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 8.dp)) {
 Row(verticalAlignment = Alignment.CenterVertically) {
-Text("TILE LAYOUT", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 14.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
+Text("TILE LAYOUT", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = if (compact) 11.sp else 14.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
 Spacer(Modifier.weight(1f))
 Text("✕", color = p.dim, modifier = Modifier.clickable { onClose() })
 }
-Text("Active: ${effective.label}" + if (selected == TileLayout.AUTO && effective != TileLayout.AUTO) " (auto→${effective.label})" else "", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 10.sp)
+if (!compact) Text("Active: ${effective.label}" + if (selected == TileLayout.AUTO && effective != TileLayout.AUTO) " (auto→${effective.label})" else "", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 10.sp)
 TileLayout.entries.forEach { mode ->
 val sel = selected == mode
 Row(
-Modifier.fillMaxWidth().height(52.dp).clip(RoundedCornerShape(14.dp))
+Modifier.fillMaxWidth().height(rowH).clip(RoundedCornerShape(if (compact) 10.dp else 14.dp))
 .background(if (sel) p.accDim else Color.Transparent)
-.border(1.dp, if (sel) p.acc.copy(alpha = 0.4f) else p.hairline, RoundedCornerShape(14.dp))
-.clickable { onPick(mode) }.padding(horizontal = 12.dp),
+.border(1.dp, if (sel) p.acc.copy(alpha = 0.4f) else p.hairline, RoundedCornerShape(if (compact) 10.dp else 14.dp))
+.clickable { onPick(mode) }.padding(horizontal = if (compact) 8.dp else 12.dp),
 verticalAlignment = Alignment.CenterVertically,
-horizontalArrangement = Arrangement.spacedBy(12.dp)
+horizontalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 12.dp)
 ) {
 LayoutThumb(mode, sel)
 Column(Modifier.weight(1f)) {
-Text(mode.label.uppercase(), color = if (sel) p.acc else p.ink, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-Text(mode.blurb, color = p.dim, fontSize = 11.sp, maxLines = 1)
+Text(mode.label.uppercase(), color = if (sel) p.acc else p.ink, fontFamily = FontFamily.Monospace, fontSize = if (compact) 10.sp else 12.sp, fontWeight = FontWeight.Bold)
+if (!compact) Text(mode.blurb, color = p.dim, fontSize = 11.sp, maxLines = 1)
 }
 if (sel) Text("●", color = p.acc, fontSize = 12.sp)
 }
 }
-Text("Tiles resize to window width/height · Auto re-picks as glass changes", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 9.sp)
+if (!compact) Text("Tiles resize to window width/height · Auto re-picks as glass changes", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 9.sp)
 }
 }
 }
@@ -553,9 +554,11 @@ Text("✕", color = p.soft, fontSize = 14.sp)
 }
 }
 Spacer(Modifier.height(8.dp))
+if (!carSurface) {
 MenuRow(Icons.Rounded.Home, "Home", "Dashboard & map", page == DrivePage.HOME) { onPage(DrivePage.HOME) }
 MenuRow(Icons.Rounded.Apps, "All Apps", "Everything installed", page == DrivePage.APPS) { onPage(DrivePage.APPS) }
 MenuRow(Icons.Rounded.Map, "Navigation", "Full-screen map", page == DrivePage.NAV) { onPage(DrivePage.NAV) }
+}
 MenuRow(Icons.Rounded.MusicNote, "Media", if (carSurface) "Controls beside map" else "In-dash media panel", false) { onMedia() }
 MenuRow(Icons.Rounded.Palette, "Theme", "$themeLabel · tap to cycle", false) { onTheme() }
 MenuRow(Icons.Rounded.ViewModule, "Tile layout", tileLayout.label + " · fit glass", false) { onTileLayout() }

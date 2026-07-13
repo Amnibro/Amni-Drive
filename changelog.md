@@ -1,4 +1,6 @@
-﻿## v1.6.18 — 2026-07-13 — Gate one-tap toggle actually works (driver+master, effective-state based)
+﻿## v1.6.19 — 2026-07-13 — Everything fits the 400px glass: minimal car drawer + compact layout picker
+**Ship:** carSurface drawer = Media/Theme/Tile-layout + gate/weather switches only (Home/Apps/Nav live on the rail — redundant rows dropped); TileLayoutPicker `compact` mode (38dp rows, no blurbs) — all 6 layouts incl. MAP ONLY reachable on 800x400. **DHU-verified:** full drawer visible no-scroll; picker applies (drawer subtitle tracks pick); regression sweep v1.6.18 all-pass (theme+gate persist across restart). versionCode **69**.
+## v1.6.18 — 2026-07-13 — Gate one-tap toggle actually works (driver+master, effective-state based)
 **Bug:** rail shield/menu toggle flipped only `driverGateEnabled`; UI + GateResolver require `driver && master` (master defaults false since gate-off-by-default) → toggle could never show ON.
 **Ship:** `setDriverGate` sets BOTH flags; RideDashboard toggles `!(driver && master)`. onClick debug log (coords + surface dims). **DHU-verified:** tap → green shield + "62 gated" chip; tap again → OFF. Facts: DHU surface = **800x400** (host bar eats 80px); host drops ~1-in-3 rapid scripted clicks. versionCode **68**.
 ## v1.6.17 — 2026-07-13 — On-glass tap keyboard: full search→route chain works in-car
