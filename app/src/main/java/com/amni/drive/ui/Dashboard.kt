@@ -67,6 +67,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -84,6 +85,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.amni.drive.LinkActivity
 import com.amni.drive.aa.AaNavState
+import com.amni.drive.config.ConfigStore
 import com.amni.drive.config.DriveConfig
 import com.amni.drive.gate.DriveState
 import com.amni.drive.gate.GateDecision
@@ -94,10 +96,13 @@ import com.amni.drive.map.ReportStore
 import com.amni.drive.map.RoutePoint
 import com.amni.drive.map.RouteResult
 import com.amni.drive.map.TileStore
+import com.amni.drive.map.TurnGuidance
+import com.amni.drive.map.VoiceGuide
 import com.amni.drive.map.rememberMapCamera
 import com.amni.drive.weather.WeatherNow
 import com.amni.drive.weather.Wx
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
@@ -173,6 +178,14 @@ route = OsrmRouting.route(listOf(RoutePoint(from.latitude, from.longitude)) + st
 AaNavState.route = route
 routing = false
 }
+val voice = remember { VoiceGuide(ctxRoot) }
+DisposableEffect(Unit) { onDispose { voice.shutdown() } }
+var stepIdx by remember { mutableStateOf(0) }
+LaunchedEffect(route) { stepIdx = 0; voice.reset() }
+val cue = remember(route, location, stepIdx) { route?.let { r -> location?.let { l -> TurnGuidance.cue(r, l.latitude, l.longitude, stepIdx) } } }
+LaunchedEffect(cue) { cue?.let { c -> if (c.idx != stepIdx) stepIdx = c.idx; voice.maybeSpeak(c, cfg.voiceNav) } }
+val navScope = rememberCoroutineScope()
+val onToggleVoice: () -> Unit = { navScope.launch { ConfigStore(ctxRoot).setVoiceNav(!cfg.voiceNav) } }
 val ctx = LocalContext.current
 val netOk by produceState(true) {
 val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -208,13 +221,14 @@ Rail(page, cfg.driverGateEnabled && cfg.masterGateEnabled, { menuOpen = true }, 
 Column(Modifier.weight(1f).fillMaxHeight()) {
 if (showTopBar) TopBar(driveState, speedMph, weather, passenger)
 else if ((carSurface || dense) && !micro) CarStatusStrip(driveState, speedMph, weather, passenger, if (carSurface) 84.dp else 0.dp)
+Box(Modifier.weight(1f).fillMaxWidth()) {
 AnimatedContent(
 targetState = page,
 transitionSpec = {
 (fadeIn(spring(stiffness = Spring.StiffnessMediumLow)) + slideInHorizontally { it / 24 }) togetherWith
 (fadeOut() + slideOutHorizontally { -it / 24 })
 },
-modifier = Modifier.weight(1f).fillMaxWidth(),
+modifier = Modifier.fillMaxSize(),
 label = "page"
 ) { pg ->
 when (pg) {
@@ -268,6 +282,8 @@ mediaApps = mediaAppsList,
 onOpenMediaPicker = { mediaPicker = true }
 )
 }
+}
+cue?.let { c -> if (page != DrivePage.APPS) TurnBanner(c, cfg.voiceNav, onToggleVoice, dense || micro, Modifier.align(Alignment.TopCenter).padding(top = if (carSurface) 6.dp else 8.dp)) }
 }
 }
 }
@@ -846,6 +862,22 @@ Text(w?.label ?: "Waiting for GPS…", color = p.ink, fontSize = 13.sp, fontWeig
 Text("WIND ${w?.windMph ?: "--"} · HUM ${w?.humidity ?: "--"}%", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 10.sp)
 } else Text(w?.label ?: "GPS…", color = p.dim, fontSize = 10.sp, maxLines = 1, modifier = Modifier.weight(1f))
 }
+}
+}
+}
+@Composable
+private fun TurnBanner(cue: TurnGuidance.Cue, voiceOn: Boolean, onToggleVoice: () -> Unit, dense: Boolean, modifier: Modifier = Modifier) {
+val p = LocalAmni.current
+GlassCard(modifier) {
+Row(Modifier.padding(horizontal = if (dense) 10.dp else 16.dp, vertical = if (dense) 6.dp else 10.dp), verticalAlignment = Alignment.CenterVertically) {
+Text(cue.arrow, color = p.acc, fontFamily = FontFamily.Monospace, fontSize = if (dense) 22.sp else 30.sp, fontWeight = FontWeight.Bold)
+Spacer(Modifier.width(if (dense) 8.dp else 12.dp))
+Column {
+Text(TurnGuidance.distText(cue.distM), color = p.acc, fontFamily = FontFamily.Monospace, fontSize = if (dense) 14.sp else 18.sp, fontWeight = FontWeight.Bold)
+Text(TurnGuidance.phrase(cue.step.type, cue.step.modifier, cue.step.name), color = p.soft, fontFamily = FontFamily.Monospace, fontSize = if (dense) 10.sp else 13.sp, maxLines = 1)
+}
+Spacer(Modifier.width(if (dense) 10.dp else 16.dp))
+Text(if (voiceOn) "🔊" else "🔇", fontSize = if (dense) 14.sp else 18.sp, modifier = Modifier.clickable { onToggleVoice() })
 }
 }
 }

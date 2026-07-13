@@ -9,13 +9,14 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
 data class RoutePoint(val lat: Double, val lon: Double)
-data class RouteResult(val points: List<RoutePoint>, val segmentSpeeds: List<Double>, val distanceM: Double, val durationS: Double)
+data class RouteStep(val type: String, val modifier: String, val name: String, val lat: Double, val lon: Double, val distanceM: Double)
+data class RouteResult(val points: List<RoutePoint>, val segmentSpeeds: List<Double>, val distanceM: Double, val durationS: Double, val steps: List<RouteStep> = emptyList())
 object OsrmRouting {
 suspend fun route(waypoints: List<RoutePoint>): RouteResult? = withContext(Dispatchers.IO) {
 if (waypoints.size < 2) return@withContext null
 runCatching {
 val coords = waypoints.joinToString(";") { "${it.lon},${it.lat}" }
-val url = "https://router.project-osrm.org/route/v1/driving/$coords?geometries=geojson&overview=full&annotations=speed,distance"
+val url = "https://router.project-osrm.org/route/v1/driving/$coords?geometries=geojson&overview=full&annotations=speed,distance&steps=true"
 val c = URL(url).openConnection() as HttpURLConnection
 c.setRequestProperty("User-Agent", "AmniDrive/1.6 (personal)")
 c.connectTimeout = 12000
@@ -27,8 +28,17 @@ val cs = r.getJSONObject("geometry").getJSONArray("coordinates")
 val pts = (0 until cs.length()).map { i -> val a = cs.getJSONArray(i); RoutePoint(a.getDouble(1), a.getDouble(0)) }
 val rawSpeeds = ArrayList<Double>()
 val rawDists = ArrayList<Double>()
+val steps = ArrayList<RouteStep>()
 r.optJSONArray("legs")?.let { legs ->
 for (li in 0 until legs.length()) {
+legs.getJSONObject(li).optJSONArray("steps")?.let { st ->
+for (si in 0 until st.length()) {
+val s = st.getJSONObject(si)
+val m = s.optJSONObject("maneuver") ?: continue
+val loc = m.optJSONArray("location") ?: continue
+steps.add(RouteStep(m.optString("type"), m.optString("modifier"), s.optString("name"), loc.getDouble(1), loc.getDouble(0), s.optDouble("distance", 0.0)))
+}
+}
 val ann = legs.getJSONObject(li).optJSONObject("annotation") ?: continue
 val sp = ann.optJSONArray("speed")
 val di = ann.optJSONArray("distance")
@@ -37,7 +47,7 @@ if (di != null) for (i in 0 until di.length()) rawDists.add(di.optDouble(i, 0.0)
 }
 }
 val speeds = expandToGeometry(pts, rawSpeeds, rawDists)
-RouteResult(pts, speeds, r.getDouble("distance"), r.getDouble("duration"))
+RouteResult(pts, speeds, r.getDouble("distance"), r.getDouble("duration"), steps)
 }.getOrNull()
 }
 private fun expandToGeometry(pts: List<RoutePoint>, speeds: List<Double>, dists: List<Double>): List<Double> {

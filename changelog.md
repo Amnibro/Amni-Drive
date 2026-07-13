@@ -419,3 +419,8 @@ Built **release** (isDebuggable=false, debug-key signed, 11.9 MB); merged manife
 
 
 
+
+## v1.7.0 — 2026-07-13 — Turn-by-turn guidance (banner + voice)
+**Description:** First TBT increment toward full AA replacement. OSRM `steps=true` maneuvers parsed into `RouteStep`; `TurnGuidance` engine picks the live next maneuver (skips depart, 40 m advance, passed-step fallback via next-closer check); `TurnBanner` overlays every page except APPS on phone AND carSurface (glass shows it via the same Compose tree); `VoiceGuide` TTS speaks staged prompts (far/quarter-mile/at-turn) with USAGE_ASSISTANCE_NAVIGATION_GUIDANCE audio attrs + transient-duck focus, released on utterance done. 🔊/🔇 tap on the banner toggles `voiceNav` (new DriveConfig field, default ON).
+**Verified:** testDebugUnitTest green (incl. 8 new TurnGuidanceTest cases), compileReleaseKotlin green, lintDebug 0 errors, app-release.apk built. Backups in backups/*.v1.7.0.bak. NOT flashed yet — Fold is in a live Kia AA session (flashing would kill Anthony's drive); install queued for when the car session drops. Rule 8 pending.
+**Live-Kia note (same session):** gearhead bound AmniCarAppService on the real car; `mode=ride · passive · no AOA claim`; zero communication-error lines — the error-16 class of failures stays resolved in RIDE.

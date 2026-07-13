@@ -11,7 +11,8 @@ val autoStartOnBluetooth: Boolean = false,
 val carBtMac: String = "",
 val autoEnterCarMode: Boolean = true,
 val aaPathMode: String = PATH_RIDE,
-val meshBridgeEnabled: Boolean = true
+val meshBridgeEnabled: Boolean = true,
+val voiceNav: Boolean = true
 ) {
 companion object {
 const val PATH_RIDE = "ride"
