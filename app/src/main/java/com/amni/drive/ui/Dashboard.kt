@@ -18,6 +18,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -71,6 +72,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
@@ -100,6 +103,7 @@ import com.amni.drive.map.TileStore
 import com.amni.drive.map.TurnGuidance
 import com.amni.drive.map.VoiceGuide
 import com.amni.drive.map.rememberMapCamera
+import com.amni.drive.media.MediaSessionBridge
 import com.amni.drive.weather.WeatherNow
 import com.amni.drive.weather.Wx
 import kotlinx.coroutines.delay
@@ -762,8 +766,13 @@ return label to playing
 private fun MediaCard(modifier: Modifier, dense: Boolean = false, preferred: String? = null, surfaceDisplayId: Int? = null, mediaApps: List<AppEntry> = emptyList(), onOpenPicker: () -> Unit = {}) {
 val p = LocalAmni.current
 val ctx = LocalContext.current
-val (src, playing) = rememberMediaSource(ctx)
-val title = preferred?.takeIf { it.isNotBlank() } ?: src
+val np by MediaSessionBridge.nowPlaying.collectAsState()
+LaunchedEffect(Unit) { MediaSessionBridge.start(ctx) }
+val (src, fallbackPlaying) = rememberMediaSource(ctx)
+val playing = np?.playing ?: fallbackPlaying
+val title = np?.title?.takeIf { it.isNotBlank() } ?: preferred?.takeIf { it.isNotBlank() } ?: src
+val subtitle = np?.let { listOf(it.artist, it.appLabel).filter { s -> s.isNotBlank() }.joinToString(" · ") } ?: ""
+val hasAccess = remember { MediaSessionBridge.hasAccess(ctx) }
 val pad = if (dense) 10.dp else 16.dp
 Box(modifier) {
 GlassCard(Modifier.fillMaxSize()) {
@@ -781,12 +790,16 @@ Modifier.size(if (dense) 56.dp else 88.dp).clip(RoundedCornerShape(if (dense) 16
 .clickable { onOpenPicker() },
 contentAlignment = Alignment.Center
 ) {
-Icon(Icons.Rounded.MusicNote, null, Modifier.size(if (dense) 28.dp else 42.dp), tint = p.acc)
+val art = np?.art
+if (art != null) Image(art.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+else Icon(Icons.Rounded.MusicNote, null, Modifier.size(if (dense) 28.dp else 42.dp), tint = p.acc)
 }
 Spacer(Modifier.height(if (dense) 8.dp else 12.dp))
 Text(title, color = p.ink, fontSize = if (dense) 14.sp else 17.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.clickable { onOpenPicker() })
 Text(
 when {
+subtitle.isNotBlank() -> subtitle
+!hasAccess -> "Grant media access for track info"
 playing -> "Playing · tap art to switch source"
 mediaApps.isNotEmpty() -> "Tap art · pick Spotify / music app"
 surfaceDisplayId != null -> "Dash panel · media keys"
@@ -794,22 +807,28 @@ else -> "Tap art to choose source"
 },
 color = p.dim, fontSize = if (dense) 10.sp else 12.sp, textAlign = TextAlign.Center, maxLines = 2
 )
+if (!hasAccess && surfaceDisplayId == null) {
+Spacer(Modifier.height(6.dp))
+Box(Modifier.clip(RoundedCornerShape(99.dp)).background(p.accDim).border(1.dp, p.acc.copy(alpha = 0.4f), RoundedCornerShape(99.dp)).clickable { MediaSessionBridge.requestAccess(ctx) }.padding(horizontal = 10.dp, vertical = 5.dp)) {
+Text("ENABLE MEDIA ACCESS", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+}
+}
 Spacer(Modifier.height(if (dense) 10.dp else 16.dp))
 Row(horizontalArrangement = Arrangement.spacedBy(if (dense) 8.dp else 12.dp), verticalAlignment = Alignment.CenterVertically) {
-MediaCtrl(Icons.Rounded.SkipPrevious, "Prev", dense) { mediaKey(ctx, KeyEvent.KEYCODE_MEDIA_PREVIOUS) }
+MediaCtrl(Icons.Rounded.SkipPrevious, "Prev", dense) { if (!MediaSessionBridge.prev()) mediaKey(ctx, KeyEvent.KEYCODE_MEDIA_PREVIOUS) }
 Box(
 Modifier.size(if (dense) 48.dp else 56.dp).clip(CircleShape).background(p.accentBrush)
-.clickable { mediaKey(ctx, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) },
+.clickable { if (!MediaSessionBridge.playPause()) mediaKey(ctx, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) },
 contentAlignment = Alignment.Center
 ) {
 Text(if (playing) "❚❚" else "▶", color = if (p.isLight) Color.White else Color(0xFF05070A), fontSize = if (dense) 16.sp else 18.sp, fontWeight = FontWeight.Bold)
 }
-MediaCtrl(Icons.Rounded.SkipNext, "Next", dense) { mediaKey(ctx, KeyEvent.KEYCODE_MEDIA_NEXT) }
+MediaCtrl(Icons.Rounded.SkipNext, "Next", dense) { if (!MediaSessionBridge.next()) mediaKey(ctx, KeyEvent.KEYCODE_MEDIA_NEXT) }
 }
 Spacer(Modifier.height(if (dense) 8.dp else 12.dp))
 Box(
 Modifier.clip(RoundedCornerShape(12.dp)).border(1.dp, p.acc.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
-.clickable { mediaKey(ctx, KeyEvent.KEYCODE_MEDIA_PLAY) }
+.clickable { if (!MediaSessionBridge.play()) mediaKey(ctx, KeyEvent.KEYCODE_MEDIA_PLAY) }
 .padding(horizontal = if (dense) 12.dp else 18.dp, vertical = if (dense) 8.dp else 10.dp)
 ) {
 Text("PLAY / RESUME", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = if (dense) 9.sp else 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)
