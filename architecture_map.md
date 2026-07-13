@@ -2,7 +2,7 @@
 
 **Project:** Amni-Drive â€” **replace Android Auto** (wire-level host + multi-channel Link + Car App fallback + launcher).
 **Owner:** Anthony (mechanical engineer) â€” personal testing project.
-**Status:** **v1.6.15** — RIDE flicker+touch FIXED (startFullUi main-thread latch deadlock removed; canvas loop fallback-only; single surface producer). Touch inject DHU-verified: APPS drawer, media picker, Spotify play via `playViaBrowser` (MediaBrowserCompat, no activity launch on carSurface). MediaSourceSheet hoisted to Dashboard level. carSurface host-chrome insets (strip end 84dp, right column top 34dp). `scripts/dhu_click_cap.ps1` click/capture harness. **Not M5** (OWN still AuthComplete -3; RIDE is the production path).
+**Status:** **v1.6.19** — RIDE surface is production-grade on DHU: flicker+touch deadlock fixed (v1.6.15), in-dash theme cycle + fit-to-glass drawer (v1.6.16), on-glass tap keyboard → full search→OSRM traffic route chain (v1.6.17), gate one-tap fixed driver+master (v1.6.18), minimal car drawer + compact layout picker — every control reachable on the real 800x400 surface (v1.6.19). Facts: AA surface = 800x400 on DHU (host bar 80px); onScroll has NO position (no scroll-dependent UI on glass); no IME (own keyboard); other-app activities can't launch on our untrusted VD (media via MediaBrowserCompat play). `scripts/dhu_click_cap.ps1` click/drag/capture harness; `Amni.AaSurface` onClick logging. **Not M5** (OWN still AuthComplete -3; RIDE is the production path; physical Kia confirm pending).
 **Created:** 2026-07-03. **Wire pivot v1.3.0:** 2026-07-11. **Mesh bridge v1.4.6:** 2026-07-12.
 
 > **v0.6.0 additions (2026-07-10):** design pass v0.2â†’v0.5 (mockups in `docs/design/`, guardian councils per pass) landed as code:
