@@ -14,7 +14,8 @@ val aaPathMode: String = PATH_RIDE,
 val meshBridgeEnabled: Boolean = true,
 val voiceNav: Boolean = true,
 val msgBanner: Boolean = true,
-val msgAutoRead: Boolean = false
+val msgAutoRead: Boolean = false,
+val huFullscreen: Boolean = true
 ) {
 companion object {
 const val PATH_RIDE = "ride"

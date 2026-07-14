@@ -134,6 +134,7 @@ private fun NavPane(store: ConfigStore) {
     SetRow("🔊", "Voice guidance", "Spoken turn-by-turn — 'In a quarter mile, turn right'. Ducks music while speaking. Also toggleable from the turn banner.", cfg.voiceNav) { scope.launch { store.setVoiceNav(it) } }
     SetRow("💬", "Message banner", "Incoming texts show sender + app on the dash with a READ button. Needs the same media/notification access as Now Playing.", cfg.msgBanner) { scope.launch { store.setMsgBanner(it) } }
     SetRow("🗣️", "Auto-read messages aloud", "Speaks new messages without a tap. OFF by default — your call, your cabin.", cfg.msgAutoRead) { scope.launch { store.setMsgAutoRead(it) } }
+    SetRow("🖥️", "HU fullscreen", "Drive mode hides Android's status + nav bars — 100% Amni pixels, true head-unit feel on a mounted phone/tablet. Swipe an edge to peek the bars.", cfg.huFullscreen) { scope.launch { store.setHuFullscreen(it) } }
     Text("AUTO-REROUTE IS ALWAYS ON: DRIFT 60 M OFF THE LINE FOR 3 GPS FIXES AND A FRESH OSRM ROUTE IS PULLED (15 S COOLDOWN). SEARCH ON THE CAR GLASS: TAP ⌨ CAR KEYBOARD FOR THE HOST'S NATIVE KEYBOARD.", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 9.sp, lineHeight = 13.sp, modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(p.accDim).padding(10.dp))
 }
 @android.annotation.SuppressLint("MissingPermission")

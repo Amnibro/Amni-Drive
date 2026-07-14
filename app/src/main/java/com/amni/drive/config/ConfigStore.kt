@@ -29,7 +29,8 @@ DriveConfig.normalizePath(it[AAPATH]),
 it[MESH] ?: true,
 it[VOICENAV] ?: true,
 it[MSGBANNER] ?: true,
-it[MSGREAD] ?: false
+it[MSGREAD] ?: false,
+it[HUFULL] ?: true
 )
 }
 suspend fun setMaster(v: Boolean) = write { it[MASTER] = v }
@@ -46,6 +47,7 @@ suspend fun setMeshBridge(v: Boolean) = write { it[MESH] = v }
 suspend fun setVoiceNav(v: Boolean) = write { it[VOICENAV] = v }
 suspend fun setMsgBanner(v: Boolean) = write { it[MSGBANNER] = v }
 suspend fun setMsgAutoRead(v: Boolean) = write { it[MSGREAD] = v }
+suspend fun setHuFullscreen(v: Boolean) = write { it[HUFULL] = v }
 suspend fun applyGateOffDefaultOnce() = context.dataStore.edit {
 if (it[GATE_OFF_V13] != true) {
 it[MASTER] = false
@@ -70,6 +72,7 @@ private val MESH = booleanPreferencesKey("meshbridge")
 private val VOICENAV = booleanPreferencesKey("voicenav")
 private val MSGBANNER = booleanPreferencesKey("msgbanner")
 private val MSGREAD = booleanPreferencesKey("msgread")
+private val HUFULL = booleanPreferencesKey("hufullscreen")
 private val GATE_OFF_V13 = booleanPreferencesKey("gate_off_default_v13")
 }
 }

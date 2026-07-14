@@ -15,6 +15,8 @@ import androidx.compose.runtime.setValue
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import com.amni.drive.config.DriveConfig
@@ -29,10 +31,12 @@ import com.amni.drive.ui.rememberPalette
 import com.amni.drive.weather.WeatherNow
 import com.amni.drive.weather.WeatherService
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
 private lateinit var controller: DriveController
 private var startPage by mutableStateOf(DrivePage.HOME)
+@Volatile private var huMode = false
 override fun onCreate(savedInstanceState: Bundle?) {
 super.onCreate(savedInstanceState)
 val app = application as AmniDriveApp
@@ -100,6 +104,10 @@ WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
 )
 }
 WindowCompat.setDecorFitsSystemWindows(window, false)
+lifecycleScope.launch {
+huMode = runCatching { (application as AmniDriveApp).configStore.config.first().huFullscreen }.getOrDefault(true)
+if (huMode) applyImmersive()
+}
 }
 if (intent?.getBooleanExtra(EXTRA_START_PROJECTION, false) == true || intent?.action == ACTION_OWN_STACK) {
 runCatching { com.amni.drive.wire.ProjectionHostService.start(this) }
@@ -107,6 +115,15 @@ runCatching { com.amni.drive.wire.ProjectionHostService.start(this) }
 if (intent?.getBooleanExtra(EXTRA_START_AOA, false) == true || intent?.action == ACTION_OWN_STACK) {
 runCatching { com.amni.drive.wire.AoaProbeService.claim(this) }
 }
+}
+private fun applyImmersive() {
+val c = WindowInsetsControllerCompat(window, window.decorView)
+c.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+c.hide(WindowInsetsCompat.Type.systemBars())
+}
+override fun onWindowFocusChanged(hasFocus: Boolean) {
+super.onWindowFocusChanged(hasFocus)
+if (hasFocus && huMode) applyImmersive()
 }
 private fun requestLocation() {
 if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.ACCESS_FINE_LOCATION), 1)
