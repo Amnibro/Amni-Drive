@@ -467,3 +467,8 @@ Built **release** (isDebuggable=false, debug-key signed, 11.9 MB); merged manife
 **Gap:** LinkActivity (both roles) showed Android status/gesture bars around the car UI and never set keep-screen-on — a dash receiver would sleep mid-drive.
 **Ship:** HOST and RECV roles get FLAG_KEEP_SCREEN_ON + the same `huFullscreen`-gated immersive-sticky as MainActivity (swipe-transient, focus re-assert). PICK screen stays normal.
 **Verified:** tests green, lint 0 errors, release APK. Flash queued with v1.9.0. versionCode **79**.
+
+## v1.9.2 — 2026-07-14 — FIX SearchTemplate crash (loading+list race) · full hybrid-search chain DHU-PROVEN
+**Found by:** the automated DHU sweep — submitting a search in AaSearchScreen crashed the app: `IllegalArgumentException: Template is in a loading state but a list is set` (AaSearchScreen.kt:81). onGetTemplate always called BOTH `.setLoading(loading)` and `.setItemList(...)`; the `loading=true` invalidate tripped androidx's exclusivity check.
+**Ship:** item list only attached when `!loading`.
+**DHU-verified end-to-end (the full Grok chain):** 🔍 → ⌨ CAR KEYBOARD chip → host SearchTemplate keyboard → typed query → live Photon results w/ distances → result tap → back in FULL Amni UI with traffic-colored route + **turn banner "200 ft Turn right onto Vliet Boulevard" + "then →" chip** + trip "3 min · 1.0 mi". Also: Amni now AUTO-OPENS on session start (last-used nav app); Now Playing live-updates across track changes. v1.9.0+v1.9.1 flashed earlier tonight (00:02). versionCode **80**.

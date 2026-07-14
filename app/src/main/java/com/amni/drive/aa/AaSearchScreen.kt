@@ -63,7 +63,7 @@ screenManager.pop()
 list.addItem(row)
 }
 }
-return SearchTemplate.Builder(object : SearchTemplate.SearchCallback {
+val b = SearchTemplate.Builder(object : SearchTemplate.SearchCallback {
 override fun onSearchTextChanged(searchText: String) {
 query = searchText
 }
@@ -77,8 +77,8 @@ runSearch()
 .setSearchHint("Address, place, gas…")
 .setInitialSearchText(query)
 .setLoading(loading)
-.setItemList(list.build())
-.build()
+if (!loading) b.setItemList(list.build())
+return b.build()
 }
 private fun runSearch() {
 if (query.isBlank()) {
