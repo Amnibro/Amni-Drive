@@ -6,6 +6,8 @@ import android.media.AudioManager
 import android.net.ConnectivityManager
 import android.os.SystemClock
 import android.view.KeyEvent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -102,8 +104,10 @@ import com.amni.drive.map.RouteResult
 import com.amni.drive.map.RouteStep
 import com.amni.drive.map.TileStore
 import com.amni.drive.map.TurnGuidance
+import com.amni.drive.map.Geocoder
 import com.amni.drive.map.VoiceGuide
 import com.amni.drive.map.rememberMapCamera
+import com.amni.drive.voice.VoiceSearch
 import com.amni.drive.media.IncomingMsg
 import com.amni.drive.media.MediaSessionBridge
 import com.amni.drive.media.MessageFeed
@@ -194,6 +198,28 @@ val cue = remember(route, location, stepIdx) { route?.let { r -> location?.let {
 LaunchedEffect(cue) { cue?.let { c -> if (c.idx != stepIdx) stepIdx = c.idx; voice.maybeSpeak(c, cfg.voiceNav) } }
 val navScope = rememberCoroutineScope()
 val onToggleVoice: () -> Unit = { navScope.launch { ConfigStore(ctxRoot).setVoiceNav(!cfg.voiceNav) } }
+var voiceHint by remember { mutableStateOf<String?>(null) }
+val startVoice: () -> Unit = {
+VoiceSearch.listen(ctxRoot, { voiceHint = it }, { text ->
+navScope.launch {
+if (text == null) { delay(2200); voiceHint = null } else {
+voiceHint = "Searching “$text”…"
+val top = runCatching { Geocoder.search(text, location?.latitude, location?.longitude).firstOrNull() }.getOrNull()
+if (top == null) { voiceHint = "No match for “$text”"; delay(2500); voiceHint = null } else {
+page = DrivePage.NAV
+onGo(top)
+voice.say("Routing to ${top.name.ifBlank { "destination" }}", cfg.voiceNav)
+voiceHint = null
+}
+}
+}
+})
+}
+val micPerm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok -> if (ok) startVoice() else voiceHint = "Mic permission needed" }
+val onVoice: () -> Unit = {
+if (androidx.core.content.ContextCompat.checkSelfPermission(ctxRoot, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) startVoice() else micPerm.launch(android.Manifest.permission.RECORD_AUDIO)
+}
+DisposableEffect(Unit) { onDispose { VoiceSearch.stop() } }
 val incoming by MessageFeed.latest.collectAsState()
 LaunchedEffect(incoming) {
 incoming?.let { m ->
@@ -283,7 +309,7 @@ else if (carSurface && surfaceDisplayId != null) mediaHint = "On dash · ${app.l
 }
 }
 DrivePage.NAV -> Box(Modifier.fillMaxSize().padding(pad)) {
-MapCard(Modifier.fillMaxSize(), camera, tiles, route, reports, stops, location, routing, true, netOk, showLayers, showReport, { showLayers = it }, { showReport = it }, reportStore, addPoint, onGo, onAddStop, onEnd, dense || micro, if (carSurface) ({ AaNavState.openHostSearch() }) else null)
+MapCard(Modifier.fillMaxSize(), camera, tiles, route, reports, stops, location, routing, true, netOk, showLayers, showReport, { showLayers = it }, { showReport = it }, reportStore, addPoint, onGo, onAddStop, onEnd, dense || micro, if (carSurface) ({ AaNavState.openHostSearch() }) else null, onVoice)
 }
 DrivePage.HOME -> HomeTiles(
 layout = layout,
@@ -317,12 +343,18 @@ speedMph = speedMph,
 cfg = cfg,
 mediaApps = mediaAppsList,
 onOpenMediaPicker = { mediaPicker = true },
-hostKeyboard = if (carSurface) ({ AaNavState.openHostSearch() }) else null
+hostKeyboard = if (carSurface) ({ AaNavState.openHostSearch() }) else null,
+onVoice = onVoice
 )
 }
 }
 cue?.let { c -> if (page != DrivePage.APPS) TurnBanner(c, route?.steps?.getOrNull(c.idx + 1), cfg.voiceNav, onToggleVoice, dense || micro, Modifier.align(Alignment.TopCenter).padding(top = if (carSurface) 6.dp else 8.dp)) }
 incoming?.let { m -> if (cfg.msgBanner) MsgBanner(m, { voice.say("Message from ${m.sender}. ${m.text}", true) }, { MessageFeed.dismiss() }, dense || micro, Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp)) }
+voiceHint?.let { h ->
+Box(Modifier.align(Alignment.BottomCenter).padding(bottom = if (incoming != null && cfg.msgBanner) 64.dp else 12.dp).clip(RoundedCornerShape(99.dp)).background(if (p.isLight) Color(0xF5FFFFFF) else Color(0xF012151C)).border(1.dp, p.acc.copy(alpha = 0.4f), RoundedCornerShape(99.dp)).padding(horizontal = 16.dp, vertical = 9.dp)) {
+Text("🎤 $h", color = p.ink, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+}
+}
 }
 }
 }
@@ -389,11 +421,12 @@ speedMph: Int,
 cfg: DriveConfig,
 mediaApps: List<AppEntry> = emptyList(),
 onOpenMediaPicker: () -> Unit = {},
-hostKeyboard: (() -> Unit)? = null
+hostKeyboard: (() -> Unit)? = null,
+onVoice: (() -> Unit)? = null
 ) {
 val p = LocalAmni.current
 val map: @Composable (Modifier) -> Unit = { mod ->
-MapCard(mod, camera, tiles, route, reports, stops, location, routing, false, netOk, showLayers, showReport, onShowLayers, onShowReport, reportStore, addPoint, onGo, onAddStop, onEnd, dense, hostKeyboard)
+MapCard(mod, camera, tiles, route, reports, stops, location, routing, false, netOk, showLayers, showReport, onShowLayers, onShowReport, reportStore, addPoint, onGo, onAddStop, onEnd, dense, hostKeyboard, onVoice)
 }
 val mediaMod = Modifier.then(if (mediaFlash) Modifier.border(2.dp, p.acc, RoundedCornerShape(18.dp)) else Modifier)
 val widgets: @Composable (Modifier) -> Unit = { mod ->

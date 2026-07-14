@@ -19,6 +19,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Layers
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.Search
@@ -80,7 +81,8 @@ fun MapCard(
     onAddStop: (Place) -> Unit,
     onEndRoute: () -> Unit,
     dense: Boolean = false,
-    hostKeyboard: (() -> Unit)? = null
+    hostKeyboard: (() -> Unit)? = null,
+    onVoice: (() -> Unit)? = null
 ) {
     val p = LocalAmni.current
     var searchOpen by remember { mutableStateOf(false) }
@@ -102,6 +104,7 @@ fun MapCard(
             AmniMap(camera, tiles, route, reports, stops, stops.lastOrNull(), location, p.acc, p.panel2, onLongPress, Modifier.fillMaxSize())
             Column(Modifier.align(Alignment.TopEnd).padding(btnPad), verticalArrangement = Arrangement.spacedBy(btnGap), horizontalAlignment = Alignment.CenterHorizontally) {
                 MapBtn(Icons.Rounded.Search, if (dense) "" else "FIND", searchOpen, p.acc, dense) { searchOpen = !searchOpen; onShowLayers(false); onShowReport(false) }
+                onVoice?.let { v -> MapBtn(Icons.Rounded.Mic, if (dense) "" else "VOICE", false, p.acc, dense) { searchOpen = false; v() } }
                 if (!dense) MapBtn(Icons.Rounded.Warning, "REPORT", showReport, p.err, dense) { onShowReport(!showReport); onShowLayers(false); searchOpen = false }
                 MapBtn(Icons.Rounded.MyLocation, if (dense) "" else "FOLLOW", camera.follow, p.acc, dense) { camera.follow = true }
                 MapBtn(Icons.Rounded.Layers, if (dense) "" else "MAP", showLayers, p.acc, dense) { onShowLayers(!showLayers); onShowReport(false); searchOpen = false }
