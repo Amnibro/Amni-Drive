@@ -60,16 +60,6 @@
                 <data android:scheme="geo" />
             </intent-filter>
         </service>
-        <service
-            android:name=".aa.AmniMediaService"
-            android:exported="true"
-            android:enabled="true"
-            android:label="@string/media_label"
-            android:icon="@drawable/ic_amni_drive">
-            <intent-filter>
-                <action android:name="android.media.browse.MediaBrowserService" />
-            </intent-filter>
-        </service>
         <activity
             android:name=".MainActivity"
             android:exported="true"

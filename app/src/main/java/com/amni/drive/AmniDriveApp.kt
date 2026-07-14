@@ -34,7 +34,6 @@ class AmniDriveApp : Application() {
         runCatching { CarConnectionService.start(this) }
         runCatching { com.amni.drive.wire.AaSessionWatchService.start(this) }
         runCatching { com.amni.drive.wire.MeshDevBridgeService.start(this) }
-        runCatching { com.amni.drive.aa.AmniMediaService.ensureStarted(this) }
         runCatching { com.amni.drive.media.MediaSessionBridge.start(this) }
     }
 }
