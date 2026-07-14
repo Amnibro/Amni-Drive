@@ -185,8 +185,8 @@ private fun gearheadProcs(): List<String> = try {
 val p = Runtime.getRuntime().exec(arrayOf("sh", "-c", "ps -A 2>/dev/null | grep projection.gearhead"))
 p.inputStream.bufferedReader().use { it.readLines() }.also { runCatching { p.waitFor() } }
 } catch (_: Exception) { emptyList() }
-private fun gearheadAlive(): Boolean = gearheadProcs().any { it.contains("projection.gearhead") }
-private fun gearheadCarSession(): Boolean = gearheadProcs().any {
+private fun gearheadAlive(): Boolean = CarLink.connected || gearheadProcs().any { it.contains("projection.gearhead") }
+private fun gearheadCarSession(): Boolean = CarLink.projecting || gearheadProcs().any {
 it.contains("gearhead:car") || it.contains("gearhead:projection")
 }
 private fun accessoryPresent(): Boolean = try {

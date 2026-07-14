@@ -1,4 +1,4 @@
-plugins {
+﻿plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
@@ -9,8 +9,8 @@ android {
         applicationId = "com.amni.drive"
         minSdk = 26
         targetSdk = 34
-        versionCode = 75
-        versionName = "1.8.0"
+        versionCode = 76
+        versionName = "1.8.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildTypes {

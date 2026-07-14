@@ -30,6 +30,7 @@ class AmniDriveApp : Application() {
         reportStore = ReportStore(this)
         tracker = LocationTracker(this)
         appScope.launch { runCatching { configStore.applyGateOffDefaultOnce() } }
+        runCatching { com.amni.drive.wire.CarLink.start(this) }
         runCatching { CarConnectionService.start(this) }
         runCatching { com.amni.drive.wire.AaSessionWatchService.start(this) }
         runCatching { com.amni.drive.wire.MeshDevBridgeService.start(this) }

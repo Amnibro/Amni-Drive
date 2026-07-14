@@ -32,6 +32,7 @@ private var lastMode = DriveConfig.PATH_AUTO
 override fun onBind(intent: Intent?): IBinder? = null
 override fun onCreate() {
 super.onCreate()
+CarLink.start(this)
 ensureChannel()
 startForeground(NOTIF_ID, buildNotif("AA dual-path watch"))
 val filter = IntentFilter().apply {
@@ -62,8 +63,8 @@ val cfg = runCatching { ConfigStore(this@AaSessionWatchService).config.first() }
 lastMode = cfg?.aaPathMode ?: DriveConfig.PATH_RIDE
 val gh = gearheadAlive()
 val acc = accessoryPresent()
-log("tick mode=$lastMode gearhead=$gh accessory=$acc (passive · no AOA claim)")
-updateNotif("PASSIVE $lastMode · gh=$gh · acc=$acc")
+log("tick mode=$lastMode gearhead=$gh carConn=${CarLink.type.value} accessory=$acc (passive · no AOA claim)")
+updateNotif("PASSIVE $lastMode · gh=$gh · car=${CarLink.type.value} · acc=$acc")
 kotlinx.coroutines.delay(8_000L)
 }
 }
@@ -91,7 +92,7 @@ super.onDestroy()
 
 @Suppress("DEPRECATION")
 private fun gearheadAlive(): Boolean {
-return try {
+return CarLink.connected || try {
 val am = getSystemService(ACTIVITY_SERVICE) as ActivityManager
 am.runningAppProcesses?.any { it.processName.startsWith("com.google.android.projection.gearhead") } == true
 } catch (_: Exception) {
@@ -100,7 +101,7 @@ false
 }
 @Suppress("DEPRECATION")
 private fun gearheadCarSession(): Boolean {
-return try {
+return CarLink.projecting || try {
 val am = getSystemService(ACTIVITY_SERVICE) as ActivityManager
 am.runningAppProcesses?.any {
 it.processName == "com.google.android.projection.gearhead:car" ||

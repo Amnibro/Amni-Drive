@@ -208,7 +208,7 @@ scheduleFreePoll()
 }
 }
 private fun gearheadProjectionAlive(): Boolean {
-return try {
+return CarLink.connected || try {
 val am = getSystemService(ACTIVITY_SERVICE) as android.app.ActivityManager
 @Suppress("DEPRECATION")
 am.runningAppProcesses?.any {
@@ -219,7 +219,7 @@ false
 }
 }
 private fun gearheadCarSessionAlive(): Boolean {
-return try {
+return CarLink.projecting || try {
 val am = getSystemService(ACTIVITY_SERVICE) as android.app.ActivityManager
 @Suppress("DEPRECATION")
 am.runningAppProcesses?.any {
