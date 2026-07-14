@@ -3,6 +3,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.os.Bundle
 import android.view.MotionEvent
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.Image
@@ -44,6 +45,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import com.amni.drive.config.DriveConfig
@@ -62,16 +65,25 @@ import com.amni.drive.ui.rememberPalette
 import com.amni.drive.weather.WeatherNow
 import com.amni.drive.weather.WeatherService
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 class LinkActivity : ComponentActivity() {
 private var host: LinkHost? = null
 private var receiver: LinkReceiver? = null
 private var discovery: LinkDiscovery? = null
+@Volatile private var huMode = false
 override fun onCreate(savedInstanceState: Bundle?) {
 super.onCreate(savedInstanceState)
 val role = intent.getStringExtra(EXTRA_ROLE) ?: ROLE_PICK
 val app = application as AmniDriveApp
 discovery = LinkDiscovery(this)
+if (role != ROLE_PICK) {
+window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+lifecycleScope.launch {
+huMode = runCatching { app.configStore.config.first().huFullscreen }.getOrDefault(true)
+if (huMode) applyImmersive()
+}
+}
 setContent {
 val theme by app.themeStore.theme.collectAsStateWithLifecycle(UiTheme())
 AmniDriveTheme(rememberPalette(theme)) {
@@ -244,6 +256,15 @@ Text("EXIT", color = p.acc, modifier = Modifier.align(Alignment.TopEnd).padding(
 }
 }
 }
+}
+private fun applyImmersive() {
+val c = WindowInsetsControllerCompat(window, window.decorView)
+c.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+c.hide(WindowInsetsCompat.Type.systemBars())
+}
+override fun onWindowFocusChanged(hasFocus: Boolean) {
+super.onWindowFocusChanged(hasFocus)
+if (hasFocus && huMode) applyImmersive()
 }
 override fun onDestroy() {
 host?.stop(); receiver?.stop(); discovery?.stop()

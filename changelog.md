@@ -462,3 +462,8 @@ Built **release** (isDebuggable=false, debug-key signed, 11.9 MB); merged manife
 **User:** "all the android auto formatting is still present... is there really no way to have an amni-drive full UI?" — answer: not on the factory Kia (Gearhead composites its status/facet chrome into the encoded stream before the wire; every AA nav app including Google Maps wears it; no API strips it). TRUE full UI lives on owned glass — and there, drive mode still showed Android's own status/gesture bars.
 **Ship:** `huFullscreen` config (default ON): drive mode now applies immersive-sticky via `WindowInsetsControllerCompat` (hide systemBars, BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE), re-asserted on window-focus regain; Settings › NAVIGATION "🖥️ HU fullscreen" row. Mounted phone/tablet = 100% Amni pixels, swipe an edge to peek bars. Guardian council 5-0 (docs/guardian_councils/guardian_council_owned_glass_hu_mode.md).
 **Verified:** tests green, lint 0 errors, release APK. Flash queued (adb wedged offline-handshake; probe armed). versionCode **78**.
+
+## v1.9.1 — 2026-07-13 — Amni Link chrome-free + never-sleep (host + receiver)
+**Gap:** LinkActivity (both roles) showed Android status/gesture bars around the car UI and never set keep-screen-on — a dash receiver would sleep mid-drive.
+**Ship:** HOST and RECV roles get FLAG_KEEP_SCREEN_ON + the same `huFullscreen`-gated immersive-sticky as MainActivity (swipe-transient, focus re-assert). PICK screen stays normal.
+**Verified:** tests green, lint 0 errors, release APK. Flash queued with v1.9.0. versionCode **79**.

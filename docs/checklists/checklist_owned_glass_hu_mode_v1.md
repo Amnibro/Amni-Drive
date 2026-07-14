@@ -9,6 +9,7 @@ Goal: TRUE full Amni UI with zero Android chrome on owned glass (mounted phone/t
 - [x] Settings NAV pane — 🖥️ HU fullscreen SetRow
 - [x] version 1.9.0 (78)
 - [x] tests + lint + assembleRelease
+- [x] v1.9.1 follow-up: LinkActivity host+recv keep-screen-on + immersive
 - [ ] flash to Fold (queued — adb wedged; probe armed)
 - [ ] device verify: drive mode → no status/nav bars, swipe peeks, toggle OFF restores
 - [x] changelog + architecture_map
