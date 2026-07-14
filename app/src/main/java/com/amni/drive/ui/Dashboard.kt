@@ -215,9 +215,11 @@ voiceHint = null
 }
 })
 }
-val micPerm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok -> if (ok) startVoice() else voiceHint = "Mic permission needed" }
+val micRegistry = androidx.activity.compose.LocalActivityResultRegistryOwner.current
+val micPerm = if (micRegistry != null) rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok -> if (ok) startVoice() else voiceHint = "Mic permission needed" } else null
 val onVoice: () -> Unit = {
-if (androidx.core.content.ContextCompat.checkSelfPermission(ctxRoot, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) startVoice() else micPerm.launch(android.Manifest.permission.RECORD_AUDIO)
+if (androidx.core.content.ContextCompat.checkSelfPermission(ctxRoot, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) startVoice()
+else micPerm?.launch(android.Manifest.permission.RECORD_AUDIO) ?: run { voiceHint = "Grant microphone on the phone first (open Amni there, tap 🎤 once)"; navScope.launch { delay(3500); voiceHint = null } }
 }
 DisposableEffect(Unit) { onDispose { VoiceSearch.stop() } }
 val incoming by MessageFeed.latest.collectAsState()
