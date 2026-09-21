@@ -1,0 +1,31 @@
+07-12 18:38:22.463 43588 39548 D adb.exe : adb_trace.cpp:201 Android Debug Bridge version 1.0.41
+07-12 18:38:22.463 43588 39548 D adb.exe : adb_trace.cpp:201 Version 37.0.0-14910828
+07-12 18:38:22.463 43588 39548 D adb.exe : adb_trace.cpp:201 Installed as C:\Users\antho\AppData\Local\Android\Sdk\platform-tools\adb.exe
+07-12 18:38:22.463 43588 39548 D adb.exe : adb_trace.cpp:201 Running on Windows 10.0.26200
+07-12 18:38:22.463 43588 39548 D adb.exe : adb_trace.cpp:201 
+07-12 18:38:22.464 43588 39548 D adb.exe : commandline.cpp:1683 Using server socket: tcp:5037
+07-12 18:38:22.465 43588 39548 D adb.exe : adb_client.cpp:400 adb_query: host:connect:100.116.191.230:49111
+07-12 18:38:22.466 43588 39548 D adb.exe : adb_client.cpp:358 adb_connect: service: host:connect:100.116.191.230:49111
+07-12 18:38:22.466 43588 39548 D adb.exe : adb_client.cpp:160 _adb_connect: host:version
+07-12 18:38:22.466 43588 39548 D adb.exe : sysdeps_win32.cpp:1040 port 5037 type tcp => fd 2048
+07-12 18:38:22.466 43588 39548 D adb.exe : adb_io.cpp:107 writex: fd=2048 len=16 30303063686f73743a76657273696f6e 000chost:version
+07-12 18:38:22.466 43588 39548 D adb.exe : adb_io.cpp:81 readx: fd=2048 wanted=4
+07-12 18:38:22.467 43588 39548 D adb.exe : adb_io.cpp:97 readx: fd=2048 wanted=4 got=4 4f4b4159 OKAY
+07-12 18:38:22.467 43588 39548 D adb.exe : adb_client.cpp:194 _adb_connect: return fd 2048
+07-12 18:38:22.467 43588 39548 D adb.exe : adb_io.cpp:81 readx: fd=2048 wanted=4
+07-12 18:38:22.467 43588 39548 D adb.exe : adb_io.cpp:97 readx: fd=2048 wanted=4 got=4 30303034 0004
+07-12 18:38:22.467 43588 39548 D adb.exe : adb_io.cpp:81 readx: fd=2048 wanted=4
+07-12 18:38:22.467 43588 39548 D adb.exe : adb_io.cpp:97 readx: fd=2048 wanted=4 got=4 30303239 0029
+07-12 18:38:22.467 43588 39548 D adb.exe : sysdeps_win32.cpp:537 adb_close: 2048(lo-client:5037)
+07-12 18:38:22.467 43588 39548 D adb.exe : adb_client.cpp:160 _adb_connect: host:connect:100.116.191.230:49111
+07-12 18:38:22.468 43588 39548 D adb.exe : sysdeps_win32.cpp:1040 port 5037 type tcp => fd 2048
+07-12 18:38:22.468 43588 39548 D adb.exe : adb_io.cpp:107 writex: fd=2048 len=38 30303232686f73743a636f6e6e656374 0022host:connect [truncated]
+07-12 18:38:22.468 43588 39548 D adb.exe : adb_io.cpp:81 readx: fd=2048 wanted=4
+07-12 18:38:22.468 43588 39548 D adb.exe : adb_io.cpp:97 readx: fd=2048 wanted=4 got=4 4f4b4159 OKAY
+07-12 18:38:22.468 43588 39548 D adb.exe : adb_client.cpp:194 _adb_connect: return fd 2048
+07-12 18:38:22.468 43588 39548 D adb.exe : adb_client.cpp:376 adb_connect: return fd 2048
+07-12 18:38:22.469 43588 39548 D adb.exe : adb_io.cpp:81 readx: fd=2048 wanted=4
+07-12 18:38:22.489 43588 39548 D adb.exe : adb_io.cpp:97 readx: fd=2048 wanted=4 got=4 30303261 002a
+07-12 18:38:22.489 43588 39548 D adb.exe : adb_io.cpp:81 readx: fd=2048 wanted=42
+07-12 18:38:22.489 43588 39548 D adb.exe : adb_io.cpp:97 readx: fd=2048 wanted=42 got=42 616c726561647920636f6e6e65637465 already connecte [truncated]
+07-12 18:38:22.489 43588 39548 D adb.exe : sysdeps_win32.cpp:537 adb_close: 2048(lo-client:5037)

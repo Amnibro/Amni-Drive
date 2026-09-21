@@ -18,3 +18,5 @@ backups/*.bak
 *.log
 .kotlin/
 *.hprof
+
+docs/captures/

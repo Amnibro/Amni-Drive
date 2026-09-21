@@ -1,0 +1,69 @@
+﻿Initialized native services in: C:\Users\antho\.gradle\native
+Initialized jansi services in: C:\Users\antho\.gradle\native
+Found daemon DaemonInfo{pid=36972, address=[462a7057-6478-4f30-82c5-1711c95eb02f port:49922, addresses:[/127.0.0.1]], state=Idle, lastBusy=1783811635008, context=DefaultDaemonContext[uid=db27c339-6b65-4154-ba59-40684147e15d,javaHome=C:\Program Files\Android\Android Studio\jbr,javaVersion=21,javaVendor=JetBrains s.r.o.,daemonRegistryDir=C:\Users\antho\.gradle\daemon,pid=36972,idleTimeout=10800000,priority=NORMAL,applyInstrumentationAgent=true,nativeServicesMode=ENABLED,daemonOpts=-Xmx2048m,-Dfile.encoding=UTF-8,-Duser.country=US,-Duser.language=en,-Duser.variant]} however its context does not match the desired criteria.
+JVM is incompatible.
+Wanted: DaemonRequestContext{jvmCriteria=C:\Program Files\Java\jre1.8.0_481 (no JDK specified, using current Java home), daemonOpts=[-Xmx2048m, -Dfile.encoding=UTF-8, -Duser.country=US, -Duser.language=en, -Duser.variant], applyInstrumentationAgent=true, nativeServicesMode=ENABLED, priority=NORMAL}
+Actual: DefaultDaemonContext[uid=db27c339-6b65-4154-ba59-40684147e15d,javaHome=C:\Program Files\Android\Android Studio\jbr,javaVersion=21,javaVendor=JetBrains s.r.o.,daemonRegistryDir=C:\Users\antho\.gradle\daemon,pid=36972,idleTimeout=10800000,priority=NORMAL,applyInstrumentationAgent=true,nativeServicesMode=ENABLED,daemonOpts=-Xmx2048m,-Dfile.encoding=UTF-8,-Duser.country=US,-Duser.language=en,-Duser.variant]
+
+  Looking for a different daemon...
+Removing daemon from the registry due to communication failure. Daemon information: DaemonInfo{pid=34436, address=[b9423547-a9b7-4a28-9cfa-156d26890a8b port:53407, addresses:[/127.0.0.1]], state=Idle, lastBusy=1783811764456, context=DefaultDaemonContext[uid=72b56065-3bf9-46ca-b888-0a98d741b126,javaHome=C:\Program Files\Java\jre1.8.0_481,javaVersion=8,javaVendor=Oracle Corporation,daemonRegistryDir=C:\Users\antho\.gradle\daemon,pid=34436,idleTimeout=10800000,priority=NORMAL,applyInstrumentationAgent=true,nativeServicesMode=ENABLED,daemonOpts=-Xmx2048m,-Dfile.encoding=UTF-8,-Duser.country=US,-Duser.language=en,-Duser.variant]}
+Removing 0 daemon stop events from registry
+Previous Daemon (40320) stopped at Sat Jul 11 19:15:42 EDT 2026 by user or operating system
+Previous Daemon (10264) stopped at Sat Jul 11 19:15:53 EDT 2026 by user or operating system
+Previous Daemon (20908) stopped at Sat Jul 11 19:16:03 EDT 2026 by user or operating system
+Previous Daemon (34436) stopped at Sat Jul 11 19:16:13 EDT 2026 by user or operating system
+Starting a Gradle Daemon, 2 incompatible and 4 stopped Daemons could not be reused, use --status for details
+Starting process 'Gradle build daemon'. Working directory: C:\Users\antho\.gradle\daemon\8.13 Command: C:\Program Files\Java\jre1.8.0_481\bin\java.exe -Xmx2048m -Dfile.encoding=UTF-8 -Duser.country=US -Duser.language=en -Duser.variant -cp C:\Users\antho\.gradle\wrapper\dists\gradle-8.13-bin\5xuhj0ry160q40clulazy9h7d\gradle-8.13\lib\gradle-daemon-main-8.13.jar -javaagent:C:\Users\antho\.gradle\wrapper\dists\gradle-8.13-bin\5xuhj0ry160q40clulazy9h7d\gradle-8.13\lib\agents\gradle-instrumentation-agent-8.13.jar org.gradle.launcher.daemon.bootstrap.GradleDaemon 8.13
+Successfully started process 'Gradle build daemon'
+An attempt to start the daemon took 1.143 secs.
+The client will now receive all logging from the daemon (pid: 50012). The daemon log file: C:\Users\antho\.gradle\daemon\8.13\daemon-50012.out.log
+Starting build in new daemon [memory: 1.7 GiB]
+Using 32 worker leases.
+Received JVM installation metadata from 'C:\Program Files\Java\jre1.8.0_481': {JAVA_HOME=C:\Program Files\Java\jre1.8.0_481, JAVA_VERSION=1.8.0_481, JAVA_VENDOR=Oracle Corporation, RUNTIME_NAME=Java(TM) SE Runtime Environment, RUNTIME_VERSION=1.8.0_481-b10, VM_NAME=Java HotSpot(TM) 64-Bit Server VM, VM_VERSION=25.481-b10, VM_VENDOR=Oracle Corporation, OS_ARCH=amd64}
+Watching the file system is configured to be enabled if available
+Now considering [C:\Users\antho\Documents\ai\Amni-Drive] as hierarchies to watch
+File system watching is active
+Starting Build
+Settings evaluated using settings file 'C:\Users\antho\Documents\ai\Amni-Drive\settings.gradle.kts'.
+Projects loaded. Root project using build file 'C:\Users\antho\Documents\ai\Amni-Drive\build.gradle.kts'.
+Included projects: [root project 'Amni-Drive', project ':app']
+
+> Configure project :
+Evaluating root project 'Amni-Drive' using build file 'C:\Users\antho\Documents\ai\Amni-Drive\build.gradle.kts'.
+Resolved plugin [id: 'com.android.application', version: '8.5.2', apply: false]
+Resolved plugin [id: 'org.jetbrains.kotlin.android', version: '1.9.24', apply: false]
+Variant Selection Exception: org.gradle.internal.component.resolution.failure.exception.VariantSelectionByAttributesException caused by Resolution Failure: org.gradle.internal.component.resolution.failure.type.NoCompatibleVariantsFailure
+
+[Incubating] Problems report is available at: file:///C:/Users/antho/Documents/ai/Amni-Drive/build/reports/problems/problems-report.html
+gradle.bat : 
+At line:1 char:160
++ ... .13\bin\gradle.bat"; & $g :app:compileDebugKotlin --info 2>&1 | Out-F ...
++                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+A problem occurred configuring root project 'Amni-Drive'.
+> Could not resolve all artifacts for configuration 'classpath'.
+   > Could not resolve com.android.tools.build:gradle:8.5.2.
+     Required by:
+         root project : > com.android.application:com.android.application.gradle.plugin:8.5.2
+      > Dependency requires at least JVM runtime version 11. This build uses a Java 8 JVM.
+
+* Try:
+> Run this build using a Java 11 or newer JVM.
+> Run with --stacktrace option to get the stack trace.
+> Run with --debug option to get more log output.
+> Run with --scan to get full insights.
+> Get more help at https://help.gradle.org.
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 9.0.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/8.13/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD FAILED in 5s
+Watched directory hierarchies: []
