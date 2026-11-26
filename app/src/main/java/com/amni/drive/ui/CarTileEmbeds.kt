@@ -496,3 +496,162 @@ fun WidgetPickerSheet(
         }
     }
 }
+
+data class WebAppEntry(
+    val id: String,
+    val label: String,
+    val emoji: String,
+    val url: String,
+    val pkgHint: String = ""
+) {
+    companion object {
+        val CATALOG = listOf(
+            WebAppEntry("youtube", "YouTube", "▶️", "https://m.youtube.com", "youtube"),
+            WebAppEntry("ytmusic", "YT Music", "🎵", "https://music.youtube.com", "youtube.music"),
+            WebAppEntry("spotify", "Spotify Web", "🎧", "https://open.spotify.com", "spotify"),
+            WebAppEntry("netflix", "Netflix", "🎬", "https://www.netflix.com", "netflix"),
+            WebAppEntry("twitch", "Twitch", "📺", "https://m.twitch.tv", "twitch"),
+            WebAppEntry("plex", "Plex", "🍿", "https://app.plex.tv/desktop", "plex"),
+            WebAppEntry("soundcloud", "SoundCloud", "☁️", "https://m.soundcloud.com", "soundcloud"),
+            WebAppEntry("radio", "Radio Garden", "📻", "https://radio.garden", "radio"),
+            WebAppEntry("ace", "Ace Hardware", "🛠️", "https://www.acehardware.com", "acehardware"),
+            WebAppEntry("google", "Web Search", "🌐", "https://www.google.com", "chrome")
+        )
+
+        fun matchPackage(pkg: String): WebAppEntry? {
+            val low = pkg.lowercase()
+            return CATALOG.firstOrNull { it.pkgHint.isNotBlank() && low.contains(it.pkgHint) }
+        }
+    }
+}
+
+/**
+ * Zero-ADB, zero-screenshare, native in-car WebView media/app box.
+ * Renders directly inside the car display Presentation (never touches the phone screen,
+ * never needs ShellAngel or MediaProjection, keeps login cookies, plays audio to the car).
+ */
+@android.annotation.SuppressLint("SetJavaScriptEnabled")
+@Composable
+fun EmbeddedWebMediaTile(
+    app: WebAppEntry,
+    modifier: Modifier,
+    onChangeApp: () -> Unit,
+    onCloseToControls: () -> Unit
+) {
+    val p = LocalAmni.current
+    var webRef by remember { mutableStateOf<android.webkit.WebView?>(null) }
+    var pageTitle by remember(app.id) { mutableStateOf(app.label) }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            runCatching {
+                webRef?.onPause()
+                webRef?.destroy()
+            }
+            webRef = null
+        }
+    }
+
+    GlassCard(modifier) {
+        Column(Modifier.fillMaxSize()) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .height(28.dp)
+                    .background(p.panel)
+                    .padding(horizontal = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp)
+            ) {
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(p.panel2)
+                        .border(1.dp, p.hairline, RoundedCornerShape(6.dp))
+                        .clickable { if (webRef?.canGoBack() == true) webRef?.goBack() }
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text("◀", color = p.ink, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                }
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(p.panel2)
+                        .border(1.dp, p.hairline, RoundedCornerShape(6.dp))
+                        .clickable { webRef?.reload() }
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text("↻", color = p.ink, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                }
+                Text(
+                    "${app.emoji} $pageTitle",
+                    color = p.ink,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(p.accDim)
+                        .border(1.dp, p.acc.copy(alpha = 0.6f), RoundedCornerShape(6.dp))
+                        .clickable { onChangeApp() }
+                        .padding(horizontal = 7.dp, vertical = 2.dp)
+                ) {
+                    Text("APP", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                }
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(p.panel2)
+                        .border(1.dp, p.hairline, RoundedCornerShape(6.dp))
+                        .clickable { onCloseToControls() }
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text("♪", color = p.ink, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            AndroidView(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .background(Color.Black),
+                factory = { ctx ->
+                    android.webkit.WebView(ctx).apply {
+                        setBackgroundColor(android.graphics.Color.BLACK)
+                        settings.javaScriptEnabled = true
+                        settings.domStorageEnabled = true
+                        settings.databaseEnabled = true
+                        settings.mediaPlaybackRequiresUserGesture = false
+                        settings.useWideViewPort = true
+                        settings.loadWithOverviewMode = true
+                        settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+                        runCatching {
+                            android.webkit.CookieManager.getInstance().setAcceptCookie(true)
+                            android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+                        }
+                        webViewClient = object : android.webkit.WebViewClient() {
+                            override fun onPageFinished(view: android.webkit.WebView?, url: String?) {
+                                val t = view?.title?.takeIf { it.isNotBlank() }
+                                if (t != null) pageTitle = t
+                            }
+                        }
+                        webChromeClient = android.webkit.WebChromeClient()
+                        loadUrl(app.url)
+                        webRef = this
+                    }
+                },
+                update = { wv ->
+                    if (wv.tag != app.url) {
+                        wv.tag = app.url
+                        wv.loadUrl(app.url)
+                    }
+                }
+            )
+        }
+    }
+}

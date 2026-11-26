@@ -262,13 +262,17 @@ fun AmniMap(
         lifecycleOwner.lifecycle.addObserver(obs)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(obs)
-            mapDestroyed = true
-            loadedStyle = null
-            map = null
-            runCatching {
-                mapView.onPause()
-                mapView.onStop()
-                mapView.onDestroy()
+            if (!mapDestroyed) {
+                mapDestroyed = true
+                loadedStyle = null
+                map = null
+                mapView.post {
+                    runCatching {
+                        mapView.onPause()
+                        mapView.onStop()
+                        mapView.onDestroy()
+                    }
+                }
             }
         }
     }

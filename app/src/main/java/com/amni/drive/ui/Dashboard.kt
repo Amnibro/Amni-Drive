@@ -157,6 +157,7 @@ var mediaHint by remember { mutableStateOf<String?>(null) }
 var launchHint by remember { mutableStateOf<String?>(null) }
 var mediaPicker by remember { mutableStateOf(false) }
 var embeddedMediaApp by remember { mutableStateOf<AppEntry?>(null) }
+var embeddedWebApp by remember { mutableStateOf<WebAppEntry?>(null) }
 val hasAmniMap = remember(apps) { com.amni.drive.launcher.CarEmbed.supports(ctxRoot, com.amni.drive.launcher.CarEmbed.MAP_PKG) }
 var useAmniMap by remember(carSurface, hasAmniMap) { mutableStateOf(carSurface && hasAmniMap) }
 val navScope = rememberCoroutineScope()
@@ -179,6 +180,13 @@ it.packageName.contains("prime", true) ||
 it.packageName.contains("pocketcasts", true)
 }
 }
+val openWebInMediaBox: (WebAppEntry) -> Unit = { web ->
+embeddedMediaApp = null
+embeddedWebApp = web
+mediaHint = web.label
+page = DrivePage.HOME
+launchHint = "${web.emoji} ${web.label}"
+}
 val openInMediaBox: (AppEntry) -> Unit = { app ->
 if (app.packageName == com.amni.drive.launcher.CarEmbed.MAP_PKG && carSurface && hasAmniMap) {
 useAmniMap = true
@@ -191,7 +199,14 @@ blocked = app
 } else {
 mediaHint = app.label
 if (carSurface) {
+val webMatch = if (!com.amni.drive.launcher.CarApps.ready.value) WebAppEntry.matchPackage(app.packageName) else null
+if (webMatch != null) {
+embeddedMediaApp = null
+embeddedWebApp = webMatch
+} else {
+embeddedWebApp = null
 embeddedMediaApp = app
+}
 page = DrivePage.HOME
 }
 val isAudio = app.category == com.amni.drive.gate.AppCategory.MEDIA || app.packageName.contains("spotify", true) || app.packageName.contains("music", true)
@@ -360,7 +375,8 @@ useAmniMap = useAmniMap && hasAmniMap,
 hasAmniMap = hasAmniMap,
 onToggleAmniMap = { useAmniMap = !useAmniMap },
 embeddedMediaApp = embeddedMediaApp,
-onClearMediaApp = { embeddedMediaApp = null },
+embeddedWebApp = embeddedWebApp,
+onClearMediaApp = { embeddedMediaApp = null; embeddedWebApp = null },
 widgetsList = theme.widgets,
 onEditWidgets = { widgetPicker = true },
 onToggleGate = onToggleGate,
@@ -410,7 +426,7 @@ onSettings = { menuOpen = false; onOpenSettings() }, onClose = { menuOpen = fals
 onTileLayout = { menuOpen = false; layoutPicker = true }, onWidgets = { menuOpen = false; widgetPicker = true }, themeLabel = theme.preset.label, onTheme = onCycleTheme)
 if (layoutPicker) TileLayoutPicker(theme.tileLayout, layout, { onSetTileLayout(it); layoutPicker = false }, { layoutPicker = false }, carSurface)
 if (widgetPicker) WidgetPickerSheet(theme.widgets, onSetWidgets) { widgetPicker = false }
-if (mediaPicker) MediaSourceSheet(mediaAppsList, apps, { mediaPicker = false }, { openInMediaBox(it); mediaPicker = false })
+if (mediaPicker) MediaSourceSheet(mediaAppsList, apps, { mediaPicker = false }, { openInMediaBox(it); mediaPicker = false }, { openWebInMediaBox(it); mediaPicker = false })
 blocked?.let { app ->
 GateSheet(app, rearAvailable,
 onRear = { onLaunchRear(app); blocked = null },
@@ -451,6 +467,7 @@ useAmniMap: Boolean = false,
 hasAmniMap: Boolean = false,
 onToggleAmniMap: () -> Unit = {},
 embeddedMediaApp: AppEntry? = null,
+embeddedWebApp: WebAppEntry? = null,
 onClearMediaApp: () -> Unit = {},
 widgetsList: List<DashWidget> = DashWidget.DEFAULTS,
 onEditWidgets: () -> Unit = {},
@@ -525,10 +542,10 @@ Text("✎ EDIT WIDGETS", color = p.soft, fontFamily = FontFamily.Monospace, font
 }
 }
 val media: @Composable (Modifier, Boolean) -> Unit = { mod, d ->
-if (embeddedMediaApp != null && carSurface) {
-EmbeddedAppMediaTile(embeddedMediaApp, mod.then(mediaMod), onChangeApp = onOpenMediaPicker, onCloseToControls = onClearMediaApp)
-} else {
-MediaCard(mod.then(mediaMod), d, mediaHint, surfaceDisplayId, mediaApps, onOpenMediaPicker)
+when {
+embeddedWebApp != null -> EmbeddedWebMediaTile(embeddedWebApp, mod.then(mediaMod), onChangeApp = onOpenMediaPicker, onCloseToControls = onClearMediaApp)
+embeddedMediaApp != null && carSurface -> EmbeddedAppMediaTile(embeddedMediaApp, mod.then(mediaMod), onChangeApp = onOpenMediaPicker, onCloseToControls = onClearMediaApp)
+else -> MediaCard(mod.then(mediaMod), d, mediaHint, surfaceDisplayId, mediaApps, onOpenMediaPicker)
 }
 }
 when (layout) {
@@ -1001,27 +1018,32 @@ Text("PLAY / RESUME", color = p.acc, fontFamily = FontFamily.Monospace, fontSize
 }
 }
 @Composable
-private fun MediaSourceSheet(mediaApps: List<AppEntry>, allApps: List<AppEntry>, onClose: () -> Unit, onPick: (AppEntry) -> Unit) {
+private fun MediaSourceSheet(
+mediaApps: List<AppEntry>,
+allApps: List<AppEntry>,
+onClose: () -> Unit,
+onPick: (AppEntry) -> Unit,
+onPickWeb: (WebAppEntry) -> Unit = {}
+) {
 val p = LocalAmni.current
 val ctx = LocalContext.current
-var showAll by remember { mutableStateOf(mediaApps.isEmpty()) }
-val shown = if (showAll) allApps else mediaApps
+var tab by remember { mutableStateOf(0) } // 0 = Car Web Apps, 1 = Media & Video, 2 = All Apps
 Box(Modifier.fillMaxSize().background(p.scrim).clickable { onClose() }, contentAlignment = Alignment.Center) {
-SoftSurface(Modifier.fillMaxWidth(0.78f).padding(10.dp), radius = 18.dp) {
+SoftSurface(Modifier.fillMaxWidth(0.82f).padding(10.dp), radius = 18.dp) {
 Column(Modifier.padding(14.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-Text("MEDIA BOX APP", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-Box(Modifier.clip(RoundedCornerShape(99.dp)).background(if (!showAll) p.acc else p.panel2).border(1.dp, p.acc.copy(alpha = 0.6f), RoundedCornerShape(99.dp)).clickable { showAll = false }.padding(horizontal = 9.dp, vertical = 3.dp)) {
-Text("MEDIA & VIDEO", color = if (!showAll) (if (p.isLight) Color.White else Color(0xFF05070A)) else p.ink, fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+Text("MEDIA BOX", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+listOf("CAR WEB APPS", "MEDIA", "ALL (${allApps.size})").forEachIndexed { idx, label ->
+val on = tab == idx
+Box(Modifier.clip(RoundedCornerShape(99.dp)).background(if (on) p.acc else p.panel2).border(1.dp, p.acc.copy(alpha = 0.6f), RoundedCornerShape(99.dp)).clickable { tab = idx }.padding(horizontal = 8.dp, vertical = 3.dp)) {
+Text(label, color = if (on) (if (p.isLight) Color.White else Color(0xFF05070A)) else p.ink, fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold)
 }
-Box(Modifier.clip(RoundedCornerShape(99.dp)).background(if (showAll) p.acc else p.panel2).border(1.dp, p.acc.copy(alpha = 0.6f), RoundedCornerShape(99.dp)).clickable { showAll = true }.padding(horizontal = 9.dp, vertical = 3.dp)) {
-Text("ALL APPS (${allApps.size})", color = if (showAll) (if (p.isLight) Color.White else Color(0xFF05070A)) else p.ink, fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold)
 }
 Spacer(Modifier.weight(1f))
 Text("✕", color = p.ink, fontSize = 15.sp, modifier = Modifier.clickable { onClose() }.padding(4.dp))
 }
 Row(
-Modifier.fillMaxWidth().height(40.dp).clip(RoundedCornerShape(12.dp)).background(p.accDim).border(1.dp, p.acc.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
+Modifier.fillMaxWidth().height(38.dp).clip(RoundedCornerShape(12.dp)).background(p.accDim).border(1.dp, p.acc.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
 .clickable {
 if (!MediaSessionBridge.playPause()) mediaKey(ctx, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
 onClose()
@@ -1030,9 +1052,28 @@ verticalAlignment = Alignment.CenterVertically
 ) {
 Text("▶", color = p.acc, fontSize = 14.sp, fontWeight = FontWeight.Bold)
 Spacer(Modifier.width(10.dp))
-Text("Play / Resume Active Audio", color = p.ink, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+Text("Play / Resume Active Audio", color = p.ink, fontSize = 12.sp, fontWeight = FontWeight.Bold)
 }
-if (shown.isEmpty()) Text("No apps in this tab · tap ALL APPS above", color = p.soft, fontSize = 11.sp)
+if (tab == 0) {
+Text("Runs directly inside car display · no ADB · no screenshare · never opens on phone", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 9.sp)
+WebAppEntry.CATALOG.chunked(2).forEach { pair ->
+Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+pair.forEach { web ->
+Row(
+Modifier.weight(1f).height(42.dp).clip(RoundedCornerShape(12.dp)).background(p.panel2).border(1.dp, p.hairline, RoundedCornerShape(12.dp))
+.clickable { onPickWeb(web) }.padding(horizontal = 10.dp),
+verticalAlignment = Alignment.CenterVertically
+) {
+Text(web.emoji, fontSize = 16.sp)
+Spacer(Modifier.width(8.dp))
+Text(web.label, color = p.ink, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+}
+}
+}
+}
+} else {
+val shown = if (tab == 2) allApps else mediaApps
+if (shown.isEmpty()) Text("No apps in this tab · tap ALL or CAR WEB APPS above", color = p.soft, fontSize = 11.sp)
 shown.take(40).forEach { app ->
 Row(
 Modifier.fillMaxWidth().height(42.dp).clip(RoundedCornerShape(12.dp)).background(p.panel2).border(1.dp, p.hairline, RoundedCornerShape(12.dp))
@@ -1043,6 +1084,7 @@ Icon(Icons.Rounded.MusicNote, null, Modifier.size(18.dp), tint = p.acc)
 Spacer(Modifier.width(10.dp))
 Text(app.label, color = p.ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
 Text("OPEN →", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+}
 }
 }
 }

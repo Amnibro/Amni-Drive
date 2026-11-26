@@ -22,8 +22,8 @@ import java.util.Date
 import java.util.Locale
 import com.amni.drive.config.ConfigStore
 import com.amni.drive.config.DriveConfig
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicReference
 class AoaProbeService : Service() {
 private var receiver: BroadcastReceiver? = null
@@ -32,11 +32,22 @@ private var sniffThread: Thread? = null
 private var freePollThread: Thread? = null
 private val freePollActive = AtomicReference(false)
 private val sessionRunning = AtomicReference(false)
+private val usbIo = java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r, "aoa-usb-io").apply { isDaemon = true } }
+private val svcScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
+@Volatile private var cachedMode: String = DriveConfig.PATH_AUTO
 override fun onBind(intent: Intent?): IBinder? = null
+private fun shouldClaimUsb(mode: String = cachedMode): Boolean =
+mode == DriveConfig.PATH_OWN || (mode == DriveConfig.PATH_AUTO && !gearheadCarSessionAlive())
 override fun onCreate() {
 super.onCreate()
 ensureChannel()
 startForeground(NOTIF_ID, buildNotif("AOA probe idle"))
+val store = (application as? com.amni.drive.AmniDriveApp)?.configStore ?: ConfigStore(this)
+svcScope.launch {
+runCatching {
+store.config.collect { c -> cachedMode = c.aaPathMode }
+}
+}
 val filter = IntentFilter().apply {
 addAction(UsbManager.ACTION_USB_ACCESSORY_ATTACHED)
 addAction(UsbManager.ACTION_USB_ACCESSORY_DETACHED)
@@ -50,30 +61,40 @@ when (intent.action) {
 UsbManager.ACTION_USB_ACCESSORY_ATTACHED -> {
 val acc = readAccessory(intent)
 log("ATTACHED ${desc(acc)}")
-if (pathMode() == DriveConfig.PATH_OWN) requestOrOpen(acc)
+usbIo.execute {
+if (shouldClaimUsb()) requestOrOpen(acc)
 else log("ATTACHED ignored · mode=${pathMode()} (protect wifi adb)")
 }
+}
 UsbManager.ACTION_USB_ACCESSORY_DETACHED -> {
-log("DETACHED ${desc(readAccessory(intent))}")
+val acc = readAccessory(intent)
+log("DETACHED ${desc(acc)}")
+usbIo.execute {
 closeAccessory()
 updateNotif("AOA detached")
-if (pathMode() == DriveConfig.PATH_OWN) scheduleFreePoll()
+if (shouldClaimUsb()) scheduleFreePoll()
+}
 }
 ACTION_USB_STATE -> {
 val connected = intent.getBooleanExtra("connected", false)
 val configured = intent.getBooleanExtra("configured", false)
 val accessory = intent.getBooleanExtra("accessory", false)
 log("USB_STATE connected=$connected configured=$configured accessory=$accessory mode=${pathMode()}")
-if (pathMode() == DriveConfig.PATH_OWN && accessory) {
+if (accessory) {
+usbIo.execute {
+if (shouldClaimUsb()) {
 pollAccessories(requestPerm = true)
 if (accessoryFd.get() == null) scheduleFreePoll()
+}
+}
 }
 }
 ACTION_USB_PERMISSION -> {
 val acc = readAccessory(intent)
 val granted = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)
 log("PERMISSION granted=$granted ${desc(acc)}")
-if (granted && pathMode() == DriveConfig.PATH_OWN) {
+usbIo.execute {
+if (granted && shouldClaimUsb()) {
 updateNotif("AOA permission OK · opening")
 tryOpen(acc)
 if (accessoryFd.get() == null) scheduleFreePoll()
@@ -83,30 +104,36 @@ else log("PERMISSION ignored · mode=${pathMode()}")
 }
 }
 }
+}
 if (Build.VERSION.SDK_INT >= 33) registerReceiver(receiver, filter, RECEIVER_NOT_EXPORTED)
 else @Suppress("UnspecifiedRegisterReceiverFlag") registerReceiver(receiver, filter)
-if (pathMode() == DriveConfig.PATH_OWN) {
+usbIo.execute {
+if (shouldClaimUsb()) {
 pollAccessories(requestPerm = true)
 if (accessoryFd.get() == null) scheduleFreePoll()
+}
 }
 log("probe service started mode=${pathMode()} gearhead=${gearheadProjectionAlive()}")
 }
 override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 when (intent?.action) {
 ACTION_POLL -> {
-if (pathMode() == DriveConfig.PATH_OWN) {
+usbIo.execute {
+if (shouldClaimUsb()) {
 pollAccessories(requestPerm = true)
 if (accessoryFd.get() == null) scheduleFreePoll()
 } else log("POLL ignored · mode=${pathMode()}")
 }
+}
 ACTION_CLAIM -> {
 log("CLAIM → force OWN session open gearhead=${gearheadProjectionAlive()}")
-runBlocking {
-try { ConfigStore(this@AoaProbeService).setAaPathMode(DriveConfig.PATH_OWN) } catch (_: Exception) {}
-}
+cachedMode = DriveConfig.PATH_OWN
+val store = (application as? com.amni.drive.AmniDriveApp)?.configStore ?: ConfigStore(this)
+svcScope.launch { runCatching { store.setAaPathMode(DriveConfig.PATH_OWN) } }
+usbIo.execute {
 if (accessoryFd.get() != null && sessionRunning.get()) {
 log("CLAIM skipped — active OWN session already running")
-return START_STICKY
+return@execute
 }
 freePollActive.set(false)
 sessionRunning.set(false)
@@ -115,6 +142,7 @@ log("CLAIM reset FD/session for fresh open")
 pollAccessories(requestPerm = true)
 if (accessoryFd.get() == null) scheduleFreePoll()
 }
+}
 else -> { }
 }
 return START_STICKY
@@ -122,7 +150,8 @@ return START_STICKY
 override fun onDestroy() {
 freePollActive.set(false)
 runCatching { unregisterReceiver(receiver) }
-closeAccessory()
+svcScope.cancel()
+usbIo.execute { closeAccessory() }
 super.onDestroy()
 }
 private fun pollAccessories(requestPerm: Boolean) {
@@ -164,9 +193,7 @@ usb.requestPermission(acc, pi)
 log("requestPermission error: ${e.message}")
 }
 }
-private fun pathMode(): String = try {
-runBlocking { ConfigStore(this@AoaProbeService).config.first().aaPathMode }
-} catch (_: Exception) { DriveConfig.PATH_AUTO }
+private fun pathMode(): String = cachedMode
 private val openLock = Any()
 
 private fun tryOpen(acc: UsbAccessory?) {
