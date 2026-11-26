@@ -14,4 +14,11 @@ object GeoMath {
     }
     fun tileXToLon(x: Double, z: Int): Double = x / 2.0.pow(z) * 360.0 - 180.0
     fun tileYToLat(y: Double, z: Int): Double = atan(sinh(PI * (1.0 - 2.0 * y / 2.0.pow(z)))) * 180.0 / PI
+    fun haversineM(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+        val dLat = Math.toRadians(lat2 - lat1)
+        val dLon = Math.toRadians(lon2 - lon1)
+        val a = kotlin.math.sin(dLat / 2).let { it * it } +
+            cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) * kotlin.math.sin(dLon / 2).let { it * it }
+        return 2.0 * 6371000.0 * kotlin.math.atan2(kotlin.math.sqrt(a), kotlin.math.sqrt((1.0 - a).coerceAtLeast(0.0)))
+    }
 }

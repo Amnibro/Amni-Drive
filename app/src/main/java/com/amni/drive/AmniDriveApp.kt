@@ -29,6 +29,7 @@ class AmniDriveApp : Application() {
         tileStore = TileStore(this)
         reportStore = ReportStore(this)
         tracker = LocationTracker(this)
+        com.amni.drive.map.CustomPlaces.init(this)
         appScope.launch { runCatching { configStore.applyGateOffDefaultOnce() } }
         runCatching { com.amni.drive.wire.CarLink.start(this) }
         runCatching { CarConnectionService.start(this) }
