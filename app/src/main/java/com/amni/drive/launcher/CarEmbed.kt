@@ -36,6 +36,8 @@ object CarEmbed {
     @Volatile var overlayBlocking: Boolean = false
     private var area: IntArray? = null
     private val main = Handler(Looper.getMainLooper())
+    private val ipcThread = android.os.HandlerThread("amni-embed-ipc").apply { isDaemon = true; start() }
+    private val ipc = Handler(ipcThread.looper)
     private val inbox = Messenger(Handler(Looper.getMainLooper()) { m -> if (m.what == GONE && shown.value?.let { SystemClock.uptimeMillis() - it.at > 777 } == true) { Log.i(TAG, "app asked to go back home"); home() }; true })
     fun supports(ctx: Context, pkg: String): Boolean = runCatching { ctx.packageManager.resolveService(Intent(ACTION).setPackage(pkg), 0) != null }.getOrDefault(false)
     fun up(s: Shown?, displayId: Int?): Boolean = s != null && s.front && displayId != null && s.displayId == displayId
@@ -72,12 +74,28 @@ object CarEmbed {
         if (ev.actionMasked == MotionEvent.ACTION_DOWN) target = if (CarApps.pick(ev)) 3 else if (hit(CarMirror.area, ev)) 2 else if (hit(area, ev) && remote != null) 1 else 0
         if (target == 3) { CarApps.touch(ev); return true }
         val a = (if (target == 2) CarMirror.area else if (target == 1) area else null) ?: return root.dispatchTouchEvent(ev)
-        if (target == 2) CarMirror.touch(ev, a[0], a[1]) else MotionEvent.obtain(ev).let { c -> c.source = InputDevice.SOURCE_TOUCHSCREEN; c.offsetLocation(-a[0].toFloat(), -a[1].toFloat()); send(Message.obtain(null, TOUCH).apply { obj = c }); c.recycle() }
+        if (target == 2) {
+            CarMirror.touch(ev, a[0], a[1])
+        } else {
+            val copy = MotionEvent.obtain(ev).apply {
+                source = InputDevice.SOURCE_TOUCHSCREEN
+                offsetLocation(-a[0].toFloat(), -a[1].toFloat())
+            }
+            ipc.post {
+                try {
+                    remote?.send(Message.obtain(null, TOUCH).apply { obj = copy })
+                } catch (e: Exception) {
+                    Log.w(TAG, "send TOUCH failed: ${e.message}")
+                } finally {
+                    copy.recycle()
+                }
+            }
+        }
         return true
     }
     fun key(ev: KeyEvent, displayId: Int): Boolean = on(displayId)?.let { if (it.slot != null) return CarApps.key(it.slot, ev); if (it.mirror) return (ev.keyCode == KeyEvent.KEYCODE_BACK || ev.keyCode == KeyEvent.KEYCODE_ESCAPE) && (ev.action != KeyEvent.ACTION_UP || CarMirror.back() || true); send(Message.obtain(null, KEY).apply { obj = KeyEvent(ev) }); true } ?: false
     private fun sendFrame() { frame?.let { f -> send(Message.obtain(null, SURFACE).apply { data = Bundle(f) }) } }
-    private fun send(m: Message) { runCatching { remote?.send(m) }.onFailure { Log.w(TAG, "send ${m.what} failed: ${it.message}") } }
+    private fun send(m: Message) { ipc.post { runCatching { remote?.send(m) }.onFailure { Log.w(TAG, "send ${m.what} failed: ${it.message}") } } }
     private fun bind(app: Context, pkg: String): Boolean {
         unbind()
         val c = object : ServiceConnection {

@@ -25,11 +25,13 @@ class H264Encoder(
     var onError: (String) -> Unit = {}
 
     fun start(): Boolean {
+        val targetFps = fps.coerceIn(15, 30)
+        val maxInFps = minOf(targetFps, 24).toFloat()
         val dropSets = listOf(
             emptySet<String>(),
             setOf(MediaFormat.KEY_PREPEND_HEADER_TO_SYNC_FRAMES),
-            setOf(MediaFormat.KEY_PREPEND_HEADER_TO_SYNC_FRAMES, MediaFormat.KEY_MAX_B_FRAMES, MediaFormat.KEY_LATENCY, MediaFormat.KEY_PRIORITY),
-            setOf(MediaFormat.KEY_PREPEND_HEADER_TO_SYNC_FRAMES, MediaFormat.KEY_MAX_B_FRAMES, MediaFormat.KEY_LATENCY, MediaFormat.KEY_PRIORITY, MediaFormat.KEY_PROFILE, MediaFormat.KEY_LEVEL, MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER)
+            setOf(MediaFormat.KEY_PREPEND_HEADER_TO_SYNC_FRAMES, MediaFormat.KEY_MAX_FPS_TO_ENCODER, MediaFormat.KEY_MAX_B_FRAMES, MediaFormat.KEY_LATENCY, MediaFormat.KEY_PRIORITY),
+            setOf(MediaFormat.KEY_PREPEND_HEADER_TO_SYNC_FRAMES, MediaFormat.KEY_MAX_FPS_TO_ENCODER, MediaFormat.KEY_MAX_B_FRAMES, MediaFormat.KEY_LATENCY, MediaFormat.KEY_PRIORITY, MediaFormat.KEY_PROFILE, MediaFormat.KEY_LEVEL, MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER)
         )
         var lastErr: Exception? = null
         for (dropped in dropSets) {
@@ -38,8 +40,11 @@ class H264Encoder(
                 val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height).apply {
                     setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
                     setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
-                    setInteger(MediaFormat.KEY_FRAME_RATE, fps)
-                    setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 2)
+                    setInteger(MediaFormat.KEY_FRAME_RATE, targetFps)
+                    setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 3)
+                    if (MediaFormat.KEY_MAX_FPS_TO_ENCODER !in dropped) {
+                        setFloat(MediaFormat.KEY_MAX_FPS_TO_ENCODER, maxInFps)
+                    }
                     if (MediaFormat.KEY_PROFILE !in dropped) {
                         setInteger(MediaFormat.KEY_PROFILE, MediaCodecInfo.CodecProfileLevel.AVCProfileBaseline)
                     }
@@ -47,7 +52,7 @@ class H264Encoder(
                         setInteger(MediaFormat.KEY_LEVEL, MediaCodecInfo.CodecProfileLevel.AVCLevel4)
                     }
                     if (MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER !in dropped) {
-                        setLong(MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER, 200_000L)
+                        setLong(MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER, 333_333L)
                     }
                     if (MediaFormat.KEY_PRIORITY !in dropped) {
                         setInteger(MediaFormat.KEY_PRIORITY, 0)
@@ -65,6 +70,9 @@ class H264Encoder(
                 c = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
                 c.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
                 val surf = c.createInputSurface()
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    runCatching { surf.setFrameRate(maxInFps, Surface.FRAME_RATE_COMPATIBILITY_DEFAULT) }
+                }
                 c.start()
                 inputSurface = surf
                 codec = c

@@ -142,7 +142,8 @@ val gh = gearheadAlive()
 val ghCar = gearheadCarSession()
 val acc = accessoryPresent()
 val ips = localIps()
-return """{"ok":true,"mode":"$mode","gearhead":$gh,"gearheadCar":$ghCar,"accessory":$acc,"ver":"${appVersion()}","ips":${jsonArr(ips)},"port":$PORT,"adbSafe":${mode != DriveConfig.PATH_OWN},"ownWall":"AuthComplete-3","replacement":"link+ride"}"""
+val pf = AaPostTls.perfStats.value
+return """{"ok":true,"mode":"$mode","gearhead":$gh,"gearheadCar":$ghCar,"accessory":$acc,"ver":"${appVersion()}","ips":${jsonArr(ips)},"port":$PORT,"adbSafe":${mode != DriveConfig.PATH_OWN},"videoFps":${pf.videoFps},"videoDrops":${pf.videoDrops},"unacked":${pf.videoUnacked},"avgFrameBytes":${pf.avgFrameBytes},"touches":${pf.touches},"ownWall":"AuthComplete-3","replacement":"link+ride"}"""
 }
 private fun ownJson(): String {
 val mode = runCatching { runBlocking { ConfigStore(this@MeshDevBridgeService).config.first().aaPathMode } }.getOrDefault(DriveConfig.PATH_RIDE)

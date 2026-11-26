@@ -233,4 +233,11 @@ class AaPostTlsTest {
         loud[17] = 0x08 // +2048 little-endian sample
         assertTrue(AaAudioStreamer.hasAudibleSignal(loud))
     }
+
+    @Test
+    fun parseMediaAckCountHandlesBatchedAndDefaultAcks() {
+        assertEquals(1, AaPostTls.parseMediaAckCount(AaPb.u32(1, 0))) // session only -> default 1
+        assertEquals(4, AaPostTls.parseMediaAckCount(AaPb.cat(AaPb.u32(1, 0), AaPb.u32(2, 4))))
+        assertEquals(1, AaPostTls.parseMediaAckCount(ByteArray(0)))
+    }
 }

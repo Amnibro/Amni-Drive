@@ -32,7 +32,23 @@ val theme by app.themeStore.theme.collectAsState(UiTheme())
 val cfg by controller.config.collectAsState(DriveConfig())
 val state by controller.driveState.collectAsState(DriveState.UNKNOWN)
 val passenger by controller.passengerConfirmed.collectAsState()
-val location by app.tracker.location.collectAsState()
+val rawLocation by app.tracker.location.collectAsState()
+var location by remember { mutableStateOf<android.location.Location?>(null) }
+LaunchedEffect(rawLocation) {
+val nl = rawLocation ?: return@LaunchedEffect
+val cur = location
+if (cur == null) {
+location = nl
+} else {
+val oldMph = (cur.speed * 2.23694f).toInt()
+val newMph = (nl.speed * 2.23694f).toInt()
+val movedM = cur.distanceTo(nl)
+val degDiff = kotlin.math.abs(((nl.bearing - cur.bearing + 540f) % 360f) - 180f)
+if (oldMph != newMph || movedM >= 15f || (newMph >= 2 && degDiff >= 6f)) {
+location = nl
+}
+}
+}
 var apps by remember { mutableStateOf<List<AppEntry>>(emptyList()) }
 var weather by remember { mutableStateOf<WeatherNow?>(null) }
 val scope = rememberCoroutineScope()

@@ -273,30 +273,48 @@ status = engine.handshakeStatus
 log("TLS handshake timeout last=$status")
 return false
 }
-private val cryptoLock = Any()
+private val wrapLock = Any()
+private val unwrapLock = Any()
+private var wrapDst = ByteBuffer.allocate(32_768)
+private var unwrapDst = ByteBuffer.allocate(65_536)
 private var decryptCarry = ByteArray(0)
-fun encryptApp(plain: ByteArray): ByteArray = synchronized(cryptoLock) {
+fun encryptApp(plain: ByteArray): ByteArray = synchronized(wrapLock) {
 if (plain.isEmpty()) return ByteArray(0)
 val src = ByteBuffer.wrap(plain)
-val dst = ByteBuffer.allocate((plain.size + 1024).coerceAtLeast(engine.session.packetBufferSize.coerceAtLeast(18_432)))
-val out = ByteArrayOutputStream(plain.size + 512)
+val need = (plain.size + 1024).coerceAtLeast(engine.session.packetBufferSize.coerceAtLeast(18_432))
+if (wrapDst.capacity() < need) wrapDst = ByteBuffer.allocate(need)
+wrapDst.clear()
+var out: ByteArrayOutputStream? = null
 while (src.hasRemaining()) {
-dst.clear()
-val res = engine.wrap(src, dst)
+val res = engine.wrap(src, wrapDst)
 if (res.status == SSLEngineResult.Status.CLOSED) throw IllegalStateException("SSL closed on encrypt")
-if (res.status == SSLEngineResult.Status.BUFFER_OVERFLOW) throw IllegalStateException("SSL encrypt overflow")
-if (res.handshakeStatus == SSLEngineResult.HandshakeStatus.NEED_TASK) runTasks()
-dst.flip()
-if (dst.hasRemaining()) {
-val chunk = ByteArray(dst.remaining())
-dst.get(chunk)
-out.write(chunk)
+if (res.status == SSLEngineResult.Status.BUFFER_OVERFLOW) {
+wrapDst.flip()
+if (wrapDst.hasRemaining()) {
+val o = out ?: ByteArrayOutputStream(plain.size + 1024).also { out = it }
+o.write(wrapDst.array(), wrapDst.arrayOffset() + wrapDst.position(), wrapDst.remaining())
 }
+wrapDst = ByteBuffer.allocate(wrapDst.capacity() * 2)
+continue
+}
+if (res.handshakeStatus == SSLEngineResult.HandshakeStatus.NEED_TASK) runTasks()
+if (!src.hasRemaining() && out == null) {
+wrapDst.flip()
+val single = ByteArray(wrapDst.remaining())
+wrapDst.get(single)
+return single
+}
+wrapDst.flip()
+if (wrapDst.hasRemaining()) {
+val o = out ?: ByteArrayOutputStream(plain.size + 1024).also { out = it }
+o.write(wrapDst.array(), wrapDst.arrayOffset() + wrapDst.position(), wrapDst.remaining())
+}
+wrapDst.clear()
 if (res.bytesProduced() == 0 && res.bytesConsumed() == 0) break
 }
-out.toByteArray()
+out?.toByteArray() ?: ByteArray(0)
 }
-fun decryptApp(cipher: ByteArray): ByteArray = synchronized(cryptoLock) {
+fun decryptApp(cipher: ByteArray): ByteArray = synchronized(unwrapLock) {
 if (cipher.isEmpty() && decryptCarry.isEmpty()) return ByteArray(0)
 val input = if (decryptCarry.isEmpty()) cipher else ByteArray(decryptCarry.size + cipher.size).also {
 System.arraycopy(decryptCarry, 0, it, 0, decryptCarry.size)
@@ -304,12 +322,12 @@ System.arraycopy(cipher, 0, it, decryptCarry.size, cipher.size)
 decryptCarry = ByteArray(0)
 }
 val src = ByteBuffer.wrap(input)
-var dstCap = (input.size + 512).coerceAtLeast(engine.session.applicationBufferSize.coerceAtLeast(32_768))
-var dst = ByteBuffer.allocate(dstCap)
-val out = ByteArrayOutputStream(input.size)
+val need = (input.size + 512).coerceAtLeast(engine.session.applicationBufferSize.coerceAtLeast(32_768))
+if (unwrapDst.capacity() < need) unwrapDst = ByteBuffer.allocate(need)
+unwrapDst.clear()
+var out: ByteArrayOutputStream? = null
 while (src.hasRemaining()) {
-dst.clear()
-val res = engine.unwrap(src, dst)
+val res = engine.unwrap(src, unwrapDst)
 if (res.status == SSLEngineResult.Status.CLOSED) throw IllegalStateException("SSL closed on decrypt")
 if (res.status == SSLEngineResult.Status.BUFFER_UNDERFLOW) {
 val rem = ByteArray(src.remaining())
@@ -318,21 +336,32 @@ decryptCarry = rem
 break
 }
 if (res.status == SSLEngineResult.Status.BUFFER_OVERFLOW) {
-dstCap *= 2
-if (dstCap > 1_048_576) throw IllegalStateException("SSL decrypt overflow")
-dst = ByteBuffer.allocate(dstCap)
+unwrapDst.flip()
+if (unwrapDst.hasRemaining()) {
+val o = out ?: ByteArrayOutputStream(input.size).also { out = it }
+o.write(unwrapDst.array(), unwrapDst.arrayOffset() + unwrapDst.position(), unwrapDst.remaining())
+}
+val nextCap = unwrapDst.capacity() * 2
+if (nextCap > 1_048_576) throw IllegalStateException("SSL decrypt overflow")
+unwrapDst = ByteBuffer.allocate(nextCap)
 continue
 }
 if (res.handshakeStatus == SSLEngineResult.HandshakeStatus.NEED_TASK) runTasks()
-dst.flip()
-if (dst.hasRemaining()) {
-val chunk = ByteArray(dst.remaining())
-dst.get(chunk)
-out.write(chunk)
+if (!src.hasRemaining() && out == null) {
+unwrapDst.flip()
+val single = ByteArray(unwrapDst.remaining())
+unwrapDst.get(single)
+return single
 }
+unwrapDst.flip()
+if (unwrapDst.hasRemaining()) {
+val o = out ?: ByteArrayOutputStream(input.size).also { out = it }
+o.write(unwrapDst.array(), unwrapDst.arrayOffset() + unwrapDst.position(), unwrapDst.remaining())
+}
+unwrapDst.clear()
 if (res.bytesProduced() == 0 && res.bytesConsumed() == 0) break
 }
-out.toByteArray()
+out?.toByteArray() ?: ByteArray(0)
 }
 private fun runTasks(): SSLEngineResult.HandshakeStatus {
 var t = engine.delegatedTask

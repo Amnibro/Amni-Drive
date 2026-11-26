@@ -136,8 +136,35 @@ object AaPostTls {
 
     data class Result(val discovery: Boolean, val videoChannel: Int, val rxFrames: Int, val notes: String)
 
+    data class PerfStats(
+        val videoFps: Int = 0,
+        val videoDrops: Long = 0L,
+        val videoUnacked: Int = 0,
+        val avgFrameBytes: Int = 0,
+        val touches: Long = 0L
+    )
+
     private val _carSensors = MutableStateFlow(CarSensorState())
     val carSensors: StateFlow<CarSensorState> = _carSensors
+
+    private val _perfStats = MutableStateFlow(PerfStats())
+    val perfStats: StateFlow<PerfStats> = _perfStats
+
+    /** Parses AAP MediaAck (0x8004): field 1 = session_id, field 2 = ack count (defaults to 1). */
+    fun parseMediaAckCount(body: ByteArray): Int {
+        val pos = intArrayOf(0)
+        var ack = 0
+        while (pos[0] < body.size) {
+            val tag = readVarint(body, pos).toInt()
+            val field = tag ushr 3
+            val wire = tag and 7
+            if (wire == 0) {
+                val v = readVarint(body, pos).toInt()
+                if (field == 2) ack = v
+            } else if (!skipField(body, pos, wire)) break
+        }
+        return ack.coerceAtLeast(1)
+    }
 
     fun authCompleteBody(): ByteArray = AaPb.u32(1, STATUS_OK)
 
@@ -894,6 +921,12 @@ object AaPostTls {
         val maxUnacked = AtomicInteger(2)
         val ackSeen = AtomicBoolean(false)
         val lastAckMs = AtomicLong(0L)
+        val awaitingKeyFrame = AtomicBoolean(false)
+        val videoDrops = AtomicLong(0L)
+        val touchCounter = AtomicLong(0L)
+        val fpsWindowStartMs = AtomicLong(SystemClock.uptimeMillis())
+        val fpsFrameCount = AtomicInteger(0)
+        val fpsBytesTotal = AtomicLong(0L)
         val audioUnacked = AtomicInteger(0)
         val audioMaxUnacked = AtomicInteger(4)
         val audioAckSeen = AtomicBoolean(false)
@@ -962,12 +995,22 @@ object AaPostTls {
                 return
             }
             if (!videoStarted) return
-            val cap = maxOf(maxUnacked.get() * 3, 6)
+            if (isKeyFrame) {
+                awaitingKeyFrame.set(false)
+            } else if (awaitingKeyFrame.get()) {
+                videoDrops.incrementAndGet()
+                return
+            }
+            val nowMs = SystemClock.uptimeMillis()
+            val cap = maxOf(maxUnacked.get() * 4, 12)
             if (ackSeen.get() && !isKeyFrame && unacked.get() >= cap) {
-                val nowMs = SystemClock.uptimeMillis()
-                if (nowMs - lastAckMs.get() > 450L) {
+                if (nowMs - lastAckMs.get() > 250L) {
                     unacked.set(0)
                 } else {
+                    if (awaitingKeyFrame.compareAndSet(false, true)) {
+                        engine?.requestKeyFrame()
+                    }
+                    videoDrops.incrementAndGet()
                     return
                 }
             }
@@ -977,7 +1020,23 @@ object AaPostTls {
             ByteBuffer.wrap(plain, 2, 8).order(ByteOrder.BIG_ENDIAN).putLong(ptsUs)
             System.arraycopy(nalu, 0, plain, 10, nalu.size)
             txAapPayload(chId, plain, control = false, tag = "VideoData", quiet = true)
-            unacked.incrementAndGet()
+            val curUnacked = unacked.incrementAndGet()
+            val fCnt = fpsFrameCount.incrementAndGet()
+            val fBytes = fpsBytesTotal.addAndGet(nalu.size.toLong())
+            val elapsed = nowMs - fpsWindowStartMs.get()
+            if (elapsed >= 1_000L && fpsWindowStartMs.compareAndSet(nowMs - elapsed, nowMs)) {
+                val fpsNow = ((fCnt * 1000L) / elapsed.coerceAtLeast(1L)).toInt()
+                val avgB = if (fCnt > 0) (fBytes / fCnt).toInt() else 0
+                fpsFrameCount.set(0)
+                fpsBytesTotal.set(0L)
+                _perfStats.value = PerfStats(
+                    videoFps = fpsNow,
+                    videoDrops = videoDrops.get(),
+                    videoUnacked = curUnacked,
+                    avgFrameBytes = avgB,
+                    touches = touchCounter.get()
+                )
+            }
         }
 
         fun sendAudioPcm(chId: Int, pcm: ByteArray, ptsUs: Long) {
@@ -1238,9 +1297,10 @@ object AaPostTls {
                         }
                     }
                     MEDIA_ACK -> {
+                        val cnt = parseMediaAckCount(body)
                         ackSeen.set(true)
                         lastAckMs.set(SystemClock.uptimeMillis())
-                        unacked.updateAndGet { maxOf(0, it - 1) }
+                        unacked.updateAndGet { maxOf(0, it - cnt) }
                     }
                     MEDIA_VIDEO_FOCUS_REQUEST -> {
                         var mode = 1
@@ -1309,9 +1369,10 @@ object AaPostTls {
                         }
                     }
                     MEDIA_ACK -> {
+                        val cnt = parseMediaAckCount(body)
                         audioAckSeen.set(true)
                         lastAudioAckMs.set(SystemClock.uptimeMillis())
-                        audioUnacked.updateAndGet { maxOf(0, it - 1) }
+                        audioUnacked.updateAndGet { maxOf(0, it - cnt) }
                     }
                 }
 
@@ -1348,6 +1409,7 @@ object AaPostTls {
                         }
                     }
                     parseTouchReport(body)?.let { (act, ptrs, idx) ->
+                        touchCounter.incrementAndGet()
                         val p = ptrs.getOrNull(idx) ?: ptrs.first()
                         val ts = touchSpec
                         val sx: Float

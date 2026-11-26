@@ -42,7 +42,7 @@ class AmniProjectionEngine(
     private val heightMargin: Int = 0,
     private val directSurface: android.view.Surface? = null
 ) {
-    private val encoder = H264Encoder(width, height, fps, 3_800_000)
+    private val encoder = H264Encoder(width, height, fps, 2_400_000)
     private var virtualDisplay: VirtualDisplay? = null
     private var presentation: RearPresentation? = null
     private var drainThread: Thread? = null
@@ -50,6 +50,8 @@ class AmniProjectionEngine(
     private val running = AtomicBoolean(false)
     private val sink = AtomicReference<((ByteArray, Boolean) -> Unit)?>(null)
     private val typedSink = AtomicReference<((ByteArray, Boolean, Boolean, Long) -> Unit)?>(null)
+    private data class QueuedMove(val x: Float, val y: Float, val downTime: Long, val eventTime: Long)
+    private val pendingMove = AtomicReference<QueuedMove?>(null)
     var onLog: (String) -> Unit = { Log.i(TAG, it) }
 
     fun setFrameSink(cb: ((ByteArray, Boolean) -> Unit)?) {
@@ -65,16 +67,34 @@ class AmniProjectionEngine(
         mainHandler.post { presentation?.window?.decorView?.invalidate() }
     }
 
+    private fun dispatchTouchNow(x: Float, y: Float, action: Int, downTime: Long, eventTime: Long) {
+        val root = presentation?.window?.decorView ?: return
+        val displayId = virtualDisplay?.display?.displayId ?: -1
+        val ev = MotionEvent.obtain(downTime, eventTime, action, x, y, 0)
+        runCatching {
+            if (displayId >= 0) com.amni.drive.launcher.CarEmbed.route(root, ev, displayId)
+            else root.dispatchTouchEvent(ev)
+        }.onFailure { onLog("touch err: ${it.message}") }
+        ev.recycle()
+    }
+
     fun injectTouch(x: Float, y: Float, action: Int, downTime: Long, eventTime: Long) {
+        if (action == MotionEvent.ACTION_MOVE) {
+            val prev = pendingMove.getAndSet(QueuedMove(x, y, downTime, eventTime))
+            if (prev == null) {
+                mainHandler.post {
+                    val m = pendingMove.getAndSet(null) ?: return@post
+                    dispatchTouchNow(m.x, m.y, MotionEvent.ACTION_MOVE, m.downTime, m.eventTime)
+                }
+            }
+            return
+        }
+        val flushed = pendingMove.getAndSet(null)
         mainHandler.post {
-            val root = presentation?.window?.decorView ?: return@post
-            val displayId = virtualDisplay?.display?.displayId ?: -1
-            val ev = MotionEvent.obtain(downTime, eventTime, action, x, y, 0)
-            runCatching {
-                if (displayId >= 0) com.amni.drive.launcher.CarEmbed.route(root, ev, displayId)
-                else root.dispatchTouchEvent(ev)
-            }.onFailure { onLog("touch err: ${it.message}") }
-            ev.recycle()
+            if (flushed != null && action == MotionEvent.ACTION_UP) {
+                dispatchTouchNow(flushed.x, flushed.y, MotionEvent.ACTION_MOVE, flushed.downTime, flushed.eventTime)
+            }
+            dispatchTouchNow(x, y, action, downTime, eventTime)
         }
     }
 
