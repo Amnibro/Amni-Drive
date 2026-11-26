@@ -53,6 +53,7 @@ object AaPostTls {
     const val SENSOR_EVENT_INDICATION = 0x8003
 
     // Common AAP SensorType enum values
+    const val SENSOR_LOCATION = 1
     const val SENSOR_SPEED = 3
     const val SENSOR_PARKING_BRAKE = 7
     const val SENSOR_GEAR = 8
@@ -105,11 +106,22 @@ object AaPostTls {
 
     data class RelEvt(val keycode: Int, val delta: Int)
 
+    data class CarLocation(
+        val lat: Double,
+        val lon: Double,
+        val accuracyM: Float? = null,
+        val speedMps: Float? = null,
+        val bearingDeg: Float? = null,
+        val altitudeM: Double? = null,
+        val receivedAtMs: Long = System.currentTimeMillis()
+    )
+
     data class CarSensorState(
         val nightMode: Boolean? = null,
         val parkingBrake: Boolean? = null,
         val drivingStatus: Int? = null,
         val speedMps: Float? = null,
+        val location: CarLocation? = null,
         val updatedAtMs: Long = 0L
     )
 
@@ -442,6 +454,7 @@ object AaPostTls {
         var brake = prev.parkingBrake
         var driving = prev.drivingStatus
         var speed = prev.speedMps
+        var loc = prev.location
         val pos = intArrayOf(0)
         while (pos[0] < body.size) {
             val tag = readVarint(body, pos).toInt()
@@ -452,16 +465,65 @@ object AaPostTls {
                 if (len < 0 || pos[0] + len > body.size) break
                 val item = body.copyOfRange(pos[0], pos[0] + len)
                 pos[0] += len
-                val firstInt = parseFirstVarintField1(item)
-                when (field) {
-                    SENSOR_NIGHT_MODE -> if (firstInt != null) night = firstInt != 0
-                    SENSOR_PARKING_BRAKE -> if (firstInt != null) brake = firstInt != 0
-                    SENSOR_DRIVING_STATUS -> if (firstInt != null) driving = firstInt
-                    SENSOR_SPEED -> if (firstInt != null) speed = (firstInt / 1000f).coerceAtLeast(0f)
+                if (field == SENSOR_LOCATION) {
+                    parseLocationData(item)?.let { parsed ->
+                        loc = parsed
+                        if (parsed.speedMps != null) speed = parsed.speedMps
+                    }
+                } else {
+                    val firstInt = parseFirstVarintField1(item)
+                    when (field) {
+                        SENSOR_NIGHT_MODE -> if (firstInt != null) night = firstInt != 0
+                        SENSOR_PARKING_BRAKE -> if (firstInt != null) brake = firstInt != 0
+                        SENSOR_DRIVING_STATUS -> if (firstInt != null) driving = firstInt
+                        SENSOR_SPEED -> if (firstInt != null) speed = (firstInt / 1000f).coerceAtLeast(0f)
+                    }
                 }
             } else if (!skipField(body, pos, wire)) break
         }
-        return CarSensorState(night, brake, driving, speed, System.currentTimeMillis())
+        return CarSensorState(night, brake, driving, speed, loc, System.currentTimeMillis())
+    }
+
+    private fun parseLocationData(msg: ByteArray): CarLocation? {
+        var latE7: Int? = null
+        var lonE7: Int? = null
+        var accE3: Int? = null
+        var altE2: Int? = null
+        var spdE3: Int? = null
+        var brgRaw: Int? = null
+        val p = intArrayOf(0)
+        while (p[0] < msg.size) {
+            val tag = readVarint(msg, p).toInt()
+            val f = tag ushr 3
+            val w = tag and 7
+            if (w == 0) {
+                val v = readVarint(msg, p).toInt()
+                when (f) {
+                    2 -> latE7 = v
+                    3 -> lonE7 = v
+                    4 -> accE3 = v
+                    5 -> altE2 = v
+                    6 -> spdE3 = v
+                    7 -> brgRaw = v
+                }
+            } else if (!skipField(msg, p, w)) break
+        }
+        val la = (latE7 ?: return null) / 1e7
+        val lo = (lonE7 ?: return null) / 1e7
+        if (la !in -90.0..90.0 || lo !in -180.0..180.0) return null
+        if (kotlin.math.abs(la) < 1e-5 && kotlin.math.abs(lo) < 1e-5) return null
+        val acc = accE3?.takeIf { it > 0 }?.let { it / 1000f }
+        val alt = altE2?.let { it / 100.0 }
+        val spd = spdE3?.takeIf { it >= 0 }?.let { it / 1000f }
+        val brg = brgRaw?.let { r ->
+            val deg = when {
+                kotlin.math.abs(r) > 360_000 -> r / 1e6f
+                r in 0..360 -> r.toFloat()
+                else -> r / 1e3f
+            }
+            ((deg % 360f) + 360f) % 360f
+        }
+        return CarLocation(la, lo, acc, spd, brg, alt, System.currentTimeMillis())
     }
 
     private fun parseFirstVarintField1(msg: ByteArray): Int? {
@@ -1244,10 +1306,11 @@ object AaPostTls {
                             videoCh -> txEncrypted(videoCh, MEDIA_SETUP, AaPb.u32(1, CODEC_H264_BP), control = false, tag = "VideoSetup")
                             inputCh -> txEncrypted(inputCh, INPUT_KEY_BINDING_REQUEST, keyBindingRequestBody(inputKeys), control = false, tag = "KeyBindingRequest keys=${inputKeys.size}")
                             sensorCh -> {
-                                val wanted = listOf(SENSOR_DRIVING_STATUS, SENSOR_NIGHT_MODE, SENSOR_PARKING_BRAKE, SENSOR_SPEED, SENSOR_GEAR)
-                                val toStart = if (sensorTypes.isNotEmpty()) wanted.filter { it in sensorTypes }.ifEmpty { sensorTypes.take(4) } else listOf(SENSOR_DRIVING_STATUS, SENSOR_NIGHT_MODE)
+                                val wanted = listOf(SENSOR_LOCATION, SENSOR_DRIVING_STATUS, SENSOR_NIGHT_MODE, SENSOR_PARKING_BRAKE, SENSOR_SPEED, SENSOR_GEAR)
+                                val toStart = if (sensorTypes.isNotEmpty()) wanted.filter { it in sensorTypes }.ifEmpty { sensorTypes.take(4) } else listOf(SENSOR_LOCATION, SENSOR_DRIVING_STATUS, SENSOR_NIGHT_MODE)
                                 toStart.forEach { stype ->
-                                    txEncrypted(sensorCh, SENSOR_START_REQUEST, sensorStartRequestBody(stype, 0L), control = false, tag = "SensorStart-$stype")
+                                    val intervalUs = if (stype == SENSOR_LOCATION) 500_000L else 0L
+                                    txEncrypted(sensorCh, SENSOR_START_REQUEST, sensorStartRequestBody(stype, intervalUs), control = false, tag = "SensorStart-$stype")
                                 }
                             }
                             mediaAudioCh -> txEncrypted(mediaAudioCh, MEDIA_SETUP, AaPb.u32(1, mediaAudioCodec), control = false, tag = "MediaAudioSetup")

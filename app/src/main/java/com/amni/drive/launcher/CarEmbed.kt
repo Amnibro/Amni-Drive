@@ -25,6 +25,7 @@ object CarEmbed {
     private const val KEY = 3
     private const val SURFACE = 4
     private const val GONE = 5
+    private const val LOCATION = 6
     private const val TAG = "Amni.Embed"
     data class Shown(val pkg: String, val label: String, val displayId: Int, val at: Long, val front: Boolean = true, val mirror: Boolean = false, val slot: String? = null)
     val shown = MutableStateFlow<Shown?>(null)
@@ -113,12 +114,26 @@ object CarEmbed {
             }
         }
     }
+    @Volatile private var lastLocSentMs: Long = 0L
+    @Volatile private var latestLoc: android.location.Location? = null
+    fun sendLocation(loc: android.location.Location) {
+        val copy = android.location.Location(loc)
+        latestLoc = copy
+        val now = SystemClock.uptimeMillis()
+        if (now - lastLocSentMs < 850L) return
+        lastLocSentMs = now
+        if (remote != null) send(Message.obtain(null, LOCATION).apply { obj = copy })
+    }
     private fun sendFrame() { frame?.let { f -> send(Message.obtain(null, SURFACE).apply { data = Bundle(f) }) } }
     private fun send(m: Message) { ipc.post { runCatching { remote?.send(m) }.onFailure { Log.w(TAG, "send ${m.what} failed: ${it.message}") } } }
     private fun bind(app: Context, pkg: String): Boolean {
         unbind()
         val c = object : ServiceConnection {
-            override fun onServiceConnected(name: ComponentName, service: IBinder) { remote = Messenger(service).also { r -> runCatching { r.send(Message.obtain(null, HELLO).apply { replyTo = inbox }) } }; sendFrame() }
+            override fun onServiceConnected(name: ComponentName, service: IBinder) {
+                remote = Messenger(service).also { r -> runCatching { r.send(Message.obtain(null, HELLO).apply { replyTo = inbox }) } }
+                sendFrame()
+                latestLoc?.let { l -> send(Message.obtain(null, LOCATION).apply { obj = android.location.Location(l) }) }
+            }
             override fun onServiceDisconnected(name: ComponentName) { remote = null; main.post { if (shown.value?.mirror != true) shown.value = null; target = 0 } }
         }
         val ok = runCatching { app.bindService(Intent(ACTION).setPackage(pkg), c, Context.BIND_AUTO_CREATE or Context.BIND_IMPORTANT or Context.BIND_INCLUDE_CAPABILITIES) }.onFailure { Log.w(TAG, "bind $pkg failed: ${it.message}") }.getOrDefault(false)

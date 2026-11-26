@@ -143,7 +143,11 @@ val ghCar = gearheadCarSession()
 val acc = accessoryPresent()
 val ips = localIps()
 val pf = AaPostTls.perfStats.value
-return """{"ok":true,"mode":"$mode","gearhead":$gh,"gearheadCar":$ghCar,"accessory":$acc,"ver":"${appVersion()}","ips":${jsonArr(ips)},"port":$PORT,"adbSafe":${mode != DriveConfig.PATH_OWN},"videoFps":${pf.videoFps},"videoDrops":${pf.videoDrops},"unacked":${pf.videoUnacked},"avgFrameBytes":${pf.avgFrameBytes},"touches":${pf.touches},"ownWall":"AuthComplete-3","replacement":"link+ride"}"""
+val locPerm = com.amni.drive.map.LocationTracker.hasLocationPermission(this)
+val curLoc = (application as? com.amni.drive.AmniDriveApp)?.tracker?.location?.value
+val hasFix = curLoc != null
+val prov = curLoc?.provider ?: "none"
+return """{"ok":true,"mode":"$mode","gearhead":$gh,"gearheadCar":$ghCar,"accessory":$acc,"ver":"${appVersion()}","ips":${jsonArr(ips)},"port":$PORT,"adbSafe":${mode != DriveConfig.PATH_OWN},"locPerm":$locPerm,"hasFix":$hasFix,"locProvider":"$prov","videoFps":${pf.videoFps},"videoDrops":${pf.videoDrops},"unacked":${pf.videoUnacked},"avgFrameBytes":${pf.avgFrameBytes},"touches":${pf.touches},"ownWall":"AuthComplete-3","replacement":"link+ride"}"""
 }
 private fun ownJson(): String {
 val mode = runCatching { runBlocking { ConfigStore(this@MeshDevBridgeService).config.first().aaPathMode } }.getOrDefault(DriveConfig.PATH_RIDE)

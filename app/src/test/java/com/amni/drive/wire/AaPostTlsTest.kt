@@ -241,4 +241,34 @@ class AaPostTlsTest {
         assertEquals(4, AaPostTls.parseMediaAckCount(AaPb.cat(AaPb.u32(1, 0), AaPb.u32(2, 4))))
         assertEquals(1, AaPostTls.parseMediaAckCount(ByteArray(0)))
     }
+
+    @Test
+    fun parseSensorEventDecodesCarGpsLocationWithNegativeLongitude() {
+        fun int32Field(field: Int, value: Int): ByteArray {
+            val out = java.io.ByteArrayOutputStream()
+            out.write((field shl 3) or 0)
+            var v = value.toLong() // sign-extended 64-bit two's complement per protobuf int32 spec
+            while ((v and -128L) != 0L) {
+                out.write(((v.toInt() and 0x7F) or 0x80))
+                v = v ushr 7
+            }
+            out.write(v.toInt() and 0x7F)
+            return out.toByteArray()
+        }
+        val locMsg = AaPb.cat(
+            int32Field(2, 407_128_000),   // +40.7128 deg
+            int32Field(3, -740_060_000),  // -74.0060 deg (negative 10-byte varint!)
+            int32Field(4, 4_500),         // 4.5m accuracy
+            int32Field(6, 15_000),        // 15.0 m/s
+            int32Field(7, 270_000_000)    // 270.0 deg bearing
+        )
+        val batch = AaPb.emb(AaPostTls.SENSOR_LOCATION, locMsg)
+        val state = AaPostTls.parseSensorEvent(batch, AaPostTls.CarSensorState())
+        val loc = state.location!!
+        assertEquals(40.7128, loc.lat, 1e-4)
+        assertEquals(-74.0060, loc.lon, 1e-4)
+        assertEquals(4.5f, loc.accuracyM!!, 0.01f)
+        assertEquals(15.0f, loc.speedMps!!, 0.01f)
+        assertEquals(270.0f, loc.bearingDeg!!, 0.01f)
+    }
 }

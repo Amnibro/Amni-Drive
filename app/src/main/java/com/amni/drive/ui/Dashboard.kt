@@ -255,10 +255,26 @@ val onEnd: () -> Unit = { stops.clear(); route = null; AaNavState.destination = 
 val stopsKey = stops.joinToString("|") { "${it.lat},${it.lon}" }
 LaunchedEffect(stopsKey, location == null) {
 if (stops.isEmpty()) { route = null; return@LaunchedEffect }
-val from = location ?: return@LaunchedEffect
+var curLoc = location
+if (curLoc == null) {
+(ctxRoot.applicationContext as? com.amni.drive.AmniDriveApp)?.let { appRef ->
+appRef.tracker.start()
+repeat(6) {
+if (appRef.tracker.location.value != null) return@repeat
+delay(250)
+}
+curLoc = appRef.tracker.location.value
+}
+}
+val origin = if (curLoc != null) RoutePoint(curLoc!!.latitude, curLoc!!.longitude) else RoutePoint(camera.lat, camera.lon)
 routing = true
-route = OsrmRouting.route(listOf(RoutePoint(from.latitude, from.longitude)) + stops.toList())
+route = OsrmRouting.route(listOf(origin) + stops.toList())
 AaNavState.route = route
+if (curLoc == null && stops.isNotEmpty()) {
+camera.follow = false
+camera.lat = stops.last().lat
+camera.lon = stops.last().lon
+}
 routing = false
 }
 val voice = remember { VoiceGuide(ctxRoot) }

@@ -140,7 +140,7 @@ setIntent(intent)
 applyDriveIntent(intent)
 }
 override fun onStart() { super.onStart(); (application as AmniDriveApp).tracker.start() }
-override fun onStop() { super.onStop(); (application as AmniDriveApp).tracker.stop() }
+override fun onStop() { super.onStop() /* keep shared tracker running for car display */ }
 private fun applyDriveIntent(intent: Intent?) {
 val page = when (intent?.getStringExtra(EXTRA_PAGE)?.lowercase()) {
 "nav", "navigation", "map" -> DrivePage.NAV
@@ -183,8 +183,20 @@ override fun onWindowFocusChanged(hasFocus: Boolean) {
 super.onWindowFocusChanged(hasFocus)
 if (hasFocus && huMode) applyImmersive()
 }
+private val locPermLauncher = registerForActivityResult(
+androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
+) { res ->
+if (res.values.any { it }) {
+(application as AmniDriveApp).tracker.start()
+com.amni.drive.wire.AoaProbeService.refreshForeground(this)
+}
+}
 private fun requestLocation() {
-if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.ACCESS_FINE_LOCATION), 1)
+if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+locPermLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+} else {
+(application as AmniDriveApp).tracker.start()
+}
 }
 companion object {
 const val EXTRA_PAGE = "amni_page"

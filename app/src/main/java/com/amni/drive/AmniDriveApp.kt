@@ -29,6 +29,17 @@ class AmniDriveApp : Application() {
         tileStore = TileStore(this)
         reportStore = ReportStore(this)
         tracker = LocationTracker(this)
+        tracker.start()
+        appScope.launch {
+            var lastLocTs = 0L
+            com.amni.drive.wire.AaPostTls.carSensors.collect { sens ->
+                val cl = sens.location ?: return@collect
+                if (cl.receivedAtMs != lastLocTs) {
+                    lastLocTs = cl.receivedAtMs
+                    tracker.injectCarLocation(cl.lat, cl.lon, cl.accuracyM, cl.speedMps, cl.bearingDeg, cl.altitudeM)
+                }
+            }
+        }
         com.amni.drive.launcher.CarApps.probe()
         com.amni.drive.launcher.CarMirror.setup(this)
         com.amni.drive.map.CustomPlaces.init(this)

@@ -18,7 +18,13 @@ override fun onBind(intent: Intent?): IBinder? = null
 override fun onCreate() {
 super.onCreate()
 ensureChannel()
+if (Build.VERSION.SDK_INT >= 34) {
+val t = android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or
+(if (com.amni.drive.map.LocationTracker.hasLocationPermission(this)) android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else 0)
+startForeground(NOTIF_ID, notif("Projection idle"), t)
+} else {
 startForeground(NOTIF_ID, notif("Projection idle"))
+}
 }
 override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 when (intent?.action) {

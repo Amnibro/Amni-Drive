@@ -259,6 +259,17 @@ private fun WirePane() {
         runCatching { ctx.packageManager.getApplicationInfo("com.google.android.projection.gearhead", 0).enabled }.getOrNull()
     }
     val overlayOk = remember { Settings.canDrawOverlays(ctx) }
+    var locGranted by remember { mutableStateOf(com.amni.drive.map.LocationTracker.hasLocationPermission(ctx)) }
+    val curLoc by app.tracker.location.collectAsStateWithLifecycle()
+    val locPermLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
+    ) { res ->
+        locGranted = res.values.any { it } || com.amni.drive.map.LocationTracker.hasLocationPermission(ctx)
+        if (locGranted) {
+            app.tracker.start()
+            com.amni.drive.wire.AoaProbeService.refreshForeground(ctx)
+        }
+    }
     var micGranted by remember { mutableStateOf(com.amni.drive.voice.VoiceSearch.hasMicPermission(ctx)) }
     val speechReady = remember { com.amni.drive.voice.VoiceSearch.available(ctx) }
     var voiceTestMsg by remember { mutableStateOf<String?>(null) }
@@ -309,6 +320,24 @@ private fun WirePane() {
     }
 
     Text("CAR READINESS & ZERO-ADB SETUP", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+    Text(
+        when {
+            locGranted && curLoc != null -> "0. Car GPS & Location LOCKED ✓ (${curLoc!!.provider} · ±${curLoc!!.accuracy.toInt()}m) — Maps & routing ready."
+            locGranted -> "0. Location GRANTED ✓ — acquiring GPS fix (also uses car rooftop GPS over USB/Wi-Fi)…"
+            else -> "0. Location NOT GRANTED — tap below so Maps & Turn-by-Turn Routing know where you are!"
+        },
+        color = if (locGranted) p.acc else p.gold,
+        fontFamily = FontFamily.Monospace,
+        fontSize = 10.sp,
+        lineHeight = 14.sp
+    )
+    if (!locGranted) {
+        Box(Modifier.clip(RoundedCornerShape(12.dp)).background(p.acc).clickable {
+            locPermLauncher.launch(arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION, android.Manifest.permission.ACCESS_COARSE_LOCATION))
+        }.padding(horizontal = 14.dp, vertical = 10.dp)) {
+            Text("📍 GRANT LOCATION (MAPS & ROUTING)", color = if (p.isLight) Color.White else Color(0xFF05070A), fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        }
+    }
     Text(
         when (gearheadEnabled) {
             true -> "1. Android Auto is ENABLED — it may grab USB first. Tap below → Disable (or Clear defaults) — no PC or ADB needed."

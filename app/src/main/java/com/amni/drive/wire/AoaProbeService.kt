@@ -44,7 +44,7 @@ mode == DriveConfig.PATH_OWN || (mode == DriveConfig.PATH_AUTO && !gearheadCarSe
 override fun onCreate() {
 super.onCreate()
 ensureChannel()
-startForeground(NOTIF_ID, buildNotif("AOA probe idle"))
+startCarForeground("AOA probe idle")
 val store = (application as? com.amni.drive.AmniDriveApp)?.configStore ?: ConfigStore(this)
 svcScope.launch {
 runCatching {
@@ -157,6 +157,10 @@ log("CLAIM reset FD/session for fresh open")
 pollAccessories(requestPerm = true)
 if (accessoryFd.get() == null) scheduleFreePoll()
 }
+}
+ACTION_REFRESH_FGS -> {
+startCarForeground("AOA connected")
+(application as? com.amni.drive.AmniDriveApp)?.tracker?.start()
 }
 else -> { }
 }
@@ -511,6 +515,16 @@ return b.setContentTitle("Amni Wire")
 .setOngoing(true)
 .build()
 }
+private fun startCarForeground(text: String) {
+val n = buildNotif(text)
+if (Build.VERSION.SDK_INT >= 34) {
+val t = android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or
+(if (com.amni.drive.map.LocationTracker.hasLocationPermission(this)) android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else 0)
+runCatching { startForeground(NOTIF_ID, n, t) }.onFailure { startForeground(NOTIF_ID, n, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE) }
+} else {
+startForeground(NOTIF_ID, n)
+}
+}
 private fun updateNotif(text: String) {
 val nm = getSystemService(NotificationManager::class.java)
 nm.notify(NOTIF_ID, buildNotif(text))
@@ -522,11 +536,15 @@ const val NOTIF_ID = 7731
 const val ACTION_ATTACH = "com.amni.drive.wire.ATTACH_AOA"
 const val ACTION_POLL = "com.amni.drive.wire.POLL_AOA"
 const val ACTION_CLAIM = "com.amni.drive.wire.CLAIM_AOA"
+const val ACTION_REFRESH_FGS = "com.amni.drive.wire.REFRESH_FGS"
 const val ACTION_USB_STATE = "android.hardware.usb.action.USB_STATE"
 const val ACTION_USB_PERMISSION = "com.amni.drive.wire.USB_PERMISSION"
 fun start(ctx: Context) {
 val i = Intent(ctx, AoaProbeService::class.java)
 if (Build.VERSION.SDK_INT >= 26) ctx.startForegroundService(i) else ctx.startService(i)
+}
+fun refreshForeground(ctx: Context) {
+runCatching { ctx.startService(Intent(ctx, AoaProbeService::class.java).setAction(ACTION_REFRESH_FGS)) }
 }
 fun onAttach(ctx: Context, acc: UsbAccessory?) {
 val i = Intent(ctx, AoaProbeService::class.java).setAction(ACTION_ATTACH).apply {

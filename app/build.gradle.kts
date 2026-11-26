@@ -19,8 +19,8 @@ android {
         applicationId = "com.amni.drive"
         minSdk = 26
         targetSdk = 34
-        versionCode = 88
-        versionName = "1.12.3"
+        versionCode = 89
+        versionName = "1.12.4"
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

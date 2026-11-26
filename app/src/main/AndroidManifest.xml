@@ -168,7 +168,7 @@
         <service
             android:name=".wire.AoaProbeService"
             android:exported="false"
-            android:foregroundServiceType="connectedDevice" />
+            android:foregroundServiceType="connectedDevice|location" />
         <service
             android:name=".wire.AaSessionWatchService"
             android:exported="false"
@@ -180,11 +180,11 @@
         <service
             android:name=".wire.ProjectionHostService"
             android:exported="false"
-            android:foregroundServiceType="connectedDevice" />
+            android:foregroundServiceType="connectedDevice|location" />
         <service
             android:name=".wire.WirelessAaService"
             android:exported="false"
-            android:foregroundServiceType="connectedDevice" />
+            android:foregroundServiceType="connectedDevice|location" />
         <service
             android:name=".wire.AudioCaptureService"
             android:exported="false"

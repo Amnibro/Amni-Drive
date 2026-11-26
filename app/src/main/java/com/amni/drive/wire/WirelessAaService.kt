@@ -70,7 +70,13 @@ class WirelessAaService : Service() {
     override fun onCreate() {
         super.onCreate()
         ensureChannel()
-        startForeground(NOTIF_ID, buildNotif("Wireless AA ready (:5277 + BT)"))
+        if (Build.VERSION.SDK_INT >= 34) {
+            val t = android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or
+                (if (com.amni.drive.map.LocationTracker.hasLocationPermission(this)) android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else 0)
+            startForeground(NOTIF_ID, buildNotif("Wireless AA ready (:5277 + BT)"), t)
+        } else {
+            startForeground(NOTIF_ID, buildNotif("Wireless AA ready (:5277 + BT)"))
+        }
         running.set(true)
         updateState("Listening (BT RFCOMM + TCP :5277)")
         startRfcommListener()
