@@ -76,8 +76,9 @@ class AaPostTlsTest {
     fun cappedVersionReplyHandlesLegacyAndModernHeadUnits() {
         assertEquals(1 to 5, AaAapVersion.cappedVersionReply(1, 5))
         assertEquals(1 to 7, AaAapVersion.cappedVersionReply(1, 7))
-        assertEquals(6 to 2, AaAapVersion.cappedVersionReply(1, 8))
-        assertEquals(6 to 2, AaAapVersion.cappedVersionReply(6, 5))
+        assertEquals(1 to 7, AaAapVersion.cappedVersionReply(1, 8))
+        assertEquals(1 to 7, AaAapVersion.cappedVersionReply(4, 1))
+        assertEquals(1 to 7, AaAapVersion.cappedVersionReply(6, 5))
     }
 
     @Test

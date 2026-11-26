@@ -1216,7 +1216,17 @@ object AaPostTls {
                     }
                     MSG_UNKNOWN_FF, 0xff -> {
                         notes.append("ff;")
-                        log("POST-TLS HU 0xff UnexpectedMessage")
+                        log("POST-TLS HU 0xff UnexpectedMessage (opened=$opened sdSent=$sdSent)")
+                        if (opened == 0 && sdSent < 3) {
+                            val attempt = sdSent++
+                            if (attempt == 1) {
+                                notes.append("sd-retry-ctl;")
+                                txEncrypted(CH_CONTROL, MSG_SERVICE_DISCOVERY_REQUEST, serviceDiscoveryRequestBody("Android Auto", "Google"), control = true, tag = "ServiceDiscoveryRequest-ctl")
+                            } else {
+                                notes.append("sd-retry-empty;")
+                                txEncrypted(CH_CONTROL, MSG_SERVICE_DISCOVERY_REQUEST, ByteArray(0), control = false, tag = "ServiceDiscoveryRequest-min")
+                            }
+                        }
                     }
                     else -> notes.append("ctl-0x${msgId.toString(16)};")
                 }

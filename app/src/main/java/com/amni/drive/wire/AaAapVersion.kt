@@ -48,7 +48,7 @@ System.arraycopy(body, 0, payload, 2, body.size)
 return encodeFrame(channel, flags, payload)
 }
 fun cappedVersionReply(major: Int, minor: Int): Pair<Int, Int> =
-if (major < 1 || (major == 1 && minor <= 7)) major to minor else 6 to 2
+if (major < 1 || (major == 1 && minor <= 7)) major to minor else 1 to 7
 fun versionResponse(major: Int = MAJOR, minor: Int = MINOR, status: Int = STATUS_OK): ByteArray {
 val body = ByteBuffer.allocate(6).order(ByteOrder.BIG_ENDIAN)
 body.putShort(major.toShort())
