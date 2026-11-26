@@ -375,7 +375,11 @@ fun EmbeddedAppMediaTile(
 @Composable
 fun WidgetPickerSheet(
     active: List<DashWidget>,
+    widthMode: Int = 1,
+    compactCards: Boolean = true,
     onChange: (List<DashWidget>) -> Unit,
+    onWidthMode: (Int) -> Unit = {},
+    onCompactCards: (Boolean) -> Unit = {},
     onClose: () -> Unit
 ) {
     val p = LocalAmni.current
@@ -388,16 +392,16 @@ fun WidgetPickerSheet(
             .clickable { onClose() },
         contentAlignment = Alignment.Center
     ) {
-        SoftSurface(Modifier.fillMaxWidth(0.74f).padding(10.dp), radius = 18.dp) {
+        SoftSurface(Modifier.fillMaxWidth(0.80f).padding(10.dp), radius = 18.dp) {
             Column(
                 Modifier
                     .padding(14.dp)
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        "THIRD-ROW WIDGETS",
+                        "WIDGET STUDIO (${list.size} ON)",
                         color = p.acc,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 12.sp,
@@ -405,6 +409,19 @@ fun WidgetPickerSheet(
                         letterSpacing = 1.sp
                     )
                     Spacer(Modifier.weight(1f))
+                    Box(
+                        Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(p.panel2)
+                            .border(1.dp, p.hairline, RoundedCornerShape(8.dp))
+                            .clickable {
+                                list = DashWidget.DEFAULTS
+                                onChange(DashWidget.DEFAULTS)
+                                onWidthMode(1)
+                                onCompactCards(true)
+                            }
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) { Text("RESET", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold) }
                     Text(
                         "DONE ✕",
                         color = p.ink,
@@ -414,8 +431,43 @@ fun WidgetPickerSheet(
                         modifier = Modifier.clickable { onClose() }.padding(4.dp)
                     )
                 }
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text("WIDTH", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                    listOf("SLIM" to 0, "NORMAL" to 1, "WIDE" to 2).forEach { (lbl, m) ->
+                        val on = widthMode == m
+                        Box(
+                            Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (on) p.acc else p.panel2)
+                                .border(1.dp, if (on) p.acc else p.hairline, RoundedCornerShape(8.dp))
+                                .clickable { onWidthMode(m) }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(lbl, color = if (on) (if (p.isLight) Color.White else Color(0xFF05070A)) else p.ink, fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    Spacer(Modifier.weight(1f))
+                    Text("CARDS", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                    listOf("COMPACT" to true, "COZY" to false).forEach { (lbl, c) ->
+                        val on = compactCards == c
+                        Box(
+                            Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (on) p.acc else p.panel2)
+                                .border(1.dp, if (on) p.acc else p.hairline, RoundedCornerShape(8.dp))
+                                .clickable { onCompactCards(c) }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(lbl, color = if (on) (if (p.isLight) Color.White else Color(0xFF05070A)) else p.ink, fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
                 Text(
-                    "Tap to enable/disable · use ▲ ▼ to reorder",
+                    "Tap any widget to toggle ON/OFF · use ▲ ▼ to reorder slots",
                     color = p.soft,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 9.sp
@@ -427,7 +479,7 @@ fun WidgetPickerSheet(
                     Row(
                         Modifier
                             .fillMaxWidth()
-                            .height(44.dp)
+                            .height(42.dp)
                             .clip(RoundedCornerShape(12.dp))
                             .background(if (on) p.accDim else p.panel2.copy(alpha = 0.65f))
                             .border(1.dp, if (on) p.acc.copy(alpha = 0.65f) else p.hairline, RoundedCornerShape(12.dp))
@@ -447,7 +499,7 @@ fun WidgetPickerSheet(
                         Text(w.emoji, fontSize = 16.sp)
                         Column(Modifier.weight(1f)) {
                             Text(
-                                w.label,
+                                (if (on) "#${idx + 1} · " else "") + w.label,
                                 color = if (on) p.acc else p.ink,
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 11.sp,
@@ -525,10 +577,83 @@ data class WebAppEntry(
     }
 }
 
+private fun injectWebText(wv: android.webkit.WebView?, text: String) {
+    if (wv == null) return
+    val escaped = text.replace("\\", "\\\\").replace("'", "\\'")
+    val js = """
+        (function(){
+          var el = document.activeElement;
+          if (!el || (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA' && !el.isContentEditable)) {
+            el = document.querySelector('input[type="search"],input[name="search_query"],input[type="text"],input[type="email"],input[type="password"],input:not([type="hidden"]),textarea');
+            if (el) el.focus();
+          }
+          if (!el) return;
+          if (el.isContentEditable) {
+            document.execCommand('insertText', false, '$escaped');
+          } else {
+            var s = el.selectionStart != null ? el.selectionStart : el.value.length;
+            var e = el.selectionEnd != null ? el.selectionEnd : el.value.length;
+            var nv = el.value.slice(0, s) + '$escaped' + el.value.slice(e);
+            var proto = el.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+            var setter = Object.getOwnPropertyDescriptor(proto, 'value');
+            if (setter && setter.set) setter.set.call(el, nv); else el.value = nv;
+            try { el.setSelectionRange(s + '$escaped'.length, s + '$escaped'.length); } catch(_){}
+            el.dispatchEvent(new Event('input', {bubbles:true}));
+            el.dispatchEvent(new Event('change', {bubbles:true}));
+          }
+        })();
+    """.trimIndent()
+    wv.evaluateJavascript(js, null)
+}
+
+private fun injectWebBackspace(wv: android.webkit.WebView?) {
+    if (wv == null) return
+    val js = """
+        (function(){
+          var el = document.activeElement;
+          if (!el) return;
+          if (el.isContentEditable) {
+            document.execCommand('delete', false, null);
+          } else if (el.value != null && el.value.length > 0) {
+            var s = el.selectionStart != null ? el.selectionStart : el.value.length;
+            var e = el.selectionEnd != null ? el.selectionEnd : el.value.length;
+            var nv = s === e && s > 0 ? el.value.slice(0, s - 1) + el.value.slice(e) : el.value.slice(0, s) + el.value.slice(e);
+            var pos = s === e && s > 0 ? s - 1 : s;
+            var proto = el.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+            var setter = Object.getOwnPropertyDescriptor(proto, 'value');
+            if (setter && setter.set) setter.set.call(el, nv); else el.value = nv;
+            try { el.setSelectionRange(pos, pos); } catch(_){}
+            el.dispatchEvent(new Event('input', {bubbles:true}));
+          }
+        })();
+    """.trimIndent()
+    wv.evaluateJavascript(js, null)
+}
+
+private fun injectWebEnter(wv: android.webkit.WebView?) {
+    if (wv == null) return
+    val js = """
+        (function(){
+          var el = document.activeElement;
+          if (!el) return;
+          ['keydown','keypress','keyup'].forEach(function(t){
+            el.dispatchEvent(new KeyboardEvent(t, {key:'Enter', code:'Enter', keyCode:13, which:13, bubbles:true}));
+          });
+          if (el.form) {
+            if (el.form.requestSubmit) el.form.requestSubmit(); else el.form.submit();
+          }
+        })();
+    """.trimIndent()
+    wv.evaluateJavascript(js, null)
+    runCatching {
+        wv.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
+        wv.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
+    }
+}
+
 /**
- * Zero-ADB, zero-screenshare, native in-car WebView media/app box.
- * Renders directly inside the car display Presentation (never touches the phone screen,
- * never needs ShellAngel or MediaProjection, keeps login cookies, plays audio to the car).
+ * Zero-ADB, zero-screenshare, native in-car WebView media/app box with built-in car touch keyboard
+ * and shared CookieManager sessions from WebLoginActivity.
  */
 @android.annotation.SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -539,12 +664,16 @@ fun EmbeddedWebMediaTile(
     onCloseToControls: () -> Unit
 ) {
     val p = LocalAmni.current
+    val ctx = LocalContext.current
     var webRef by remember { mutableStateOf<android.webkit.WebView?>(null) }
     var pageTitle by remember(app.id) { mutableStateOf(app.label) }
+    var showKb by remember { mutableStateOf(false) }
+    var symMode by remember { mutableStateOf(false) }
 
     DisposableEffect(Unit) {
         onDispose {
             runCatching {
+                android.webkit.CookieManager.getInstance().flush()
                 webRef?.onPause()
                 webRef?.destroy()
             }
@@ -559,9 +688,9 @@ fun EmbeddedWebMediaTile(
                     .fillMaxWidth()
                     .height(28.dp)
                     .background(p.panel)
-                    .padding(horizontal = 6.dp),
+                    .padding(horizontal = 5.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Box(
                     Modifier
@@ -570,24 +699,20 @@ fun EmbeddedWebMediaTile(
                         .border(1.dp, p.hairline, RoundedCornerShape(6.dp))
                         .clickable { if (webRef?.canGoBack() == true) webRef?.goBack() }
                         .padding(horizontal = 6.dp, vertical = 2.dp)
-                ) {
-                    Text("◀", color = p.ink, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                }
+                ) { Text("◀", color = p.ink, fontSize = 10.sp, fontWeight = FontWeight.Bold) }
                 Box(
                     Modifier
                         .clip(RoundedCornerShape(6.dp))
                         .background(p.panel2)
                         .border(1.dp, p.hairline, RoundedCornerShape(6.dp))
                         .clickable { webRef?.reload() }
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                ) {
-                    Text("↻", color = p.ink, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                }
+                        .padding(horizontal = 5.dp, vertical = 2.dp)
+                ) { Text("↻", color = p.ink, fontSize = 10.sp, fontWeight = FontWeight.Bold) }
                 Text(
                     "${app.emoji} $pageTitle",
                     color = p.ink,
                     fontFamily = FontFamily.Monospace,
-                    fontSize = 10.sp,
+                    fontSize = 9.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -596,13 +721,34 @@ fun EmbeddedWebMediaTile(
                 Box(
                     Modifier
                         .clip(RoundedCornerShape(6.dp))
+                        .background(if (showKb) p.acc else p.panel2)
+                        .border(1.dp, if (showKb) p.acc else p.hairline, RoundedCornerShape(6.dp))
+                        .clickable { showKb = !showKb }
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        "⌨",
+                        color = if (showKb) (if (p.isLight) Color.White else Color(0xFF05070A)) else p.ink,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(p.panel2)
+                        .border(1.dp, p.hairline, RoundedCornerShape(6.dp))
+                        .clickable { WebLoginActivity.open(ctx, webRef?.url ?: app.url, app.label) }
+                        .padding(horizontal = 5.dp, vertical = 2.dp)
+                ) { Text("🔑", fontSize = 9.sp) }
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(6.dp))
                         .background(p.accDim)
                         .border(1.dp, p.acc.copy(alpha = 0.6f), RoundedCornerShape(6.dp))
                         .clickable { onChangeApp() }
-                        .padding(horizontal = 7.dp, vertical = 2.dp)
-                ) {
-                    Text("APP", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 8.sp, fontWeight = FontWeight.Bold)
-                }
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) { Text("APP", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 8.sp, fontWeight = FontWeight.Bold) }
                 Box(
                     Modifier
                         .clip(RoundedCornerShape(6.dp))
@@ -610,9 +756,7 @@ fun EmbeddedWebMediaTile(
                         .border(1.dp, p.hairline, RoundedCornerShape(6.dp))
                         .clickable { onCloseToControls() }
                         .padding(horizontal = 6.dp, vertical = 2.dp)
-                ) {
-                    Text("♪", color = p.ink, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                }
+                ) { Text("♪", color = p.ink, fontSize = 10.sp, fontWeight = FontWeight.Bold) }
             }
 
             AndroidView(
@@ -620,8 +764,8 @@ fun EmbeddedWebMediaTile(
                     .weight(1f)
                     .fillMaxWidth()
                     .background(Color.Black),
-                factory = { ctx ->
-                    android.webkit.WebView(ctx).apply {
+                factory = { c ->
+                    android.webkit.WebView(c).apply {
                         setBackgroundColor(android.graphics.Color.BLACK)
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
@@ -629,13 +773,16 @@ fun EmbeddedWebMediaTile(
                         settings.mediaPlaybackRequiresUserGesture = false
                         settings.useWideViewPort = true
                         settings.loadWithOverviewMode = true
+                        settings.userAgentString = WebLoginActivity.cleanChromeUserAgent(settings.userAgentString)
                         settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
                         runCatching {
-                            android.webkit.CookieManager.getInstance().setAcceptCookie(true)
-                            android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+                            val cm = android.webkit.CookieManager.getInstance()
+                            cm.setAcceptCookie(true)
+                            cm.setAcceptThirdPartyCookies(this, true)
                         }
                         webViewClient = object : android.webkit.WebViewClient() {
                             override fun onPageFinished(view: android.webkit.WebView?, url: String?) {
+                                runCatching { android.webkit.CookieManager.getInstance().flush() }
                                 val t = view?.title?.takeIf { it.isNotBlank() }
                                 if (t != null) pageTitle = t
                             }
@@ -652,6 +799,61 @@ fun EmbeddedWebMediaTile(
                     }
                 }
             )
+
+            if (showKb) {
+                val rows = if (!symMode) {
+                    listOf("qwertyuiop", "asdfghjkl", "zxcvbnm")
+                } else {
+                    listOf("1234567890", "@._-/:;?!", "+=&%#()'")
+                }
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(p.panel.copy(alpha = 0.98f))
+                        .border(1.dp, p.hairline)
+                        .padding(3.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    rows.forEach { row ->
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                            row.forEach { ch ->
+                                Box(
+                                    Modifier
+                                        .weight(1f)
+                                        .height(26.dp)
+                                        .clip(RoundedCornerShape(5.dp))
+                                        .background(p.panel2)
+                                        .border(1.dp, p.hairline, RoundedCornerShape(5.dp))
+                                        .clickable { injectWebText(webRef, ch.toString()) },
+                                    contentAlignment = Alignment.Center
+                                ) { Text(ch.toString(), color = p.ink, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                            }
+                        }
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Box(
+                            Modifier.weight(1.2f).height(26.dp).clip(RoundedCornerShape(5.dp)).background(p.panel2).border(1.dp, p.hairline, RoundedCornerShape(5.dp)).clickable { symMode = !symMode },
+                            contentAlignment = Alignment.Center
+                        ) { Text(if (symMode) "ABC" else "123", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold) }
+                        Box(
+                            Modifier.weight(1.1f).height(26.dp).clip(RoundedCornerShape(5.dp)).background(p.panel2).border(1.dp, p.hairline, RoundedCornerShape(5.dp)).clickable { injectWebText(webRef, ".com") },
+                            contentAlignment = Alignment.Center
+                        ) { Text(".com", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold) }
+                        Box(
+                            Modifier.weight(2.6f).height(26.dp).clip(RoundedCornerShape(5.dp)).background(p.panel2).border(1.dp, p.hairline, RoundedCornerShape(5.dp)).clickable { injectWebText(webRef, " ") },
+                            contentAlignment = Alignment.Center
+                        ) { Text("SPACE", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold) }
+                        Box(
+                            Modifier.weight(1.1f).height(26.dp).clip(RoundedCornerShape(5.dp)).background(p.panel2).border(1.dp, p.hairline, RoundedCornerShape(5.dp)).clickable { injectWebBackspace(webRef) },
+                            contentAlignment = Alignment.Center
+                        ) { Text("⌫", color = p.ink, fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+                        Box(
+                            Modifier.weight(1.3f).height(26.dp).clip(RoundedCornerShape(5.dp)).background(p.acc).clickable { injectWebEnter(webRef); showKb = false },
+                            contentAlignment = Alignment.Center
+                        ) { Text("GO ↵", color = if (p.isLight) Color.White else Color(0xFF05070A), fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold) }
+                    }
+                }
+            }
         }
     }
 }

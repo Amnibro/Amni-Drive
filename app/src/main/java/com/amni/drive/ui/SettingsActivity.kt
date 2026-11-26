@@ -342,6 +342,18 @@ private fun WirePane() {
         Text("RECHECK DIRECT CAR APP ENGINE", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)
     }
 
+    Text("CAR WEB SIGN-INS (SYNCED PHONE → CAR)", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+    Text("Sign in once here using your phone keyboard & autofill — cookies are shared automatically with the car display's Media box.", color = p.soft, fontSize = 11.sp, lineHeight = 15.sp)
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        WebAppEntry.CATALOG.forEach { web ->
+            Box(Modifier.clip(RoundedCornerShape(10.dp)).background(p.panel2).border(1.dp, p.acc.copy(alpha = 0.55f), RoundedCornerShape(10.dp)).clickable {
+                WebLoginActivity.open(ctx, web.url, web.label)
+            }.padding(horizontal = 11.dp, vertical = 8.dp)) {
+                Text("${web.emoji} ${web.label}", color = p.ink, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+
     Text("PHONE CERTIFICATE (FACTORY HEAD UNITS)", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
     val lastRefusal = com.amni.drive.wire.AaCertStore.lastAuthStatus ?: 0
     val certSummary = when (certStatus.source) {

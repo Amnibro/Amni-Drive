@@ -211,22 +211,25 @@ fun paletteFor(
 }
 
 enum class TileLayout(val label: String, val blurb: String) {
-    AUTO("Auto", "Adapt size & position to window"),
-    MAP_FOCUS("Map focus", "Big map · slim side tiles"),
-    MEDIA_FOCUS("Media focus", "Map + large now-playing"),
-    BALANCED("Balanced", "Map · media · widgets"),
-    STACKED("Stacked", "Map top · tiles bottom"),
-    MAP_ONLY("Map only", "Full-bleed map")
+    AUTO("Auto", "Smart fit for current screen"),
+    SPLIT_50("50 / 50 Split", "Half Map · Half Media (2 tiles)"),
+    ORB_CENTER("Center Orb", "Circular center map · side panels"),
+    BALANCED("Tri-Cockpit", "Map · Media · Widget rail"),
+    MAP_FOCUS("Map Hero", "Wide map · compact media & strip"),
+    MEDIA_FOCUS("Theater", "Big Media · companion map"),
+    STACKED("Horizon", "Panoramic map top · deck below"),
+    MAP_ONLY("Full Map", "Edge-to-edge map + HUD pill")
 }
 
 enum class DashWidget(val label: String, val emoji: String, val blurb: String) {
     WEATHER("Weather", "🌤️", "Live temp & conditions"),
     TRIP("Trip & Speed", "🧭", "Speed MPH or route ETA"),
     GATE("Driver Gate", "🛡️", "Tap to toggle video gate"),
-    CLOCK("Big Clock", "🕒", "Large time & day"),
+    CLOCK("Big Clock", "🕒", "Large time & AM/PM"),
     MEDIA_MINI("Quick Media", "🎵", "Compact play/pause/skip"),
     SHORTCUTS("Quick Apps", "⚡", "1-tap Spotify / YT / Map"),
-    VEHICLE("Car & Link", "🚗", "GPS, net & mirror status");
+    VEHICLE("Car & Link", "🚗", "GPS, net & app status"),
+    COMPASS("Compass", "🧿", "Heading direction & bearing");
 
     companion object {
         val DEFAULTS = listOf(WEATHER, TRIP, GATE)
@@ -250,7 +253,9 @@ data class UiTheme(
     val largeTargets: Boolean = false,
     val reduceMotion: Boolean = false,
     val cornerStyle: Int = 1,
-    val widgets: List<DashWidget> = DashWidget.DEFAULTS
+    val widgets: List<DashWidget> = DashWidget.DEFAULTS,
+    val widgetWidthMode: Int = 1, // 0 = slim, 1 = normal, 2 = wide
+    val widgetCompact: Boolean = true
 )
 
 class ThemeStore(private val context: Context) {
@@ -267,7 +272,9 @@ class ThemeStore(private val context: Context) {
             largeTargets = it[LARGE_TARGETS] ?: false,
             reduceMotion = it[REDUCE_MOTION] ?: false,
             cornerStyle = (it[CORNER_STYLE] ?: 1).coerceIn(0, 2),
-            widgets = DashWidget.parse(it[WIDGETS])
+            widgets = DashWidget.parse(it[WIDGETS]),
+            widgetWidthMode = (it[WIDGET_WIDTH] ?: 1).coerceIn(0, 2),
+            widgetCompact = it[WIDGET_COMPACT] ?: true
         )
     }
 
@@ -286,6 +293,8 @@ class ThemeStore(private val context: Context) {
         val clean = list.distinct().ifEmpty { DashWidget.DEFAULTS }
         it[WIDGETS] = clean.joinToString(",") { w -> w.name }
     }
+    suspend fun setWidgetWidthMode(mode: Int) = context.themeStore.edit { it[WIDGET_WIDTH] = mode.coerceIn(0, 2) }
+    suspend fun setWidgetCompact(compact: Boolean) = context.themeStore.edit { it[WIDGET_COMPACT] = compact }
 
     companion object {
         private val PRESET = stringPreferencesKey("preset")
@@ -300,6 +309,8 @@ class ThemeStore(private val context: Context) {
         private val REDUCE_MOTION = booleanPreferencesKey("reduce_motion")
         private val CORNER_STYLE = intPreferencesKey("corner_style")
         private val WIDGETS = stringPreferencesKey("dash_widgets")
+        private val WIDGET_WIDTH = intPreferencesKey("widget_width_mode")
+        private val WIDGET_COMPACT = booleanPreferencesKey("widget_compact")
     }
 }
 

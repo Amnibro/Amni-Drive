@@ -72,7 +72,9 @@ onConfirmPassenger = { controller.confirmPassenger() },
 onOpenSettings = { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) },
 initialPage = startPage,
 onSetTileLayout = { v -> lifecycleScope.launch { app.themeStore.setTileLayout(v) } },
-onSetWidgets = { v -> lifecycleScope.launch { app.themeStore.setWidgets(v) } }
+onSetWidgets = { v -> lifecycleScope.launch { app.themeStore.setWidgets(v) } },
+onSetWidgetWidthMode = { v -> lifecycleScope.launch { app.themeStore.setWidgetWidthMode(v) } },
+onSetWidgetCompact = { v -> lifecycleScope.launch { app.themeStore.setWidgetCompact(v) } }
 )
 }
 }

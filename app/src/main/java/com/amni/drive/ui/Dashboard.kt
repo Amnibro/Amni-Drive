@@ -142,6 +142,8 @@ carSurface: Boolean = false,
 surfaceDisplayId: Int? = null,
 onSetTileLayout: (TileLayout) -> Unit = {},
 onSetWidgets: (List<DashWidget>) -> Unit = {},
+onSetWidgetWidthMode: (Int) -> Unit = {},
+onSetWidgetCompact: (Boolean) -> Unit = {},
 onCycleTheme: () -> Unit = {}
 ) {
 val p = rememberPalette(theme)
@@ -321,11 +323,15 @@ else -> 92.dp
 val pad = when { micro -> 3.dp; dense -> 4.dp; else -> 12.dp }
 val gap = when { micro -> 3.dp; dense -> 5.dp; else -> 10.dp }
 val contentW = maxWidth - railW
+val baseWidgetW = when (theme.widgetWidthMode) {
+0 -> 130.dp
+2 -> 212.dp
+else -> 166.dp
+}
 val widgetW = when {
-contentW < 640.dp -> 124.dp
-contentW < 900.dp -> 148.dp
-dense -> 164.dp
-else -> 240.dp
+contentW < 640.dp -> baseWidgetW.coerceAtMost(140.dp)
+dense -> baseWidgetW
+else -> (baseWidgetW + 44.dp)
 }
 val showTopBar = !carSurface && maxHeight > 480.dp && !micro
 val mediaPulse by AaNavState.mediaPulse.collectAsState()
@@ -337,7 +343,7 @@ Row(Modifier.fillMaxSize()) {
 Rail(page, cfg.driverGateEnabled && cfg.masterGateEnabled, { menuOpen = true }, { page = it }, onToggleGate, railW, dense || micro)
 Column(Modifier.weight(1f).fillMaxHeight()) {
 if (showTopBar) TopBar(driveState, speedMph, weather, passenger)
-else if (carSurface || (dense && !micro)) CarStatusStrip(driveState, speedMph, weather, passenger, 0.dp, onOpenLayout = { layoutPicker = true }, onOpenMedia = { mediaPicker = true })
+else if (carSurface || (dense && !micro)) CarStatusStrip(driveState, speedMph, weather, passenger, 0.dp, onOpenLayout = { layoutPicker = true }, onOpenMedia = { mediaPicker = true }, onOpenWidgets = { widgetPicker = true })
 Box(Modifier.weight(1f).fillMaxWidth()) {
 AnimatedContent(
 targetState = page,
@@ -366,6 +372,7 @@ pad = pad,
 gap = gap,
 widgetW = widgetW,
 dense = dense || micro,
+widgetCompact = theme.widgetCompact,
 carSurface = carSurface,
 carTopPad = 0.dp,
 mediaFlash = mediaFlash,
@@ -425,7 +432,7 @@ onPage = { page = it; menuOpen = false }, onToggleGate = onToggleGate, onToggleW
 onSettings = { menuOpen = false; onOpenSettings() }, onClose = { menuOpen = false }, onMedia = { menuOpen = false; mediaPicker = true },
 onTileLayout = { menuOpen = false; layoutPicker = true }, onWidgets = { menuOpen = false; widgetPicker = true }, themeLabel = theme.preset.label, onTheme = onCycleTheme)
 if (layoutPicker) TileLayoutPicker(theme.tileLayout, layout, { onSetTileLayout(it); layoutPicker = false }, { layoutPicker = false }, carSurface)
-if (widgetPicker) WidgetPickerSheet(theme.widgets, onSetWidgets) { widgetPicker = false }
+if (widgetPicker) WidgetPickerSheet(theme.widgets, theme.widgetWidthMode, theme.widgetCompact, onSetWidgets, onSetWidgetWidthMode, onSetWidgetCompact) { widgetPicker = false }
 if (mediaPicker) MediaSourceSheet(mediaAppsList, apps, { mediaPicker = false }, { openInMediaBox(it); mediaPicker = false }, { openWebInMediaBox(it); mediaPicker = false })
 blocked?.let { app ->
 GateSheet(app, rearAvailable,
@@ -458,6 +465,7 @@ pad: androidx.compose.ui.unit.Dp,
 gap: androidx.compose.ui.unit.Dp,
 widgetW: androidx.compose.ui.unit.Dp,
 dense: Boolean,
+widgetCompact: Boolean = true,
 carSurface: Boolean = false,
 carTopPad: androidx.compose.ui.unit.Dp = 0.dp,
 mediaFlash: Boolean,
@@ -500,6 +508,7 @@ hostKeyboard: (() -> Unit)? = null,
 onVoice: (() -> Unit)? = null
 ) {
 val p = LocalAmni.current
+val wDense = dense || widgetCompact
 val map: @Composable (Modifier) -> Unit = { mod ->
 if (useAmniMap && carSurface) {
 AmniMapEmbedTile(mod, onSwitchBuiltIn = onToggleAmniMap)
@@ -523,21 +532,22 @@ val widgets: @Composable (Modifier) -> Unit = { mod ->
 Column(mod.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(gap)) {
 widgetsList.forEach { w ->
 when (w) {
-DashWidget.WEATHER -> WeatherCard(weather, dense)
-DashWidget.TRIP -> TripCard(speedMph, route, dense)
-DashWidget.GATE -> Box(Modifier.clickable { onToggleGate() }) { GateHintCard(cfg, dense) }
-DashWidget.CLOCK -> ClockWidgetCard(dense)
-DashWidget.MEDIA_MINI -> QuickMediaWidgetCard(dense, onOpenMediaPicker)
-DashWidget.SHORTCUTS -> ShortcutsWidgetCard(allApps, dense, onQuickLaunch)
-DashWidget.VEHICLE -> VehicleWidgetCard(speedMph, location != null, netOk, dense)
+DashWidget.WEATHER -> WeatherCard(weather, wDense)
+DashWidget.TRIP -> TripCard(speedMph, route, wDense)
+DashWidget.GATE -> Box(Modifier.clickable { onToggleGate() }) { GateHintCard(cfg, wDense) }
+DashWidget.CLOCK -> ClockWidgetCard(wDense)
+DashWidget.MEDIA_MINI -> QuickMediaWidgetCard(wDense, onOpenMediaPicker)
+DashWidget.SHORTCUTS -> ShortcutsWidgetCard(allApps, wDense, onQuickLaunch)
+DashWidget.VEHICLE -> VehicleWidgetCard(speedMph, location != null, netOk, wDense)
+DashWidget.COMPASS -> CompassWidgetCard(location, wDense)
 }
 }
 Box(
-Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(p.panel2.copy(alpha = 0.75f))
-.border(1.dp, p.hairline, RoundedCornerShape(10.dp)).clickable { onEditWidgets() }.padding(vertical = 6.dp),
+Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(p.panel2.copy(alpha = 0.78f))
+.border(1.dp, p.acc.copy(alpha = 0.45f), RoundedCornerShape(10.dp)).clickable { onEditWidgets() }.padding(vertical = 6.dp),
 contentAlignment = Alignment.Center
 ) {
-Text("✎ EDIT WIDGETS", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)
+Text("✎ EDIT WIDGETS", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)
 }
 }
 }
@@ -549,6 +559,38 @@ else -> MediaCard(mod.then(mediaMod), d, mediaHint, surfaceDisplayId, mediaApps,
 }
 }
 when (layout) {
+TileLayout.SPLIT_50 -> Row(Modifier.fillMaxSize().padding(pad), horizontalArrangement = Arrangement.spacedBy(gap)) {
+map(Modifier.weight(1f).fillMaxHeight())
+media(Modifier.weight(1f).fillMaxHeight(), dense)
+}
+TileLayout.ORB_CENTER -> Row(Modifier.fillMaxSize().padding(pad), horizontalArrangement = Arrangement.spacedBy(gap), verticalAlignment = Alignment.CenterVertically) {
+widgets(Modifier.width(widgetW).fillMaxHeight())
+BoxWithConstraints(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+val orbSize = (minOf(maxWidth, maxHeight) - 4.dp).coerceAtLeast(140.dp)
+Box(
+Modifier.size(orbSize).clip(CircleShape)
+.background(p.bg)
+.border(2.5.dp, p.accentBrush, CircleShape)
+.padding(3.dp),
+contentAlignment = Alignment.Center
+) {
+Box(Modifier.fillMaxSize().clip(CircleShape).border(1.dp, p.hairline, CircleShape)) {
+map(Modifier.fillMaxSize())
+}
+Box(
+Modifier.align(Alignment.TopCenter).padding(top = 4.dp).clip(RoundedCornerShape(99.dp))
+.background(Color(0xD805070A)).border(1.dp, p.acc.copy(alpha = 0.7f), RoundedCornerShape(99.dp))
+.padding(horizontal = 7.dp, vertical = 1.dp)
+) { Text("N", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 8.sp, fontWeight = FontWeight.Bold) }
+Box(
+Modifier.align(Alignment.BottomCenter).padding(bottom = 5.dp).clip(RoundedCornerShape(99.dp))
+.background(Color(0xE005070A)).border(1.dp, p.acc.copy(alpha = 0.7f), RoundedCornerShape(99.dp))
+.padding(horizontal = 10.dp, vertical = 2.dp)
+) { Text("$speedMph MPH", color = p.ink, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold) }
+}
+}
+media(Modifier.weight(1.05f).fillMaxHeight(), dense)
+}
 TileLayout.MAP_ONLY -> Box(Modifier.fillMaxSize().padding(pad)) {
 map(Modifier.fillMaxSize())
 Row(
@@ -592,12 +634,12 @@ media(Modifier.weight(1f).fillMaxWidth(), true)
 }
 }
 TileLayout.MEDIA_FOCUS -> Row(Modifier.fillMaxSize().padding(pad), horizontalArrangement = Arrangement.spacedBy(gap)) {
-map(Modifier.weight(1.15f).fillMaxHeight())
-media(Modifier.weight(1.25f).fillMaxHeight().then(if (widgetW < 130.dp) Modifier.padding(top = carTopPad) else Modifier), dense)
+map(Modifier.weight(1.0f).fillMaxHeight())
+media(Modifier.weight(1.45f).fillMaxHeight().then(if (widgetW < 130.dp) Modifier.padding(top = carTopPad) else Modifier), dense)
 if (widgetW >= 130.dp) widgets(Modifier.width(widgetW).fillMaxHeight().padding(top = carTopPad))
 }
 TileLayout.BALANCED, TileLayout.AUTO -> Row(Modifier.fillMaxSize().padding(pad), horizontalArrangement = Arrangement.spacedBy(gap)) {
-map(Modifier.weight(if (dense) 1.55f else 1.5f).fillMaxHeight())
+map(Modifier.weight(if (dense) 1.5f else 1.5f).fillMaxHeight())
 media(Modifier.weight(if (dense) 1.0f else 1f).fillMaxHeight(), dense)
 widgets(Modifier.width(widgetW).fillMaxHeight().padding(top = carTopPad))
 }
@@ -608,10 +650,10 @@ private fun TileLayoutPicker(selected: TileLayout, effective: TileLayout, onPick
 val p = LocalAmni.current
 val rowH = if (compact) 42.dp else 52.dp
 Box(Modifier.fillMaxSize().background(p.scrim).clickable { onClose() }, contentAlignment = Alignment.Center) {
-SoftSurface(Modifier.fillMaxWidth(if (compact) 0.68f else 0.72f).padding(if (compact) 6.dp else 12.dp), radius = 20.dp) {
+SoftSurface(Modifier.fillMaxWidth(if (compact) 0.72f else 0.74f).padding(if (compact) 6.dp else 12.dp), radius = 20.dp) {
 Column(Modifier.padding(if (compact) 10.dp else 16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(if (compact) 5.dp else 8.dp)) {
 Row(verticalAlignment = Alignment.CenterVertically) {
-Text("TILE LAYOUT", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = if (compact) 12.sp else 14.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
+Text("COCKPIT LAYOUT", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = if (compact) 12.sp else 14.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
 Spacer(Modifier.weight(1f))
 Text("✕", color = p.ink, fontSize = 15.sp, modifier = Modifier.clickable { onClose() }.padding(4.dp))
 }
@@ -644,6 +686,15 @@ val p = LocalAmni.current
 val a = if (sel) p.acc else p.soft
 Box(Modifier.size(44.dp, 30.dp).clip(RoundedCornerShape(6.dp)).background(p.panel2).border(1.dp, a.copy(alpha = 0.45f), RoundedCornerShape(6.dp)).padding(3.dp)) {
 when (mode) {
+TileLayout.SPLIT_50 -> Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+Box(Modifier.weight(1f).fillMaxHeight().background(a.copy(alpha = 0.55f), RoundedCornerShape(2.dp)))
+Box(Modifier.weight(1f).fillMaxHeight().background(a.copy(alpha = 0.35f), RoundedCornerShape(2.dp)))
+}
+TileLayout.ORB_CENTER -> Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+Box(Modifier.weight(0.65f).fillMaxHeight().background(a.copy(alpha = 0.3f), RoundedCornerShape(2.dp)))
+Box(Modifier.size(18.dp).clip(CircleShape).background(a.copy(alpha = 0.6f)).border(1.dp, a, CircleShape))
+Box(Modifier.weight(0.75f).fillMaxHeight().background(a.copy(alpha = 0.38f), RoundedCornerShape(2.dp)))
+}
 TileLayout.MAP_ONLY -> Box(Modifier.fillMaxSize().background(a.copy(alpha = 0.5f), RoundedCornerShape(3.dp)))
 TileLayout.STACKED -> Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
 Box(Modifier.weight(1.4f).fillMaxWidth().background(a.copy(alpha = 0.55f), RoundedCornerShape(2.dp)))
@@ -657,9 +708,9 @@ Box(Modifier.weight(2.2f).fillMaxHeight().background(a.copy(alpha = 0.55f), Roun
 Box(Modifier.weight(0.7f).fillMaxHeight().background(a.copy(alpha = 0.32f), RoundedCornerShape(2.dp)))
 }
 TileLayout.MEDIA_FOCUS -> Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-Box(Modifier.weight(1.1f).fillMaxHeight().background(a.copy(alpha = 0.5f), RoundedCornerShape(2.dp)))
-Box(Modifier.weight(1.2f).fillMaxHeight().background(a.copy(alpha = 0.4f), RoundedCornerShape(2.dp)))
-Box(Modifier.weight(0.7f).fillMaxHeight().background(a.copy(alpha = 0.3f), RoundedCornerShape(2.dp)))
+Box(Modifier.weight(0.95f).fillMaxHeight().background(a.copy(alpha = 0.45f), RoundedCornerShape(2.dp)))
+Box(Modifier.weight(1.4f).fillMaxHeight().background(a.copy(alpha = 0.55f), RoundedCornerShape(2.dp)))
+Box(Modifier.weight(0.65f).fillMaxHeight().background(a.copy(alpha = 0.28f), RoundedCornerShape(2.dp)))
 }
 TileLayout.BALANCED, TileLayout.AUTO -> Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
 Box(Modifier.weight(1.5f).fillMaxHeight().background(a.copy(alpha = 0.55f), RoundedCornerShape(2.dp)))
@@ -730,7 +781,8 @@ weather: WeatherNow?,
 passenger: Boolean,
 endPad: androidx.compose.ui.unit.Dp = 0.dp,
 onOpenLayout: () -> Unit = {},
-onOpenMedia: () -> Unit = {}
+onOpenMedia: () -> Unit = {},
+onOpenWidgets: () -> Unit = {}
 ) {
 val p = LocalAmni.current
 val clock by produceState(LocalTime.now().format(DateTimeFormatter.ofPattern("h:mm"))) {
@@ -746,17 +798,20 @@ DriveState.UNKNOWN -> "GATED"
 Row(
 Modifier.fillMaxWidth().height(32.dp).padding(start = 8.dp, end = 8.dp + endPad),
 verticalAlignment = Alignment.CenterVertically,
-horizontalArrangement = Arrangement.spacedBy(6.dp)
+horizontalArrangement = Arrangement.spacedBy(5.dp)
 ) {
 Text("AMNI", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
 Chip((if (passenger) "PSGR · " else "") + stTxt, if (moving) p.gold else p.acc)
 weather?.let { Chip("${it.emoji} ${it.tempF}°", p.ink) }
 Spacer(Modifier.weight(1f))
-Box(Modifier.clip(RoundedCornerShape(99.dp)).background(p.panel2).border(1.dp, p.acc.copy(alpha = 0.45f), RoundedCornerShape(99.dp)).clickable { onOpenMedia() }.padding(horizontal = 9.dp, vertical = 3.dp)) {
-Text("♪ MUSIC", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+Box(Modifier.clip(RoundedCornerShape(99.dp)).background(p.panel2).border(1.dp, p.acc.copy(alpha = 0.45f), RoundedCornerShape(99.dp)).clickable { onOpenMedia() }.padding(horizontal = 8.dp, vertical = 3.dp)) {
+Text("♪ MEDIA", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold)
 }
-Box(Modifier.clip(RoundedCornerShape(99.dp)).background(p.panel2).border(1.dp, p.hairline, RoundedCornerShape(99.dp)).clickable { onOpenLayout() }.padding(horizontal = 9.dp, vertical = 3.dp)) {
+Box(Modifier.clip(RoundedCornerShape(99.dp)).background(p.panel2).border(1.dp, p.hairline, RoundedCornerShape(99.dp)).clickable { onOpenLayout() }.padding(horizontal = 8.dp, vertical = 3.dp)) {
 Text("⊞ LAYOUT", color = p.ink, fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+}
+Box(Modifier.clip(RoundedCornerShape(99.dp)).background(p.panel2).border(1.dp, p.hairline, RoundedCornerShape(99.dp)).clickable { onOpenWidgets() }.padding(horizontal = 8.dp, vertical = 3.dp)) {
+Text("✎ WIDGETS", color = p.ink, fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold)
 }
 Text(clock, color = p.ink, fontFamily = FontFamily.Monospace, fontSize = 13.sp, fontWeight = FontWeight.Bold)
 }
@@ -1179,7 +1234,27 @@ Spacer(Modifier.width(6.dp))
 Text("VEHICLE", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 8.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
 }
 Text("GPS ${if (gpsOk) "LOCK" else "WAIT"} · NET ${if (netOk) "OK" else "OFF"}", color = p.ink, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-Text("APPS ${if (directReady) "DIRECT" else if (mirrorLive) "MIRROR" else "READY"} · $speedMph MPH", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+Text("APPS ${if (directReady) "DIRECT" else if (mirrorLive) "MIRROR" else "WEB"} · $speedMph MPH", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+}
+}
+}
+@Composable
+private fun CompassWidgetCard(location: Location?, dense: Boolean) {
+val p = LocalAmni.current
+val deg = ((location?.bearing ?: 0f).roundToInt() % 360 + 360) % 360
+val dirs = listOf("N", "NE", "E", "SE", "S", "SW", "W", "NW")
+val cardinal = if (location != null && location.hasBearing()) dirs[((deg + 22) / 45) % 8] else "--"
+GlassCard(Modifier.fillMaxWidth()) {
+Column(Modifier.padding(if (dense) 8.dp else 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+Row(verticalAlignment = Alignment.CenterVertically) {
+AccentBar(Modifier.width(14.dp).height(3.dp))
+Spacer(Modifier.width(6.dp))
+Text("COMPASS", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 8.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+}
+Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+Text(cardinal, color = p.acc, fontFamily = FontFamily.Monospace, fontSize = if (dense) 20.sp else 26.sp, fontWeight = FontWeight.Bold)
+Text(if (location != null && location.hasBearing()) "${deg}°" else "GPS…", color = p.ink, fontFamily = FontFamily.Monospace, fontSize = if (dense) 11.sp else 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 2.dp))
+}
 }
 }
 }

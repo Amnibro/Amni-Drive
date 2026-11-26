@@ -77,6 +77,8 @@ carSurface = true,
 surfaceDisplayId = surfaceDisplayId,
 onSetTileLayout = { v -> scope.launch { app.themeStore.setTileLayout(v) } },
 onSetWidgets = { v -> scope.launch { app.themeStore.setWidgets(v) } },
+onSetWidgetWidthMode = { v -> scope.launch { app.themeStore.setWidgetWidthMode(v) } },
+onSetWidgetCompact = { v -> scope.launch { app.themeStore.setWidgetCompact(v) } },
 onCycleTheme = {
 android.util.Log.i("Amni.Theme", "cycle from ${theme.preset}")
 scope.launch {
