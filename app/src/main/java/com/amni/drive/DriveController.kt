@@ -50,17 +50,20 @@ class DriveController(context: Context, private val store: ConfigStore) {
         val role = if (useRear) DisplayRole.REAR_PASSENGER else DisplayRole.PRIMARY_DRIVER
         val decision = GateManager.decide(GateResolver.input(entry.category, role, state, cfg, passenger))
         if (decision.allow) {
-            val target = when {
-                surfaceDisplayId != null -> surfaceDisplayId
-                useRear -> rearId
-                else -> null
+            if (surfaceDisplayId != null) {
+                val slot = if (entry.packageName == CarEmbed.MAP_PKG) CarApps.MAP else CarApps.MEDIA
+                CarApps.probe()
+                if (CarApps.ready.value) {
+                    CarApps.open(app, slot, entry.packageName)
+                    CarEmbed.slot(entry.packageName, entry.label, surfaceDisplayId, slot)
+                } else if (CarEmbed.supports(app, entry.packageName)) {
+                    CarEmbed.open(app, entry, surfaceDisplayId)
+                }
+                // Never auto-trigger phone screenshare (CarMirror) or launch onto the phone screen from the car display!
+            } else {
+                val target = if (useRear) rearId else null
+                launcher.launch(entry, target)
             }
-            val slot = if (entry.packageName == CarEmbed.MAP_PKG) CarApps.MAP else CarApps.MEDIA
-            val direct = surfaceDisplayId != null && CarApps.ready.value
-            if (direct) { CarApps.open(app, slot, entry.packageName); CarEmbed.slot(entry.packageName, entry.label, surfaceDisplayId!!, slot) }
-            val embedded = direct || surfaceDisplayId != null && CarEmbed.supports(app, entry.packageName) && CarEmbed.open(app, entry, surfaceDisplayId)
-            val ok = embedded || (surfaceDisplayId != null && CarEmbed.mirror(app, entry, surfaceDisplayId)) || launcher.launch(entry, target)
-            if (!ok && surfaceDisplayId != null) launcher.launch(entry, null)
         }
         return decision
     }

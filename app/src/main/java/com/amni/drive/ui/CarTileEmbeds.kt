@@ -64,13 +64,18 @@ fun AmniMapEmbedTile(
     val ctx = LocalContext.current
     val dpi = (LocalDensity.current.density * 160f).roundToInt().coerceIn(160, 420)
     val directReady by CarApps.ready.collectAsState()
+    var surfaceInfo by remember { mutableStateOf<Triple<Surface, Int, Int>?>(null) }
 
-    LaunchedEffect(directReady) {
-        CarApps.probe()
+    LaunchedEffect(Unit) { CarApps.probe() }
+
+    LaunchedEffect(directReady, surfaceInfo) {
+        val info = surfaceInfo
         if (directReady) {
+            if (info != null) CarApps.surface(ctx, CarApps.MAP, info.first, info.second, info.third, dpi)
             CarApps.open(ctx, CarApps.MAP, CarEmbed.MAP_PKG)
         } else {
             CarEmbed.attach(ctx, CarEmbed.MAP_PKG)
+            if (info != null) CarEmbed.surface(info.first, info.second, info.third, dpi)
         }
     }
 
@@ -110,17 +115,16 @@ fun AmniMapEmbedTile(
                                 surf?.release()
                                 val s = Surface(st)
                                 surf = s
-                                if (CarApps.ready.value) CarApps.surface(context, CarApps.MAP, s, w, h, dpi)
-                                else CarEmbed.surface(s, w, h, dpi)
+                                surfaceInfo = Triple(s, w, h)
                             }
                             override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, w: Int, h: Int) {
                                 val s = surf ?: Surface(st).also { surf = it }
-                                if (CarApps.ready.value) CarApps.surface(context, CarApps.MAP, s, w, h, dpi)
-                                else CarEmbed.surface(s, w, h, dpi)
+                                surfaceInfo = Triple(s, w, h)
                             }
                             override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean {
-                                if (CarApps.ready.value) CarApps.surface(context, CarApps.MAP, null, 0, 0, dpi)
-                                else CarEmbed.surface(null, 0, 0, dpi)
+                                surfaceInfo = null
+                                CarApps.surface(context, CarApps.MAP, null, 0, 0, dpi)
+                                CarEmbed.surface(null, 0, 0, dpi)
                                 surf?.release()
                                 surf = null
                                 return true
@@ -153,8 +157,9 @@ fun AmniMapEmbedTile(
 }
 
 /**
- * Live embedded app tile for the Media box (Spotify, YouTube, Netflix, or ANY installed app).
- * Uses CarApps (ShellAngel) when available, otherwise CarMirror (MediaProjection + Accessibility touch).
+ * Live embedded app tile for the Media box (Spotify, YouTube, Netflix, Ace Hardware, or ANY installed app).
+ * Runs directly on its own VirtualDisplay inside the car box via CarApps (ShellAngel) — never touches the phone
+ * screen and never triggers MediaProjection screenshare automatically.
  */
 @Composable
 fun EmbeddedAppMediaTile(
@@ -168,12 +173,18 @@ fun EmbeddedAppMediaTile(
     val dpi = (LocalDensity.current.density * 160f).roundToInt().coerceIn(160, 420)
     val directReady by CarApps.ready.collectAsState()
     val mirrorLive by CarMirror.live.collectAsState()
+    var optInMirror by remember(app.packageName) { mutableStateOf(false) }
+    var surfaceInfo by remember { mutableStateOf<Triple<Surface, Int, Int>?>(null) }
 
-    LaunchedEffect(app.packageName, directReady) {
-        CarApps.probe()
+    LaunchedEffect(app.packageName) { CarApps.probe() }
+
+    LaunchedEffect(app.packageName, directReady, surfaceInfo, optInMirror) {
+        val info = surfaceInfo
         if (directReady) {
+            if (info != null) CarApps.surface(ctx, CarApps.MEDIA, info.first, info.second, info.third, dpi)
             CarApps.open(ctx, CarApps.MEDIA, app.packageName)
-        } else {
+        } else if (optInMirror) {
+            if (info != null) CarMirror.surface(info.first, info.second, info.third)
             CarMirror.open(ctx, app.packageName)
         }
     }
@@ -202,8 +213,12 @@ fun EmbeddedAppMediaTile(
                         .background(p.panel2)
                         .border(1.dp, p.hairline, RoundedCornerShape(6.dp))
                         .clickable {
-                            if (directReady) CarApps.key(CarApps.MEDIA, KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_BACK))
-                            else CarMirror.back()
+                            if (directReady) {
+                                CarApps.key(CarApps.MEDIA, KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_BACK))
+                                CarApps.key(CarApps.MEDIA, KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_BACK))
+                            } else if (optInMirror) {
+                                CarMirror.back()
+                            }
                         }
                         .padding(horizontal = 6.dp, vertical = 2.dp)
                 ) {
@@ -255,7 +270,8 @@ fun EmbeddedAppMediaTile(
                             (pos.x + sz.width).roundToInt(),
                             (pos.y + sz.height).roundToInt()
                         )
-                        if (directReady) CarApps.area(CarApps.MEDIA, rect) else CarMirror.area = rect
+                        if (directReady) CarApps.area(CarApps.MEDIA, rect)
+                        else if (optInMirror) CarMirror.area = rect
                     }
             ) {
                 AndroidView(
@@ -269,17 +285,16 @@ fun EmbeddedAppMediaTile(
                                     surf?.release()
                                     val s = Surface(st)
                                     surf = s
-                                    if (CarApps.ready.value) CarApps.surface(context, CarApps.MEDIA, s, w, h, dpi)
-                                    else CarMirror.surface(s, w, h)
+                                    surfaceInfo = Triple(s, w, h)
                                 }
                                 override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, w: Int, h: Int) {
                                     val s = surf ?: Surface(st).also { surf = it }
-                                    if (CarApps.ready.value) CarApps.surface(context, CarApps.MEDIA, s, w, h, dpi)
-                                    else CarMirror.surface(s, w, h)
+                                    surfaceInfo = Triple(s, w, h)
                                 }
                                 override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean {
-                                    if (CarApps.ready.value) CarApps.surface(context, CarApps.MEDIA, null, 0, 0, dpi)
-                                    else CarMirror.surface(null, 0, 0)
+                                    surfaceInfo = null
+                                    CarApps.surface(context, CarApps.MEDIA, null, 0, 0, dpi)
+                                    CarMirror.surface(null, 0, 0)
                                     surf?.release()
                                     surf = null
                                     return true
@@ -289,17 +304,17 @@ fun EmbeddedAppMediaTile(
                         }
                     }
                 )
-                if (!directReady && !mirrorLive) {
+                if (!directReady && !(optInMirror && mirrorLive)) {
                     Column(
                         Modifier
                             .fillMaxSize()
-                            .background(p.bg.copy(alpha = 0.92f))
+                            .background(p.bg.copy(alpha = 0.94f))
                             .padding(10.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center
                     ) {
                         Text(
-                            "MIRRORING ${app.label.uppercase()}",
+                            "DIRECT CAR APP ENGINE OFFLINE",
                             color = p.acc,
                             fontFamily = FontFamily.Monospace,
                             fontSize = 10.sp,
@@ -308,27 +323,44 @@ fun EmbeddedAppMediaTile(
                         )
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            if (CarMirror.locked(ctx)) "Unlock phone & tap Start Now once to display ${app.label} here"
-                            else "Tap 'Start now' on phone to show ${app.label} in this box",
+                            "Start ShellAngel once (Settings → WIRE) to run ${app.label} directly inside the car display without opening on your phone.",
                             color = p.ink,
                             fontSize = 11.sp,
                             textAlign = TextAlign.Center
                         )
                         Spacer(Modifier.height(8.dp))
-                        Box(
-                            Modifier
-                                .clip(RoundedCornerShape(99.dp))
-                                .background(p.acc)
-                                .clickable { CarMirror.open(ctx, app.packageName) }
-                                .padding(horizontal = 12.dp, vertical = 6.dp)
-                        ) {
-                            Text(
-                                "OPEN / RETRY",
-                                color = if (p.isLight) Color.White else Color(0xFF05070A),
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold
-                            )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Box(
+                                Modifier
+                                    .clip(RoundedCornerShape(99.dp))
+                                    .background(p.acc)
+                                    .clickable { CarApps.probe() }
+                                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                Text(
+                                    "RECONNECT ENGINE",
+                                    color = if (p.isLight) Color.White else Color(0xFF05070A),
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Box(
+                                Modifier
+                                    .clip(RoundedCornerShape(99.dp))
+                                    .background(p.panel2)
+                                    .border(1.dp, p.hairline, RoundedCornerShape(99.dp))
+                                    .clickable { optInMirror = true }
+                                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                Text(
+                                    "MIRROR INSTEAD",
+                                    color = p.soft,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
                     }
                 }

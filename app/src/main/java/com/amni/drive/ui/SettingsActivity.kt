@@ -326,6 +326,21 @@ private fun WirePane() {
             Text("ALLOW DASH APP LAUNCH (OVERLAY PERMISSION)", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)
         }
     }
+    val directEngineUp by com.amni.drive.launcher.CarApps.ready.collectAsStateWithLifecycle()
+    androidx.compose.runtime.LaunchedEffect(Unit) { com.amni.drive.launcher.CarApps.probe() }
+    Text(
+        if (directEngineUp) "3. Direct Car App Engine (ShellAngel) RUNNING ✓ — apps open directly inside the car display, never on your phone."
+        else "3. Direct Car App Engine (ShellAngel) OFFLINE — start ShellAngel once per reboot so apps open inside the car display instead of your phone.",
+        color = if (directEngineUp) p.acc else p.gold,
+        fontFamily = FontFamily.Monospace,
+        fontSize = 10.sp,
+        lineHeight = 14.sp
+    )
+    Box(Modifier.clip(RoundedCornerShape(12.dp)).background(p.panel2).border(1.dp, p.acc, RoundedCornerShape(12.dp)).clickable {
+        com.amni.drive.launcher.CarApps.probe()
+    }.padding(horizontal = 14.dp, vertical = 10.dp)) {
+        Text("RECHECK DIRECT CAR APP ENGINE", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+    }
 
     Text("PHONE CERTIFICATE (FACTORY HEAD UNITS)", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
     val lastRefusal = com.amni.drive.wire.AaCertStore.lastAuthStatus ?: 0
