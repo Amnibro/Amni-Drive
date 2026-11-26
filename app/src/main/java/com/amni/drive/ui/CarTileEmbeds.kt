@@ -653,6 +653,9 @@ data class WebAppEntry(
             WebAppEntry("plex", "Plex", "🍿", "https://app.plex.tv/desktop", "plex"),
             WebAppEntry("soundcloud", "SoundCloud", "☁️", "https://m.soundcloud.com", "soundcloud"),
             WebAppEntry("radio", "Radio Garden", "📻", "https://radio.garden", "radio"),
+            WebAppEntry("amni-weather", "Amni-Weather", "🌦️", "https://amni-scient.com/weather/", "weather"),
+            WebAppEntry("amni-chat", "Amni-Chat Web", "🔒", "https://chat.amni-scient.com", "amniscient.chat"),
+            WebAppEntry("amni-learn", "Amni-Learn", "🎓", "https://amni-scient.com/learn/", "amnilearn"),
             WebAppEntry("ace", "Ace Hardware", "🛠️", "https://www.acehardware.com", "acehardware"),
             WebAppEntry("google", "Web Search", "🌐", "https://www.google.com", "chrome")
         )

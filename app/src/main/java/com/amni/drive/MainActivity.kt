@@ -7,11 +7,19 @@ import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
@@ -49,6 +57,8 @@ val cfg by controller.config.collectAsStateWithLifecycle(DriveConfig())
 val state by controller.driveState.collectAsStateWithLifecycle(DriveState.UNKNOWN)
 val passenger by controller.passengerConfirmed.collectAsStateWithLifecycle()
 val location by app.tracker.location.collectAsStateWithLifecycle()
+val ota by com.amni.drive.update.OtaUpdater.state.collectAsStateWithLifecycle()
+var dismissOtaBanner by remember { mutableStateOf(false) }
 var apps by remember { mutableStateOf<List<AppEntry>>(emptyList()) }
 var weather by remember { mutableStateOf<WeatherNow?>(null) }
 LaunchedEffect(Unit) { apps = controller.apps() }
@@ -60,6 +70,7 @@ if (l != null) { WeatherService.fetch(l.latitude, l.longitude)?.let { weather = 
 }
 }
 AmniDriveTheme(rememberPalette(theme)) {
+androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize()) {
 Dashboard(
 apps = apps, cfg = cfg, driveState = state, passenger = passenger, theme = theme,
 location = location, weather = weather, tiles = app.tileStore, reportStore = app.reportStore,
@@ -80,6 +91,46 @@ onSetMapSplitRatio = { v -> lifecycleScope.launch { app.themeStore.setMapSplitRa
 onSetWidgetRatio = { v -> lifecycleScope.launch { app.themeStore.setWidgetRatio(v) } },
 onSetSwapMapMedia = { v -> lifecycleScope.launch { app.themeStore.setSwapMapMedia(v) } }
 )
+if (ota.totalUpdatesCount > 0 && !dismissOtaBanner) {
+val p = com.amni.drive.ui.LocalAmni.current
+val bannerMsg = if (ota.selfUpdateAvailable && ota.selfRelease != null) {
+"⬆ Amni-Drive v${ota.selfRelease!!.versionName} OTA ready — tap to update"
+} else {
+"⬆ ${ota.totalUpdatesCount} Amni companion app update${if (ota.totalUpdatesCount > 1) "s" else ""} ready — tap to install"
+}
+androidx.compose.foundation.layout.Row(
+modifier = androidx.compose.ui.Modifier
+.align(androidx.compose.ui.Alignment.TopCenter)
+.padding(top = 10.dp)
+.clip(androidx.compose.foundation.shape.RoundedCornerShape(99.dp))
+.background(p.panel)
+.border(1.5.dp, p.acc, androidx.compose.foundation.shape.RoundedCornerShape(99.dp))
+.clickable {
+startActivity(
+Intent(this@MainActivity, SettingsActivity::class.java)
+.putExtra(SettingsActivity.EXTRA_TAB, "UPDATES")
+)
+}
+.padding(horizontal = 14.dp, vertical = 7.dp),
+verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp)
+) {
+androidx.compose.material3.Text(
+bannerMsg,
+color = p.acc,
+fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+fontSize = 11.sp,
+fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+)
+androidx.compose.material3.Text(
+"✕",
+color = p.soft,
+fontSize = 12.sp,
+modifier = androidx.compose.ui.Modifier.clickable { dismissOtaBanner = true }.padding(horizontal = 4.dp)
+)
+}
+}
+}
 }
 }
 }

@@ -1,7 +1,17 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
+
+val ksFile = listOfNotNull(
+    System.getenv("AMNI_DRIVE_SIGNING"),
+    rootProject.file("keystore.properties").path,
+    "${System.getProperty("user.home")}/.config/amni/signing/android/amni-drive.properties"
+).map(::File).firstOrNull { it.exists() }
+val ksProp = Properties().apply { ksFile?.inputStream()?.use { load(it) } }
+
 android {
     namespace = "com.amni.drive"
     compileSdk = 34
@@ -9,15 +19,24 @@ android {
         applicationId = "com.amni.drive"
         minSdk = 26
         targetSdk = 34
-        versionCode = 83
-        versionName = "1.10.2"
+        versionCode = 84
+        versionName = "1.11.0"
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+    signingConfigs {
+        create("release") {
+            storeFile = ksProp.getProperty("storeFile")?.let { file(it) }
+            storePassword = ksProp.getProperty("storePassword", "")
+            keyAlias = ksProp.getProperty("keyAlias", "")
+            keyPassword = ksProp.getProperty("keyPassword", "")
+        }
     }
     buildTypes {
         release {
             isMinifyEnabled = false
             isDebuggable = false
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (ksFile != null) signingConfigs.getByName("release") else signingConfigs.getByName("debug")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
         debug {
@@ -33,6 +52,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.14"
@@ -62,6 +82,7 @@ dependencies {
     implementation("androidx.media:media:1.7.0")
     implementation("org.maplibre.gl:android-sdk-opengl:13.0.2")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
 }

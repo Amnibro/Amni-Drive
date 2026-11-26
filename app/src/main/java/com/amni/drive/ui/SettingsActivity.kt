@@ -59,26 +59,41 @@ private enum class SettingsPage(val icon: String, val title: String, val sub: St
     NAV("🧭", "NAVIGATION", "Voice prompts · rerouting"),
     AUTO("🔌", "AUTO-START", "Plug in & go · wireless & go"),
     LOOKS("🎨", "APPEARANCE", "Presets · accent · weather · tiles"),
+    UPDATES("📦", "OTA & AMNI APPS", "Auto-updater · Amni-Map & suite"),
     CAR("🚗", "CAR / USB", "Plug phone into factory Android Auto"),
     WIRE("⚡", "AMNI WIRE", "Replace Android Auto on the wire"),
     LINK("🔗", "AMNI LINK", "Phone host · Android head unit"),
-    ABOUT("ℹ️", "ABOUT", "Amni-Drive v1.4.0 · AA replacement")
+    ABOUT("ℹ️", "ABOUT", "Amni-Drive v${com.amni.drive.BuildConfig.VERSION_NAME} · AA replacement")
 }
 class SettingsActivity : ComponentActivity() {
+    companion object {
+        const val EXTRA_TAB = "amni_settings_tab"
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val app = application as AmniDriveApp
+        val startTab = runCatching {
+            intent.getStringExtra(EXTRA_TAB)?.let { SettingsPage.valueOf(it) }
+        }.getOrNull() ?: SettingsPage.LOOKS
         setContent {
             val theme by app.themeStore.theme.collectAsStateWithLifecycle(UiTheme())
-            AmniDriveTheme(rememberPalette(theme)) { SettingsScreen(app.configStore, app.themeStore, theme) { finish() } }
+            AmniDriveTheme(rememberPalette(theme)) { SettingsScreen(app.configStore, app.themeStore, theme, startTab) { finish() } }
+        }
+    }
+    override fun onResume() {
+        super.onResume()
+        com.amni.drive.update.OtaUpdater.refreshInstalled(this)
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || packageManager.canRequestPackageInstalls()) {
+            com.amni.drive.update.OtaUpdater.resumePendingInstall(this)
         }
     }
 }
 @Composable
-private fun SettingsScreen(store: ConfigStore, themes: ThemeStore, theme: UiTheme, onBack: () -> Unit) {
+private fun SettingsScreen(store: ConfigStore, themes: ThemeStore, theme: UiTheme, initialPage: SettingsPage = SettingsPage.LOOKS, onBack: () -> Unit) {
     val p = LocalAmni.current
-    var page by remember { mutableStateOf(SettingsPage.LOOKS) }
-    var advanced by remember { mutableStateOf(false) }
+    var page by remember { mutableStateOf(initialPage) }
+    var advanced by remember { mutableStateOf(initialPage !in setOf(SettingsPage.LOOKS, SettingsPage.UPDATES, SettingsPage.ABOUT)) }
+    val ota by com.amni.drive.update.OtaUpdater.state.collectAsStateWithLifecycle()
     Column(Modifier.fillMaxSize().background(p.bg).padding(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("‹", color = p.acc, fontSize = 22.sp, modifier = Modifier.clickable { onBack() }.padding(horizontal = 8.dp))
@@ -87,18 +102,19 @@ private fun SettingsScreen(store: ConfigStore, themes: ThemeStore, theme: UiThem
         Spacer(Modifier.height(10.dp))
         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             GlassCard(Modifier.width(250.dp).fillMaxHeight()) {
-                Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    SettingsPage.entries.filter { advanced || it == SettingsPage.LOOKS || it == SettingsPage.ABOUT }.forEach { pg ->
+                Column(Modifier.padding(8.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    SettingsPage.entries.filter { advanced || it == SettingsPage.LOOKS || it == SettingsPage.UPDATES || it == SettingsPage.ABOUT }.forEach { pg ->
                         val sel = page == pg
+                        val badge = if (pg == SettingsPage.UPDATES && ota.totalUpdatesCount > 0) " (${ota.totalUpdatesCount})" else ""
                         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(if (sel) p.accDim else Color.Transparent).border(1.dp, if (sel) p.acc.copy(alpha = 0.4f) else Color.Transparent, RoundedCornerShape(12.dp)).clickable { page = pg }.padding(10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text(pg.icon, fontSize = 18.sp)
                             Column {
-                                Text(pg.title, color = if (sel) p.acc else p.ink, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                                Text(pg.title + badge, color = if (sel || badge.isNotEmpty()) p.acc else p.ink, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                                 Text(pg.sub, color = p.dim, fontSize = 9.sp)
                             }
                         }
                     }
-                    Text(if (advanced) "HIDE ADVANCED" else "ADVANCED", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { advanced = !advanced; if (!advanced) page = SettingsPage.LOOKS }.padding(horizontal = 12.dp, vertical = 14.dp))
+                    Text(if (advanced) "HIDE ADVANCED" else "ADVANCED", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { advanced = !advanced; if (!advanced && page !in setOf(SettingsPage.LOOKS, SettingsPage.UPDATES, SettingsPage.ABOUT)) page = SettingsPage.LOOKS }.padding(horizontal = 12.dp, vertical = 14.dp))
                 }
             }
             GlassCard(Modifier.weight(1f).fillMaxHeight()) {
@@ -108,6 +124,7 @@ private fun SettingsScreen(store: ConfigStore, themes: ThemeStore, theme: UiThem
                         SettingsPage.NAV -> NavPane(store)
                         SettingsPage.AUTO -> AutoPane(store)
                         SettingsPage.LOOKS -> LooksPane(themes, theme)
+                        SettingsPage.UPDATES -> UpdatesAndAppsPane()
                         SettingsPage.CAR -> CarUsbPane()
                         SettingsPage.WIRE -> WirePane()
                         SettingsPage.LINK -> LinkPane()
@@ -488,11 +505,290 @@ private fun LinkPane() {
     Text("You can also keep the classic path: install Amni-Drive as the head unit's default launcher for full native apps with no streaming.", color = p.dim, fontSize = 10.sp, lineHeight = 14.sp)
 }
 @Composable
+private fun UpdatesAndAppsPane() {
+    val p = LocalAmni.current
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val ota by com.amni.drive.update.OtaUpdater.state.collectAsStateWithLifecycle()
+
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        com.amni.drive.update.OtaUpdater.refreshInstalled(ctx)
+        if (ota.lastCheckedMs == 0L) {
+            com.amni.drive.update.OtaUpdater.checkForUpdates(ctx, quiet = true)
+        }
+    }
+
+    Text("OVER-THE-AIR (OTA) AUTO-UPDATER", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(p.panel2.copy(alpha = 0.85f))
+            .border(1.dp, if (ota.selfUpdateAvailable) p.acc else p.line, RoundedCornerShape(14.dp))
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("🚗", fontSize = 22.sp)
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "Amni-Drive v${ota.currentVersionName} (build ${ota.currentVersionCode})",
+                    color = p.ink,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    when {
+                        ota.selfUpdateAvailable && ota.selfRelease != null -> "New OTA release v${ota.selfRelease!!.versionName} (build ${ota.selfRelease!!.versionCode}) ready!"
+                        ota.selfRelease != null -> "Up to date · latest on amni-scient.com is v${ota.selfRelease!!.versionName}"
+                        else -> "Signed OTA feed: amni-scient.com/drive/android-latest.json"
+                    },
+                    color = if (ota.selfUpdateAvailable) p.acc else p.soft,
+                    fontSize = 11.sp
+                )
+            }
+        }
+
+        ota.selfRelease?.notes?.takeIf { it.isNotBlank() }?.let { notes ->
+            Text(notes, color = p.soft, fontSize = 11.sp, lineHeight = 15.sp)
+        }
+
+        if (ota.downloadingId != null) {
+            val pct = (ota.downloadProgress * 100f).toInt().coerceIn(0, 100)
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    "Downloading ${ota.downloadingId}… $pct%",
+                    color = p.acc,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(99.dp))
+                        .background(p.bg)
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth(ota.downloadProgress.coerceIn(0.02f, 1f))
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(99.dp))
+                            .background(p.acc)
+                    )
+                }
+            }
+        }
+
+        ota.statusMsg?.let { msg ->
+            Text(msg, color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 10.sp, lineHeight = 14.sp)
+        }
+        ota.errorMsg?.let { err ->
+            Text("⚠ $err", color = p.err, fontFamily = FontFamily.Monospace, fontSize = 10.sp, lineHeight = 14.sp)
+        }
+
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (ota.selfUpdateAvailable && ota.selfRelease != null) {
+                val rel = ota.selfRelease!!
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (ota.downloadingId == null) p.acc else p.panel)
+                        .clickable(enabled = ota.downloadingId == null) {
+                            scope.launch {
+                                com.amni.drive.update.OtaUpdater.downloadAndInstall(
+                                    ctx, "amni-drive", "Amni-Drive v${rel.versionName}", rel.url, rel.sha256
+                                )
+                            }
+                        }
+                        .padding(horizontal = 14.dp, vertical = 10.dp)
+                ) {
+                    Text(
+                        "⬇ INSTALL OTA v${rel.versionName}",
+                        color = if (p.isLight) Color.White else Color(0xFF05070A),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(if (ota.checking) p.panel else p.accDim)
+                    .border(1.dp, p.acc.copy(alpha = 0.6f), RoundedCornerShape(10.dp))
+                    .clickable(enabled = !ota.checking && ota.downloadingId == null) {
+                        scope.launch { com.amni.drive.update.OtaUpdater.checkForUpdates(ctx, quiet = false) }
+                    }
+                    .padding(horizontal = 14.dp, vertical = 10.dp)
+            ) {
+                Text(
+                    if (ota.checking) "CHECKING…" else "CHECK FOR UPDATES",
+                    color = p.acc,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            if (ota.pendingInstallApkPath != null) {
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(p.acc)
+                        .clickable { com.amni.drive.update.OtaUpdater.resumePendingInstall(ctx) }
+                        .padding(horizontal = 12.dp, vertical = 10.dp)
+                ) {
+                    Text(
+                        "FINISH INSTALL →",
+                        color = if (p.isLight) Color.White else Color(0xFF05070A),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(p.panel)
+                    .border(1.dp, p.hairline, RoundedCornerShape(10.dp))
+                    .clickable {
+                        runCatching {
+                            ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(com.amni.drive.update.OtaUpdater.SITE_URL)))
+                        }
+                    }
+                    .padding(horizontal = 12.dp, vertical = 10.dp)
+            ) {
+                Text("AMNI-SCIENT.COM ↗", color = p.ink, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+
+    SetRow(
+        "🔄",
+        "Auto-check OTA updates",
+        "Quietly checks amni-scient.com every 6 hours for signed Amni-Drive & Amni-Map updates. SHA-256 verified before install.",
+        ota.autoCheckEnabled
+    ) { com.amni.drive.update.OtaUpdater.setAutoCheckEnabled(ctx, it) }
+
+    Spacer(Modifier.height(4.dp))
+    Text("PACKAGED AMNI APPS FOR YOUR CAR", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+    Text(
+        "Install and keep the companion Amni-Scient apps updated OTA right from here. Amni-Map runs natively inside Amni-Drive's live car map tile.",
+        color = p.soft,
+        fontSize = 11.sp,
+        lineHeight = 15.sp
+    )
+
+    val list = ota.apps.ifEmpty {
+        com.amni.drive.update.OtaUpdater.FALLBACK_CATALOG.map {
+            com.amni.drive.update.OtaUpdater.CompanionAppStatus(it, false, 0L, null)
+        }
+    }
+
+    list.forEach { st ->
+        val app = st.app
+        val busy = ota.downloadingId == app.id
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(if (app.carDashNative) p.accDim.copy(alpha = 0.65f) else p.panel2.copy(alpha = 0.72f))
+                .border(
+                    1.dp,
+                    if (st.updateAvailable || app.carDashNative) p.acc.copy(alpha = 0.65f) else p.line,
+                    RoundedCornerShape(12.dp)
+                )
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(app.emoji, fontSize = 22.sp)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(app.name, color = p.ink, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    if (app.carDashNative) {
+                        Text(
+                            "CAR DASH NATIVE",
+                            color = p.acc,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(99.dp))
+                                .background(p.bg.copy(alpha = 0.75f))
+                                .border(1.dp, p.acc.copy(alpha = 0.6f), RoundedCornerShape(99.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+                Text(app.blurb, color = p.soft, fontSize = 10.sp, lineHeight = 13.sp)
+                val verLine = when {
+                    st.updateAvailable -> "Installed v${st.installedVersionName ?: st.installedVersionCode} → OTA v${app.versionName} available"
+                    st.installed -> "Installed v${st.installedVersionName ?: st.installedVersionCode} ✓"
+                    app.versionName.isNotBlank() -> "Available: v${app.versionName}" + if (app.size > 0L) " · ${app.size / 1_048_576} MB" else ""
+                    else -> "Direct signed APK from amni-scient.com"
+                }
+                Text(
+                    verLine,
+                    color = if (st.updateAvailable) p.acc else p.dim,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 9.sp,
+                    fontWeight = if (st.updateAvailable) FontWeight.Bold else FontWeight.Normal
+                )
+            }
+            val btnLabel = when {
+                busy -> "${(ota.downloadProgress * 100f).toInt()}%"
+                st.updateAvailable -> "UPDATE"
+                st.installed -> "OPEN"
+                else -> "INSTALL"
+            }
+            val isPrimary = !st.installed || st.updateAvailable
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(if (isPrimary) p.acc else p.panel)
+                    .border(1.dp, if (isPrimary) p.acc else p.hairline, RoundedCornerShape(10.dp))
+                    .clickable(enabled = ota.downloadingId == null) {
+                        if (st.installed && !st.updateAvailable) {
+                            runCatching {
+                                ctx.packageManager.getLaunchIntentForPackage(app.packageName)?.let { launch ->
+                                    ctx.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                                }
+                            }
+                        } else {
+                            scope.launch {
+                                com.amni.drive.update.OtaUpdater.downloadAndInstall(
+                                    ctx, app.id, "${app.name} ${app.versionName}", app.downloadUrl, app.sha256
+                                )
+                            }
+                        }
+                    }
+                    .padding(horizontal = 12.dp, vertical = 9.dp)
+            ) {
+                Text(
+                    btnLabel,
+                    color = if (isPrimary) (if (p.isLight) Color.White else Color(0xFF05070A)) else p.ink,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+}
+@Composable
 private fun AboutPane() {
     val p = LocalAmni.current
     val ctx = LocalContext.current
     Text("AMNI//DRV", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 20.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
-    Text("v1.3.0 — Amni Wire scaffold to replace Android Auto on the wire (open reverse-engineered stack). Multi-channel Link, modern shell, Car App fallback.", color = p.soft, fontSize = 12.sp, lineHeight = 17.sp)
+    Text(
+        "v${com.amni.drive.BuildConfig.VERSION_NAME} (build ${com.amni.drive.BuildConfig.VERSION_CODE}) — Universal USB Android Auto replacement with native Amni-Map embed, customizable resizable cockpit layouts, built-in OTA auto-updater, and packaged Amni Apps hub.",
+        color = p.soft,
+        fontSize = 12.sp,
+        lineHeight = 17.sp
+    )
     Box(Modifier.clip(RoundedCornerShape(12.dp)).background(p.acc).clickable {
         runCatching {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -505,7 +801,7 @@ private fun AboutPane() {
         Text("SET AS DEFAULT LAUNCHER (HEAD UNIT)", color = if (p.isLight) Color.White else Color(0xFF05070A), fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
     }
     Text("ON THE HEAD UNIT: TAP ABOVE (OR PRESS HOME) → PICK AMNI-DRIVE → ALWAYS. THE HOME BUTTON THEN OPENS AMNI//DRV INSTEAD OF THE STOCK LAUNCHER. ON A PHONE, JUST OPEN THE APP NORMALLY — DON'T SET IT AS YOUR PHONE LAUNCHER.", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 8.sp, lineHeight = 12.sp)
-    Text("MAP DATA © OPENSTREETMAP CONTRIBUTORS · TILES CARTO + ESRI · ROUTING OSRM · WEATHER OPEN-METEO", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 8.sp, lineHeight = 12.sp)
+    Text("MAP DATA © OPENSTREETMAP CONTRIBUTORS · TILES CARTO + ESRI · ROUTING OSRM · WEATHER OPEN-METEO · AMNI-SCIENT.COM", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 8.sp, lineHeight = 12.sp)
 }
 @Composable
 private fun SetRow(icon: String, title: String, desc: String, checked: Boolean, onChange: (Boolean) -> Unit) {
