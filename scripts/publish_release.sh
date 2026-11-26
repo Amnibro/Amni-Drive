@@ -5,13 +5,13 @@
 set -euo pipefail
 
 DRIVE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-SITE_DIR="${AMNI_SITE_DIR:-/home/anmire/amni-scient}"
-MAP_DIR="${AMNI_MAP_DIR:-/home/anmire/ai/amni-map}"
-GRADLE="${GRADLE_BIN:-/home/anmire/.gradle/wrapper/dists/gradle-8.11.1-bin/bpt9gzteqjrbo1mjrsomdt32c/gradle-8.11.1/bin/gradle}"
-GH="${GH_BIN:-$(command -v gh || echo /home/anmire/.local/bin/gh)}"
-APKSIGNER="$(ls /home/anmire/Android/Sdk/build-tools/*/apksigner 2>/dev/null | tail -n 1)"
+SITE_DIR="${AMNI_SITE_DIR:-$HOME/amni-scient}"
+MAP_DIR="${AMNI_MAP_DIR:-$HOME/ai/amni-map}"
+GRADLE="${GRADLE_BIN:-$(command -v gradle || ls "$HOME"/.gradle/wrapper/dists/gradle-*/**/gradle-*/bin/gradle 2>/dev/null | tail -n 1)}"
+GH="${GH_BIN:-$(command -v gh || echo "$HOME/.local/bin/gh")}"
+APKSIGNER="$(ls "${ANDROID_HOME:-$HOME/Android/Sdk}"/build-tools/*/apksigner 2>/dev/null | tail -n 1)"
 
-export ANDROID_HOME="${ANDROID_HOME:-/home/anmire/Android/Sdk}"
+export ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
 
 VER_NAME="$(grep -oP 'versionName\s*=\s*"\K[^"]+' "$DRIVE_DIR/app/build.gradle.kts")"
 VER_CODE="$(grep -oP 'versionCode\s*=\s*\K\d+' "$DRIVE_DIR/app/build.gradle.kts")"
@@ -81,4 +81,21 @@ if [ "${UPLOAD:-0}" = "1" ]; then
     "$STAGE/$MAP_ASSET" \
     "$STAGE/$SUITE_ASSET" \
     --repo Amnibro/Amni-Scient --clobber
+  echo "=== Publishing GitHub Release v${VER_NAME} on Amnibro/Amni-Drive ==="
+  if "$GH" release view "v${VER_NAME}" --repo Amnibro/Amni-Drive >/dev/null 2>&1; then
+    "$GH" release upload "v${VER_NAME}" \
+      "$STAGE/$DRIVE_ASSET" \
+      "$STAGE/$MAP_ASSET" \
+      "$STAGE/$SUITE_ASSET" \
+      --repo Amnibro/Amni-Drive --clobber
+  else
+    "$GH" release create "v${VER_NAME}" \
+      "$STAGE/$DRIVE_ASSET" \
+      "$STAGE/$MAP_ASSET" \
+      "$STAGE/$SUITE_ASSET" \
+      --repo Amnibro/Amni-Drive \
+      --title "Amni-Drive v${VER_NAME} (build ${VER_CODE})" \
+      --latest \
+      --notes "Signed release APK, Amni-Map Car Edition, and Car Suite Pack ZIP. Verified SHA-256 checksums are published at https://amni-scient.com/drive/android-latest.json"
+  fi
 fi
