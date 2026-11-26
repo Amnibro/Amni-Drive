@@ -44,7 +44,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.Cast
-import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Lock
@@ -602,8 +601,7 @@ Box(Modifier.size(if (railW < 58.dp) 6.dp else 8.dp).clip(CircleShape).backgroun
 RailBtn(Icons.Rounded.Menu, "MENU", false, compact, railW, onClick = onMenu)
 RailBtn(Icons.Rounded.Home, "HOME", page == DrivePage.HOME, compact, railW) { onPage(DrivePage.HOME) }
 RailBtn(Icons.Rounded.Apps, "APPS", page == DrivePage.APPS, compact, railW) { onPage(DrivePage.APPS) }
-RailBtn(Icons.Rounded.Map, "NAV", page == DrivePage.NAV, compact, railW) { onPage(DrivePage.NAV) }
-onMap?.let { RailBtn(Icons.Rounded.Explore, "AMNI-MAP", false, compact, railW, onClick = it) }
+RailBtn(Icons.Rounded.Map, "NAV", page == DrivePage.NAV, compact, railW) { onMap?.invoke() ?: onPage(DrivePage.NAV) }
 Spacer(Modifier.weight(1f))
 RailBtn(Icons.Rounded.Security, if (gateOn) "GATE" else "OPEN", gateOn, compact, railW, err = !gateOn, onClick = onToggleGate)
 }
