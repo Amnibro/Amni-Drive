@@ -34,6 +34,7 @@ object CarMirror {
     val live = MutableStateFlow(false)
     val pkg = MutableStateFlow<String?>(null)
     @Volatile var area: IntArray? = null
+    @Volatile var closed = false
     private var projection: MediaProjection? = null
     private var vd: VirtualDisplay? = null
     private var surface: Surface? = null
@@ -54,6 +55,7 @@ object CarMirror {
         app = c
         measure(c)
         this.pkg.value = pkg
+        closed = false
         if (projection != null) launch(c, pkg) else { pending = pkg; runCatching { c.startActivity(Intent(c, MirrorGrant::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }.onFailure { Log.w(TAG, "grant start failed: ${it.message}") } }
     }
     private fun launch(ctx: Context, pkg: String) { runCatching { ctx.packageManager.getLaunchIntentForPackage(pkg)?.let { ctx.startActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)) } }.onFailure { Log.w(TAG, "launch $pkg failed: ${it.message}") } }

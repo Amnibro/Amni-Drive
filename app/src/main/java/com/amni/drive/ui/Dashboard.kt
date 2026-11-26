@@ -876,12 +876,14 @@ private fun MediaCard(modifier: Modifier, dense: Boolean = false, preferred: Str
 val p = LocalAmni.current
 val ctx = LocalContext.current
 val shownPkg by CarMirror.pkg.collectAsState()
+val auto = MediaSessionBridge.nowPlaying.collectAsState().value?.pkg
+LaunchedEffect(auto, surfaceDisplayId) { MediaSessionBridge.start(ctx); if (surfaceDisplayId != null && auto != null && CarMirror.pkg.value == null && !CarMirror.closed && !CarMirror.locked(ctx)) CarMirror.open(ctx, auto) }
 shownPkg?.takeIf { surfaceDisplayId != null }?.let { mp ->
 Column(modifier.clip(RoundedCornerShape(18.dp)).background(Color.Black)) {
 Row(Modifier.fillMaxWidth().background(p.panel).padding(horizontal = 12.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
 Text(preferred ?: "APP", color = p.ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
 Text("FULL", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { CarEmbed.full(mp, surfaceDisplayId!!, true) }.padding(7.dp))
-Text("CLOSE", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { CarMirror.pkg.value = null }.padding(7.dp))
+Text("CLOSE", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { CarMirror.closed = true; CarMirror.pkg.value = null }.padding(7.dp))
 }
 MirrorSurface(Modifier.weight(1f).fillMaxWidth())
 }
