@@ -22,7 +22,7 @@ const val MAJOR = 1
 const val MINOR = 1
 const val STATUS_OK = 0
 val PROBE_MINORS = intArrayOf(1, 4, 5, 6, 7)
-data class Parsed(val channel: Int, val flags: Int, val msgId: Int, val payload: ByteArray)
+data class Parsed(val channel: Int, val flags: Int, val msgId: Int, val payload: ByteArray, val frameLen: Int = 4 + 2 + payload.size)
 data class NegotiateResult(val ok: Boolean, val sslBodies: List<ByteArray> = emptyList())
 fun frameFlags(bulk: Boolean = true, encrypted: Boolean = false, control: Boolean = false): Int {
 val ft = if (bulk) FRAME_BULK else FRAME_FIRST
@@ -69,12 +69,16 @@ if (bytes.size - offset < 4) return null
 val channel = bytes[offset].toInt() and 0xFF
 val flags = bytes[offset + 1].toInt() and 0xFF
 val size = ((bytes[offset + 2].toInt() and 0xFF) shl 8) or (bytes[offset + 3].toInt() and 0xFF)
-if (size < 2 || size > 1_000_000) return null
-if (bytes.size - offset < 4 + size) return null
-val payload = bytes.copyOfRange(offset + 4, offset + 4 + size)
-val msgId = ((payload[0].toInt() and 0xFF) shl 8) or (payload[1].toInt() and 0xFF)
-val body = if (payload.size > 2) payload.copyOfRange(2, payload.size) else ByteArray(0)
-return Parsed(channel, flags, msgId, body)
+val fragType = flags and 3
+val hdrLen = if (fragType == FRAME_FIRST) 8 else 4
+if (size < 0 || size > 1_000_000) return null
+if (bytes.size - offset < hdrLen + size) return null
+val payload = bytes.copyOfRange(offset + hdrLen, offset + hdrLen + size)
+val hasMsgId = fragType == FRAME_BULK || fragType == FRAME_FIRST
+if (hasMsgId && payload.size < 2) return null
+val msgId = if (hasMsgId) (((payload[0].toInt() and 0xFF) shl 8) or (payload[1].toInt() and 0xFF)) else MSG_SSL_HANDSHAKE
+val body = if (hasMsgId) (if (payload.size > 2) payload.copyOfRange(2, payload.size) else ByteArray(0)) else payload
+return Parsed(channel, flags, msgId, body, hdrLen + size)
 }
 fun hexHead(b: ByteArray, n: Int = 24): String =
 b.take(n.coerceAtMost(b.size)).joinToString(" ") { "%02x".format(it.toInt() and 0xFF) }
@@ -95,7 +99,7 @@ while (off < all.size) {
 val p = tryParse(all, off) ?: break
 log("$tag ch=${p.channel} flags=0x${p.flags.toString(16)} msg=0x${p.msgId.toString(16)} body=${p.payload.size}")
 list.add(p)
-off += 4 + 2 + p.payload.size
+off += p.frameLen
 }
 return list
 }
@@ -120,7 +124,7 @@ return encodeMessage(CHANNEL_CONTROL, MSG_VERSION_REQUEST, body.array(), frameFl
 }
 fun sslBodiesOf(frames: List<Parsed>): List<ByteArray> =
 frames.filter { it.msgId == MSG_SSL_HANDSHAKE && it.payload.isNotEmpty() }.map { it.payload }
-fun negotiateBulk(io: AoaBulkIo, log: (String) -> Unit, waitMs: Long = 10_000L, seed: ByteArray = ByteArray(0)): NegotiateResult {
+fun negotiateBulk(io: AaByteIo, log: (String) -> Unit, waitMs: Long = 10_000L, seed: ByteArray = ByteArray(0)): NegotiateResult {
 var gotAny = seed.isNotEmpty()
 val hold = ByteArrayOutputStream()
 var loggedLen = 0
@@ -273,7 +277,7 @@ frames = drain(slice)
 log("AAP negotiate fallback exhausted gotAny=$gotAny")
 return interesting(frames)
 }
-fun drainSslHandshakeBodies(io: AoaBulkIo, log: (String) -> Unit, waitMs: Long): List<ByteArray> {
+fun drainSslHandshakeBodies(io: AaByteIo, log: (String) -> Unit, waitMs: Long): List<ByteArray> {
 val out = mutableListOf<ByteArray>()
 val hold = ByteArrayOutputStream()
 val t0 = System.currentTimeMillis()
@@ -285,8 +289,7 @@ var off = 0
 var consumed = 0
 while (off < all.size) {
 val p = tryParse(all, off) ?: break
-val frameLen = 4 + 2 + p.payload.size
-off += frameLen
+off += p.frameLen
 consumed = off
 if (p.msgId == MSG_SSL_HANDSHAKE && p.payload.isNotEmpty()) {
 out.add(p.payload)
@@ -312,8 +315,7 @@ var off = 0
 var consumed = 0
 while (off < all.size) {
 val p = tryParse(all, off) ?: break
-val frameLen = 4 + 2 + p.payload.size
-off += frameLen
+off += p.frameLen
 consumed = off
 if (p.msgId == MSG_SSL_HANDSHAKE && p.payload.isNotEmpty()) {
 out.add(p.payload)
@@ -343,7 +345,7 @@ log("AAP TX SSL_HANDSHAKE ${frame.size}B tls=$n hex=${hexHead(frame)}")
 i += n
 }
 }
-fun writeSslHandshake(io: AoaBulkIo, tlsBytes: ByteArray, log: (String) -> Unit) {
+fun writeSslHandshake(io: AaByteIo, tlsBytes: ByteArray, log: (String) -> Unit) {
 if (tlsBytes.isEmpty()) return
 val maxChunk = 16_000
 var i = 0

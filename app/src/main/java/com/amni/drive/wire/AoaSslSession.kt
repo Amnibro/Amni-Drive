@@ -113,7 +113,7 @@ status = engine.handshakeStatus
 log("TLS framed handshake timeout last=$status")
 return false
 }
-fun handshakeFramedBulk(io: AoaBulkIo, timeoutMs: Long = 15_000L, seedBodies: List<ByteArray> = emptyList()): Boolean {
+fun handshakeFramedBulk(io: AaByteIo, timeoutMs: Long = 15_000L, seedBodies: List<ByteArray> = emptyList()): Boolean {
 fun normalizeTlsBody(raw: ByteArray): ByteArray {
 if (raw.size >= 3 && (raw[0].toInt() and 0xFF) == 0x16) return raw
 if (raw.size >= 5 && (raw[0].toInt() and 0xFF) == 0x00 && (raw[1].toInt() and 0xFF) == 0x03 && (raw[2].toInt() and 0xFF) == 0x16) {
@@ -273,10 +273,12 @@ status = engine.handshakeStatus
 log("TLS handshake timeout last=$status")
 return false
 }
-fun encryptApp(plain: ByteArray): ByteArray {
+private val cryptoLock = Any()
+private var decryptCarry = ByteArray(0)
+fun encryptApp(plain: ByteArray): ByteArray = synchronized(cryptoLock) {
 if (plain.isEmpty()) return ByteArray(0)
 val src = ByteBuffer.wrap(plain)
-val dst = ByteBuffer.allocate((plain.size + 512).coerceAtLeast(2048))
+val dst = ByteBuffer.allocate((plain.size + 1024).coerceAtLeast(engine.session.packetBufferSize.coerceAtLeast(18_432)))
 val out = ByteArrayOutputStream(plain.size + 512)
 while (src.hasRemaining()) {
 dst.clear()
@@ -292,19 +294,35 @@ out.write(chunk)
 }
 if (res.bytesProduced() == 0 && res.bytesConsumed() == 0) break
 }
-return out.toByteArray()
+out.toByteArray()
 }
-fun decryptApp(cipher: ByteArray): ByteArray {
-if (cipher.isEmpty()) return ByteArray(0)
-val src = ByteBuffer.wrap(cipher)
-val dst = ByteBuffer.allocate(cipher.size + 96)
-val out = ByteArrayOutputStream(cipher.size)
+fun decryptApp(cipher: ByteArray): ByteArray = synchronized(cryptoLock) {
+if (cipher.isEmpty() && decryptCarry.isEmpty()) return ByteArray(0)
+val input = if (decryptCarry.isEmpty()) cipher else ByteArray(decryptCarry.size + cipher.size).also {
+System.arraycopy(decryptCarry, 0, it, 0, decryptCarry.size)
+System.arraycopy(cipher, 0, it, decryptCarry.size, cipher.size)
+decryptCarry = ByteArray(0)
+}
+val src = ByteBuffer.wrap(input)
+var dstCap = (input.size + 512).coerceAtLeast(engine.session.applicationBufferSize.coerceAtLeast(32_768))
+var dst = ByteBuffer.allocate(dstCap)
+val out = ByteArrayOutputStream(input.size)
 while (src.hasRemaining()) {
 dst.clear()
 val res = engine.unwrap(src, dst)
 if (res.status == SSLEngineResult.Status.CLOSED) throw IllegalStateException("SSL closed on decrypt")
-if (res.status == SSLEngineResult.Status.BUFFER_UNDERFLOW) break
-if (res.status == SSLEngineResult.Status.BUFFER_OVERFLOW) throw IllegalStateException("SSL decrypt overflow")
+if (res.status == SSLEngineResult.Status.BUFFER_UNDERFLOW) {
+val rem = ByteArray(src.remaining())
+src.get(rem)
+decryptCarry = rem
+break
+}
+if (res.status == SSLEngineResult.Status.BUFFER_OVERFLOW) {
+dstCap *= 2
+if (dstCap > 1_048_576) throw IllegalStateException("SSL decrypt overflow")
+dst = ByteBuffer.allocate(dstCap)
+continue
+}
 if (res.handshakeStatus == SSLEngineResult.HandshakeStatus.NEED_TASK) runTasks()
 dst.flip()
 if (dst.hasRemaining()) {
@@ -314,7 +332,7 @@ out.write(chunk)
 }
 if (res.bytesProduced() == 0 && res.bytesConsumed() == 0) break
 }
-return out.toByteArray()
+out.toByteArray()
 }
 private fun runTasks(): SSLEngineResult.HandshakeStatus {
 var t = engine.delegatedTask
@@ -407,7 +425,7 @@ return null
 }
 fun fromFd(fis: FileInputStream, fos: FileOutputStream, log: (String) -> Unit, ctx: Context? = null) =
 AoaSslSession(fis, fos, log, ctx)
-fun fromBulk(ctx: Context, @Suppress("UNUSED_PARAMETER") bulk: AoaBulkIo, log: (String) -> Unit): AoaSslSession {
+fun fromBulk(ctx: Context, @Suppress("UNUSED_PARAMETER") bulk: AaByteIo, log: (String) -> Unit): AoaSslSession {
 val dummyIn = object : InputStream() {
 override fun read(): Int = -1
 }

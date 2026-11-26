@@ -415,6 +415,97 @@ private fun WirePane() {
         }
     }
 
+    val waa by com.amni.drive.wire.WirelessAaService.state.collectAsStateWithLifecycle()
+    var waaHostIp by remember { mutableStateOf("192.168.43.1") }
+    Text("WIRELESS ANDROID AUTO (FACTORY WIRELESS & DONGLES)", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+    Text(
+        "Status: ${waa.phase}" +
+            (if (waa.ssid.isNotBlank()) " · Wi-Fi: ${waa.ssid}" else "") +
+            (if (waa.lastLog.isNotBlank()) "\n${waa.lastLog}" else ""),
+        color = if (waa.running) p.acc else p.soft,
+        fontFamily = FontFamily.Monospace,
+        fontSize = 10.sp,
+        lineHeight = 14.sp
+    )
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Box(
+            Modifier.clip(RoundedCornerShape(10.dp))
+                .background(if (waa.running) p.panel2 else p.acc)
+                .border(1.dp, p.acc, RoundedCornerShape(10.dp))
+                .clickable {
+                    if (waa.running) com.amni.drive.wire.WirelessAaService.stop(ctx)
+                    else com.amni.drive.wire.WirelessAaService.start(ctx)
+                }
+                .padding(horizontal = 14.dp, vertical = 10.dp)
+        ) {
+            Text(
+                if (waa.running) "STOP WIRELESS AA" else "START WIRELESS AA (BT + :5277)",
+                color = if (waa.running) p.acc else (if (p.isLight) Color.White else Color(0xFF05070A)),
+                fontFamily = FontFamily.Monospace,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+        Box(
+            Modifier.clip(RoundedCornerShape(10.dp))
+                .background(p.panel2)
+                .border(1.dp, p.acc.copy(alpha = 0.7f), RoundedCornerShape(10.dp))
+                .clickable {
+                    com.amni.drive.wire.WirelessAaService.connectTcp(ctx, waaHostIp.trim().ifEmpty { "192.168.43.1" }, 5277)
+                }
+                .padding(horizontal = 12.dp, vertical = 10.dp)
+        ) {
+            Text("CONNECT $waaHostIp:5277", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        }
+    }
+    androidx.compose.foundation.text.BasicTextField(
+        value = waaHostIp,
+        onValueChange = { waaHostIp = it },
+        singleLine = true,
+        textStyle = androidx.compose.ui.text.TextStyle(color = p.ink, fontFamily = FontFamily.Monospace, fontSize = 11.sp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(p.panel2)
+            .border(1.dp, p.line, RoundedCornerShape(10.dp))
+            .padding(horizontal = 12.dp, vertical = 9.dp)
+    )
+
+    val audioArmed by com.amni.drive.wire.AaAudioStreamer.armed.collectAsStateWithLifecycle()
+    val audioLive by com.amni.drive.wire.AaAudioStreamer.streaming.collectAsStateWithLifecycle()
+    Text("CAR SPEAKER AUDIO OVER USB / WI-FI (AAP PCM)", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+    Text(
+        when {
+            audioLive -> "STREAMING LIVE to car speakers over AAP PCM ✓"
+            audioArmed -> "ARMED ✓ — plays media & navigation audio directly through the car's USB/Wi-Fi audio channel."
+            else -> "Optional (needed for Honda, VW/Audi, GM, Ford & aftermarket units that mute Bluetooth when AA connects). Cars that keep Bluetooth A2DP (Kia/Hyundai) work without enabling this."
+        },
+        color = if (audioArmed) p.acc else p.soft,
+        fontFamily = FontFamily.Monospace,
+        fontSize = 10.sp,
+        lineHeight = 14.sp
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Box(
+            Modifier.clip(RoundedCornerShape(10.dp))
+                .background(if (audioArmed) p.panel2 else p.acc)
+                .border(1.dp, p.acc, RoundedCornerShape(10.dp))
+                .clickable {
+                    if (audioArmed) com.amni.drive.wire.AaAudioStreamer.stopAll(ctx)
+                    else com.amni.drive.wire.AudioCaptureGrantActivity.launch(ctx)
+                }
+                .padding(horizontal = 14.dp, vertical = 10.dp)
+        ) {
+            Text(
+                if (audioArmed) "DISABLE USB/WI-FI AUDIO" else "ENABLE CAR SPEAKER AUDIO (AAP)",
+                color = if (audioArmed) p.acc else (if (p.isLight) Color.White else Color(0xFF05070A)),
+                fontFamily = FontFamily.Monospace,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+
     Text("DUAL-PATH — FULL AMNI UI ON THE CAR", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
     Text("AUTO (default): uses own USB stack when Android Auto isn't projecting, or rides AA when active. OWN: always claim USB directly.", color = p.soft, fontSize = 12.sp, lineHeight = 17.sp)
     Text("MODE: ${cfg.aaPathMode.uppercase()}", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 14.sp, fontWeight = FontWeight.Bold)

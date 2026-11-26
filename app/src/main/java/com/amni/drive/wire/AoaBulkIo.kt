@@ -7,7 +7,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 class AoaBulkIo(
 pfd: ParcelFileDescriptor,
 private val log: (String) -> Unit
-) {
+) : AaByteIo {
 private val fis = FileInputStream(pfd.fileDescriptor)
 private val fos = FileOutputStream(pfd.fileDescriptor)
 private val lock = Object()
@@ -41,13 +41,13 @@ synchronized(lock) { lock.notifyAll() }
 it.isDaemon = true
 it.start()
 }
-fun write(bytes: ByteArray) {
+override fun write(bytes: ByteArray) {
 synchronized(fos) {
 fos.write(bytes)
 fos.flush()
 }
 }
-fun waitDrain(timeoutMs: Long): ByteArray {
+override fun waitDrain(timeoutMs: Long): ByteArray {
 val t0 = System.currentTimeMillis()
 synchronized(lock) {
 while (acc.size() == 0 && running.get() && System.currentTimeMillis() - t0 < timeoutMs) {
@@ -60,8 +60,8 @@ return out
 }
 }
 fun peekSize(): Int = synchronized(lock) { acc.size() }
-fun isAlive(): Boolean = running.get() && thread.isAlive
-fun close() {
+override fun isAlive(): Boolean = running.get() && thread.isAlive
+override fun close() {
 running.set(false)
 try { fis.close() } catch (_: Exception) {}
 try { fos.close() } catch (_: Exception) {}

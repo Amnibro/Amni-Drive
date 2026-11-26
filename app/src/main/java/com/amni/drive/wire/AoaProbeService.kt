@@ -358,11 +358,12 @@ val req = frames.firstOrNull { it.msgId == AaAapVersion.MSG_VERSION_REQUEST }
 if (req != null && !repliedVersion) {
 val maj = if (req.payload.size >= 2) ((req.payload[0].toInt() and 0xFF) shl 8) or (req.payload[1].toInt() and 0xFF) else 1
 val min = if (req.payload.size >= 4) ((req.payload[2].toInt() and 0xFF) shl 8) or (req.payload[3].toInt() and 0xFF) else 1
-val rsp = AaAapVersion.versionResponse(maj, min, AaAapVersion.STATUS_OK)
+val (rMaj, rMin) = AaAapVersion.cappedVersionReply(maj, min)
+val rsp = AaAapVersion.versionResponse(rMaj, rMin, AaAapVersion.STATUS_OK)
 io.write(rsp)
 repliedVersion = true
 aapOk = true
-log("phase A TX VersionResponse echo=$maj.$min ${rsp.size}B hex=${AaAapVersion.hexHead(rsp)}")
+log("phase A TX VersionResponse hu=$maj.$min reply=$rMaj.$rMin ${rsp.size}B hex=${AaAapVersion.hexHead(rsp)}")
 seed.reset()
 }
 val ssl = AaAapVersion.sslBodiesOf(frames)

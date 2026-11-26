@@ -15,7 +15,7 @@
 
 | Mode | What it does |
 |---|---|
-| **Amni Wire (USB)** | Phone-side Android Auto USB host (AOA + AAP + TLS + hardware H.264) projecting the full Amni-Drive cockpit directly onto factory car head units — touch, steering-wheel keys, rotary dial, and 20 FPS frame pacing. |
+| **Amni Wire (USB & Wireless)** | Phone-side Android Auto host (AOA USB **and** Wireless AA Bluetooth RFCOMM + TCP `:5277` + AAP + TLS + hardware H.264 + optional AAP PCM audio + Sensor/BT channels) projecting the full Amni-Drive cockpit directly onto factory car head units — touch, steering-wheel keys, rotary dial, portrait/ultrawide screens, and 20 FPS frame pacing. |
 | **Amni Link** | Full custom UI stream over Wi-Fi / LAN to any Android head unit or tablet. |
 | **Native Launcher** | Full-screen car home screen for aftermarket Android head units. |
 | **Car App Library** | Soft navigation mode inside stock Android Auto when needed. |
@@ -24,6 +24,7 @@
 
 ## Highlights
 
+- **Broad OEM & Screen Compatibility (v1.12.0+):** Wired USB AOA **and** Wireless Android Auto (BT RFCOMM Wi-Fi AP auto-join + dual-mode TCP `:5277` for wireless head units and AAWireless/MA1 dongles), multi-frame AAP RX reassembly (>16 KB discovery messages on VW/Audi MIB, Ford SYNC 4, GM), Sensor & Bluetooth channel handshakes, optional AAP PCM car-speaker audio (for head units that mute Bluetooth during AA), and native portrait display layouts (Subaru 11.6", Ram 12", Ford vertical `1080×1920`).
 - **Resizable & Full-Screen Cockpit Layouts:** Switch live between Tri-Cockpit, 50/50 Split, Center Orb (circular map + side widgets), Map Hero, Theater, Horizon, and Full Map. Drag tile dividers to resize live, tap **⤢** on any tile for full screen, and choose **Left Rail** or **Bottom-Center Dock**.
 - **Drag-Edit Widgets:** Long-press any widget card to drag-reorder or swipe-remove (Weather, Trip/Speed, Clock, Compass, Quick Media, Quick Apps, Gate, Vehicle).
 - **Live Embedded Amni-Map:** Renders **Amni-Map v2.12.0+** natively inside the map tile over a shared surface (`DashInput`) with 3D vehicle puck, voice guidance, offline areas, and parked GPS drift stabilization.

@@ -870,6 +870,23 @@ else -> map(Modifier.fillMaxSize(), false)
 return
 }
 
+BoxWithConstraints(Modifier.fillMaxSize()) {
+val isPortraitCar = maxHeight > maxWidth * 1.05f
+if (isPortraitCar && layout != TileLayout.MAP_ONLY) {
+val mapFrac = liveMapRatio.coerceIn(0.36f, 0.72f)
+Column(Modifier.fillMaxSize().padding(pad), verticalArrangement = Arrangement.spacedBy(gap)) {
+map(Modifier.fillMaxWidth().weight(mapFrac), layout == TileLayout.ORB_CENTER)
+if (layout == TileLayout.SPLIT_50) {
+media(Modifier.fillMaxWidth().weight(1f - mapFrac), dense)
+} else {
+Row(Modifier.fillMaxWidth().weight(1f - mapFrac), horizontalArrangement = Arrangement.spacedBy(gap)) {
+media(Modifier.weight(0.60f).fillMaxHeight(), dense)
+widgets(Modifier.weight(0.40f).fillMaxHeight())
+}
+}
+}
+return@BoxWithConstraints
+}
 when (layout) {
 TileLayout.SPLIT_50 -> BoxWithConstraints(Modifier.fillMaxSize().padding(pad)) {
 val totalPx = with(dens) { maxWidth.toPx() }
@@ -1036,6 +1053,7 @@ map(Modifier.weight(midFrac).fillMaxHeight(), false)
 }
 DraggableDivider(totalPx, { d -> liveWidgetRatio = (liveWidgetRatio - d).coerceIn(0.16f, 0.36f) }, { onSetWidgetRatio(liveWidgetRatio) }, { liveWidgetRatio = 0.24f; onSetWidgetRatio(0.24f) })
 widgets(Modifier.weight(wFrac).fillMaxHeight().padding(top = carTopPad))
+}
 }
 }
 }
