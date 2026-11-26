@@ -30,6 +30,7 @@ class AmniDriveApp : Application() {
         reportStore = ReportStore(this)
         tracker = LocationTracker(this)
         com.amni.drive.map.CustomPlaces.init(this)
+        appScope.launch(Dispatchers.IO) { runCatching { com.amni.drive.wire.AaCertStore.ensureReady(this@AmniDriveApp) } }
         appScope.launch { runCatching { configStore.applyGateOffDefaultOnce() } }
         runCatching { com.amni.drive.wire.CarLink.start(this) }
         runCatching { CarConnectionService.start(this) }

@@ -33,6 +33,7 @@ view.setViewTreeSavedStateRegistryOwner(this)
 view.setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
 view.setContent { content() }
 setContentView(view)
+setCancelable(false)
 lifecycleRegistry.currentState = Lifecycle.State.RESUMED
 }
 override fun onStart() {

@@ -110,6 +110,7 @@ data class AmniPalette(
     val accentBrush: Brush get() = Brush.linearGradient(listOf(acc, acc.copy(alpha = if (highContrast) 0.85f else 0.55f)))
     val surfaceBrush: Brush get() = if (highContrast) Brush.verticalGradient(listOf(panel, panel))
         else Brush.verticalGradient(listOf(panel2, panel))
+    fun forCar(): AmniPalette = copy(soft = androidx.compose.ui.graphics.lerp(soft, ink, 0.55f), dim = androidx.compose.ui.graphics.lerp(dim, ink, 0.45f), line = androidx.compose.ui.graphics.lerp(line, ink, 0.15f))
 }
 
 fun paletteFor(

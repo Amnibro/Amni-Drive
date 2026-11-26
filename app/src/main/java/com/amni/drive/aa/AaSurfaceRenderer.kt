@@ -23,6 +23,7 @@ import androidx.lifecycle.LifecycleOwner
 import com.amni.drive.AmniDriveApp
 import com.amni.drive.DriveController
 import com.amni.drive.display.RearPresentation
+import com.amni.drive.launcher.CarEmbed
 import com.amni.drive.map.GeoMath
 import com.amni.drive.map.TileStore
 import com.amni.drive.ui.DrivePage
@@ -177,13 +178,13 @@ val rh = root.height.coerceAtLeast(1)
 val sx = if (c != null && c.width > 0) x * rw / c.width else x
 val sy = if (c != null && c.height > 0) y * rh / c.height else y
 val ev = MotionEvent.obtain(downTime, eventTime, action, sx, sy, 0)
-runCatching { root.dispatchTouchEvent(ev) }.onFailure { Log.w(TAG, "touch $action fail ${it.message}") }
+runCatching { CarEmbed.route(root, ev, p.display.displayId) }.onFailure { Log.w(TAG, "touch $action fail ${it.message}") }
 ev.recycle()
 }
 }
 private fun releaseFullUi() {
 main.post {
-runCatching { presentation.getAndSet(null)?.dismiss() }
+presentation.getAndSet(null)?.let { p -> CarEmbed.drop(p.display.displayId); runCatching { p.dismiss() } }
 }
 runCatching { virtualDisplay?.release() }
 virtualDisplay = null

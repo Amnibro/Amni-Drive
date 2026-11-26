@@ -17,6 +17,7 @@ import com.amni.drive.gate.speed.MotionSource
 import com.amni.drive.launcher.AppEntry
 import com.amni.drive.launcher.AppInventory
 import com.amni.drive.launcher.AppLauncher
+import com.amni.drive.launcher.CarEmbed
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -53,7 +54,8 @@ class DriveController(context: Context, private val store: ConfigStore) {
                 useRear -> rearId
                 else -> null
             }
-            val ok = launcher.launch(entry, target)
+            val embedded = surfaceDisplayId != null && CarEmbed.supports(app, entry.packageName) && CarEmbed.open(app, entry, surfaceDisplayId)
+            val ok = embedded || launcher.launch(entry, target)
             if (!ok && surfaceDisplayId != null) launcher.launch(entry, null)
         }
         return decision

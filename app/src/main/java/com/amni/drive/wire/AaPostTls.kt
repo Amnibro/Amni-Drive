@@ -1,6 +1,7 @@
 package com.amni.drive.wire
 
 import android.os.SystemClock
+import android.view.KeyEvent
 import android.view.MotionEvent
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
@@ -63,7 +64,8 @@ object AaPostTls {
         val id: Int,
         val kind: String,
         val videoSpec: VideoSpec? = null,
-        val touchSpec: TouchSpec? = null
+        val touchSpec: TouchSpec? = null,
+        val keys: List<Int> = emptyList()
     )
 
     data class Result(val discovery: Boolean, val videoChannel: Int, val rxFrames: Int, val notes: String)
@@ -177,6 +179,32 @@ object AaPostTls {
         )
     }
 
+    private fun parseInputKeys(sub: ByteArray): List<Int> {
+        val out = ArrayList<Int>()
+        val pos = intArrayOf(0)
+        while (pos[0] < sub.size) {
+            val tag = readVarint(sub, pos).toInt()
+            val field = tag ushr 3
+            val wire = tag and 7
+            when {
+                field == 1 && wire == 0 -> out += readVarint(sub, pos).toInt()
+                field == 1 && wire == 2 -> { val len = readVarint(sub, pos).toInt(); val end = pos[0] + len; if (len < 0 || end > sub.size) break; while (pos[0] < end) out += readVarint(sub, pos).toInt() }
+                !skipField(sub, pos, wire) -> break
+            }
+        }
+        return out
+    }
+    private fun parseEvents(body: ByteArray, field: Int): List<Pair<Int, Int>> {
+        val out = ArrayList<Pair<Int, Int>>()
+        sub(body, field).forEach { group -> sub(group, 1).forEach { ev -> var code = 0; var v = 0; val p = intArrayOf(0); while (p[0] < ev.size) { val tag = readVarint(ev, p).toInt(); if (tag and 7 == 0) { val n = readVarint(ev, p).toInt(); if (tag ushr 3 == 1) code = n else if (tag ushr 3 == 2) v = n } else if (!skipField(ev, p, tag and 7)) break }; out += code to v } }
+        return out
+    }
+    private fun sub(buf: ByteArray, field: Int): List<ByteArray> {
+        val out = ArrayList<ByteArray>()
+        val p = intArrayOf(0)
+        while (p[0] < buf.size) { val tag = readVarint(buf, p).toInt(); if (tag and 7 == 2) { val len = readVarint(buf, p).toInt(); if (len < 0 || p[0] + len > buf.size) break; if (tag ushr 3 == field) out += buf.copyOfRange(p[0], p[0] + len); p[0] += len } else if (!skipField(buf, p, tag and 7)) break }
+        return out
+    }
     private fun parseInputTouchScreen(sub: ByteArray): TouchSpec? {
         val pos = intArrayOf(0)
         while (pos[0] < sub.size) {
@@ -236,6 +264,7 @@ object AaPostTls {
         var kind = "unk"
         var videoSpec: VideoSpec? = null
         var touchSpec: TouchSpec? = null
+        var keys = emptyList<Int>()
         val pos = intArrayOf(0)
         while (pos[0] < emb.size) {
             val tag = readVarint(emb, pos).toInt()
@@ -260,6 +289,7 @@ object AaPostTls {
                         4 -> {
                             kind = "input"
                             touchSpec = parseInputTouchScreen(sub)
+                            keys = parseInputKeys(sub)
                         }
                         5 -> kind = "avin"
                         6 -> kind = "bt"
@@ -270,7 +300,7 @@ object AaPostTls {
                 !skipField(emb, pos, wire) -> break
             }
         }
-        return if (id >= 0) ChanInfo(id, kind, videoSpec, touchSpec) else null
+        return if (id >= 0) ChanInfo(id, kind, videoSpec, touchSpec, keys) else null
     }
 
     private fun parseMediaSinkVideo(sub: ByteArray): VideoSpec? {
@@ -388,6 +418,7 @@ object AaPostTls {
         var opened = 0
         val notes = StringBuilder()
         var videoSpec = VideoSpec()
+        var inputKeys: List<Int> = emptyList()
         var touchSpec: TouchSpec? = null
         var engine: AmniProjectionEngine? = null
         var videoStarted = false
@@ -517,6 +548,7 @@ object AaPostTls {
                 when (msgId) {
                     MSG_AUTH_COMPLETE -> {
                         val st = parseStatus(body)
+                        AaCertStore.noteAuthRefusal(st)
                         notes.append("auth-st$st;")
                         log("POST-TLS AuthComplete status=$st")
                         if (sdSent == 0) sendDiscovery("after-auth")
@@ -541,7 +573,8 @@ object AaPostTls {
                         if (inp != null) {
                             inputCh = inp.id
                             touchSpec = inp.touchSpec
-                            log("POST-TLS inputCh=$inputCh touch=${touchSpec?.width}x${touchSpec?.height}")
+                            inputKeys = inp.keys
+                            log("POST-TLS inputCh=$inputCh touch=${touchSpec?.width}x${touchSpec?.height} keys=${inp.keys}")
                             openChannel(inputCh, "input")
                         }
                         if (sens != null) {
@@ -577,10 +610,7 @@ object AaPostTls {
                                 // Setup { type = 3 (MEDIA_CODEC_VIDEO_H264_BP) }
                                 txEncrypted(videoCh, MEDIA_SETUP, AaPb.u32(1, 3), control = false, tag = "VideoSetup")
                             }
-                            inputCh -> {
-                                // KeyBindingRequest (empty keycodes or standard home/back)
-                                txEncrypted(inputCh, INPUT_KEY_BINDING_REQUEST, ByteArray(0), control = false, tag = "KeyBindingRequest")
-                            }
+                            inputCh -> txEncrypted(inputCh, INPUT_KEY_BINDING_REQUEST, AaPb.cat(*inputKeys.map { AaPb.u32(1, it) }.toTypedArray()), control = false, tag = "KeyBindingRequest keys=${inputKeys.size}")
                         }
                     }
                     return
@@ -678,6 +708,8 @@ object AaPostTls {
                 }
             } else if (channel == inputCh) {
                 if (msgId == INPUT_REPORT) {
+                    parseEvents(body, 4).forEach { (code, down) -> engine?.dispatchKey(code, down != 0) }
+                    parseEvents(body, 6).forEach { (code, delta) -> if (delta != 0) { log("POST-TLS rotary code=$code delta=$delta"); engine?.moveFocus(if (delta > 0) KeyEvent.KEYCODE_NAVIGATE_NEXT else KeyEvent.KEYCODE_NAVIGATE_PREVIOUS, kotlin.math.abs(delta)) } }
                     parseTouchReport(body)?.let { (act, ptrs, idx) ->
                         val p = ptrs.getOrNull(idx) ?: ptrs.first()
                         val ts = touchSpec

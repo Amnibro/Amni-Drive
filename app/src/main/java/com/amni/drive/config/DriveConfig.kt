@@ -10,7 +10,7 @@ val autoStartOnPower: Boolean = true,
 val autoStartOnBluetooth: Boolean = false,
 val carBtMac: String = "",
 val autoEnterCarMode: Boolean = true,
-val aaPathMode: String = PATH_RIDE,
+val aaPathMode: String = PATH_AUTO,
 val meshBridgeEnabled: Boolean = true,
 val voiceNav: Boolean = true,
 val msgBanner: Boolean = true,
@@ -23,9 +23,9 @@ const val PATH_OWN = "own"
 const val PATH_AUTO = "auto"
 fun normalizePath(v: String?): String = when (v?.lowercase()) {
 PATH_OWN, "b", "wire", "host" -> PATH_OWN
-PATH_AUTO, "auto" -> PATH_AUTO
-PATH_RIDE, "a", "gearhead", null, "" -> PATH_RIDE
-else -> PATH_RIDE
+PATH_RIDE, "a", "gearhead" -> PATH_RIDE
+PATH_AUTO, "auto", null, "" -> PATH_AUTO
+else -> PATH_AUTO
 }
 }
 }

@@ -21,13 +21,14 @@ runBlocking { ConfigStore(this@AoaAttachActivity).config.first().aaPathMode }
 DriveConfig.PATH_RIDE
 }
 val gearhead = gearheadEnabled()
-Log.i(AoaProbeService.TAG, "AoaAttachActivity mode=$mode gearheadEnabled=$gearhead accessory=$acc")
+val projecting = CarLink.projecting
+Log.i(AoaProbeService.TAG, "AoaAttachActivity mode=$mode gearheadEnabled=$gearhead projecting=$projecting accessory=$acc")
 AaSessionWatchService.tick(this)
-if (mode == DriveConfig.PATH_OWN) {
-Log.i(AoaProbeService.TAG, "OWN mode · probe on attach")
+if (mode == DriveConfig.PATH_OWN || (mode == DriveConfig.PATH_AUTO && !projecting)) {
+Log.i(AoaProbeService.TAG, "mode=$mode · claiming AOA on attach")
 AoaProbeService.claim(this)
 } else {
-Log.i(AoaProbeService.TAG, "RIDE passive · never claim AOA (gearhead owns USB · no red screen)")
+Log.i(AoaProbeService.TAG, "RIDE/projecting passive · skip AOA claim")
 }
 finish()
 }

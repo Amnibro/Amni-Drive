@@ -6,6 +6,8 @@ import android.media.AudioManager
 import android.net.ConnectivityManager
 import android.os.SystemClock
 import android.view.KeyEvent
+import android.view.SurfaceHolder
+import android.view.SurfaceView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -42,6 +44,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.Cast
+import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Lock
@@ -76,6 +79,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
@@ -96,6 +102,7 @@ import com.amni.drive.config.DriveConfig
 import com.amni.drive.gate.DriveState
 import com.amni.drive.gate.GateDecision
 import com.amni.drive.launcher.AppEntry
+import com.amni.drive.launcher.CarEmbed
 import com.amni.drive.map.OsrmRouting
 import com.amni.drive.map.Place
 import com.amni.drive.map.ReportStore
@@ -119,6 +126,7 @@ import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
 enum class DrivePage { HOME, APPS, NAV }
+val EMBED_RAIL = 64.dp
 @Composable
 fun Dashboard(
 apps: List<AppEntry>,
@@ -141,9 +149,11 @@ initialPage: DrivePage = DrivePage.HOME,
 carSurface: Boolean = false,
 surfaceDisplayId: Int? = null,
 onSetTileLayout: (TileLayout) -> Unit = {},
-onCycleTheme: () -> Unit = {}
+onCycleTheme: () -> Unit = {},
+reserveAaChrome: Boolean = true
 ) {
-val p = rememberPalette(theme)
+val basePalette = rememberPalette(theme)
+val p = remember(basePalette, carSurface) { if (carSurface) basePalette.forCar() else basePalette }
 val ctxRoot = LocalContext.current
 CompositionLocalProvider(LocalAmni provides p) {
 var page by remember { mutableStateOf(initialPage) }
@@ -153,11 +163,14 @@ var layoutPicker by remember { mutableStateOf(false) }
 var blocked by remember { mutableStateOf<AppEntry?>(null) }
 var mediaHint by remember { mutableStateOf<String?>(null) }
 var mediaPicker by remember { mutableStateOf(false) }
-val mediaAppsList = remember(apps) { apps.filter { it.category == com.amni.drive.gate.AppCategory.MEDIA || it.packageName.contains("spotify", true) || it.packageName.contains("music", true) || it.packageName.contains("youtube.music", true) } }
+var toast by remember { mutableStateOf<String?>(null) }
+LaunchedEffect(toast) { if (toast != null) { delay(4000); toast = null } }
+val mediaAppsList = remember(apps) { apps.filter { isMediaApp(it) } }
 val pickMedia: (AppEntry) -> Unit = { app ->
 if (carSurface) {
-playViaBrowser(ctxRoot, app.packageName) { mediaKey(ctxRoot, KeyEvent.KEYCODE_MEDIA_PLAY) }
+playViaBrowser(ctxRoot, app.packageName) { startMediaOnPhone(ctxRoot, app.packageName) }
 mediaHint = app.label
+page = DrivePage.HOME
 } else {
 val d = onLaunch(app)
 if (!d.allow) blocked = app
@@ -255,9 +268,12 @@ val netOk by produceState(true) {
 val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 while (true) { value = cm.activeNetwork != null; delay(3000) }
 }
+val chromeTop = if (carSurface && reserveAaChrome) 34.dp else 0.dp
+val chromeEnd = if (carSurface && reserveAaChrome) 84.dp else 0.dp
+val mapApp = remember(apps) { apps.firstOrNull { it.packageName == CarEmbed.MAP_PKG }?.takeIf { !carSurface || CarEmbed.supports(ctxRoot, it.packageName) } }
 BoxWithConstraints(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(p.bg, if (p.isLight) Color(0xFFE8ECF0) else Color(0xFF05070A))))) {
 val aspect = maxWidth / maxHeight
-val micro = maxHeight < 380.dp || maxWidth < 600.dp
+val micro = if (carSurface) maxHeight < 260.dp || maxWidth < 520.dp else maxHeight < 380.dp || maxWidth < 600.dp
 val dense = carSurface || maxHeight < 560.dp || aspect > 1.5f || maxWidth < 960.dp
 val railW = when {
 micro -> 48.dp
@@ -281,10 +297,10 @@ LaunchedEffect(mediaPulse) { if (mediaPulse > 0L) { mediaFlash = true; page = Dr
 val layout = resolveTileLayout(theme.tileLayout, micro, dense, contentW, maxHeight, carSurface)
 if (theme.weatherBg && !micro && !carSurface) WeatherLayer(weather?.wx ?: Wx.NONE, moving, Modifier.fillMaxSize())
 Row(Modifier.fillMaxSize()) {
-Rail(page, cfg.driverGateEnabled && cfg.masterGateEnabled, { menuOpen = true }, { page = it }, onToggleGate, railW, dense || micro)
+Rail(page, cfg.driverGateEnabled && cfg.masterGateEnabled, { menuOpen = true }, { page = it }, onToggleGate, railW, dense || micro, mapApp?.let { m -> { if (!onLaunch(m).allow) blocked = m } })
 Column(Modifier.weight(1f).fillMaxHeight()) {
 if (showTopBar) TopBar(driveState, speedMph, weather, passenger)
-else if ((carSurface || dense) && !micro) CarStatusStrip(driveState, speedMph, weather, passenger, if (carSurface) 84.dp else 0.dp)
+else if ((carSurface || dense) && !micro) CarStatusStrip(driveState, speedMph, weather, passenger, chromeEnd)
 Box(Modifier.weight(1f).fillMaxWidth()) {
 AnimatedContent(
 targetState = page,
@@ -298,16 +314,13 @@ label = "page"
 ) { pg ->
 when (pg) {
 DrivePage.APPS -> AppDrawer(apps, cfg, driveState, passenger, appTileScale(theme.tileScale, contentW, dense)) { app ->
-val mediaApp = app.category == com.amni.drive.gate.AppCategory.MEDIA || app.packageName.contains("spotify", true) || app.packageName.contains("music", true)
-if (carSurface && mediaApp) {
-playViaBrowser(ctxRoot, app.packageName) { mediaKey(ctxRoot, KeyEvent.KEYCODE_MEDIA_PLAY) }
-mediaHint = app.label
-page = DrivePage.HOME
+if (carSurface && isMediaApp(app)) {
+pickMedia(app)
 AaNavState.openMedia()
 } else {
 val d = onLaunch(app)
 if (!d.allow) blocked = app
-else if (carSurface && surfaceDisplayId != null) mediaHint = "On dash · ${app.label}"
+else if (carSurface && CarEmbed.on(surfaceDisplayId)?.pkg != app.packageName) toast = "${app.label} opened on your phone. Only apps made for Amni-Drive can show on the car screen."
 }
 }
 DrivePage.NAV -> Box(Modifier.fillMaxSize().padding(pad)) {
@@ -319,7 +332,7 @@ pad = pad,
 gap = gap,
 widgetW = widgetW,
 dense = dense || micro,
-carTopPad = if (carSurface) 34.dp else 0.dp,
+carTopPad = chromeTop,
 mediaFlash = mediaFlash,
 mediaHint = mediaHint,
 surfaceDisplayId = surfaceDisplayId,
@@ -357,6 +370,11 @@ Box(Modifier.align(Alignment.BottomCenter).padding(bottom = if (incoming != null
 Text("🎤 $h", color = p.ink, fontSize = 13.sp, fontWeight = FontWeight.Medium)
 }
 }
+toast?.let { t ->
+Box(Modifier.align(Alignment.TopCenter).padding(top = 8.dp, start = 12.dp, end = 12.dp).clip(RoundedCornerShape(14.dp)).background(if (p.isLight) Color(0xF8FFFFFF) else Color(0xF8101318)).border(1.dp, p.acc.copy(alpha = 0.6f), RoundedCornerShape(14.dp)).clickable { toast = null }.padding(horizontal = 16.dp, vertical = 10.dp)) {
+Text(t, color = p.ink, fontSize = 14.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+}
+}
 }
 }
 }
@@ -379,11 +397,20 @@ private fun resolveTileLayout(pref: TileLayout, micro: Boolean, dense: Boolean, 
 if (pref != TileLayout.AUTO) return if (micro && pref != TileLayout.MAP_ONLY) TileLayout.MAP_ONLY else pref
 return when {
 micro || contentW < 560.dp -> TileLayout.MAP_ONLY
+carSurface && contentW >= 700.dp -> TileLayout.BALANCED
+carSurface -> TileLayout.MEDIA_FOCUS
 h < 420.dp || contentW < 720.dp -> TileLayout.MAP_FOCUS
-carSurface && dense -> TileLayout.BALANCED
 contentW >= 1100.dp -> TileLayout.BALANCED
 else -> TileLayout.MEDIA_FOCUS
 }
+}
+private fun isMediaApp(app: AppEntry): Boolean =
+app.category == com.amni.drive.gate.AppCategory.MEDIA ||
+listOf("spotify", "music", "pandora", "podcast", "audible", "radio", "deezer", "tidal", "soundcloud", "pocketcasts").any { app.packageName.contains(it, true) }
+private fun startMediaOnPhone(ctx: Context, pkg: String) {
+val launch = ctx.packageManager.getLaunchIntentForPackage(pkg)?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+if (launch != null) runCatching { ctx.startActivity(launch) }
+android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ mediaKey(ctx, KeyEvent.KEYCODE_MEDIA_PLAY) }, if (launch != null) 1800L else 0L)
 }
 private fun appTileScale(user: Int, contentW: androidx.compose.ui.unit.Dp, dense: Boolean): Int = when {
 contentW < 560.dp -> 0
@@ -432,7 +459,7 @@ MapCard(mod, camera, tiles, route, reports, stops, location, routing, false, net
 }
 val mediaMod = Modifier.then(if (mediaFlash) Modifier.border(2.dp, p.acc, RoundedCornerShape(18.dp)) else Modifier)
 val widgets: @Composable (Modifier) -> Unit = { mod ->
-Column(mod, verticalArrangement = Arrangement.spacedBy(gap)) {
+Column(mod.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(gap)) {
 WeatherCard(weather, dense)
 TripCard(speedMph, route, dense)
 GateHintCard(cfg, dense)
@@ -468,7 +495,7 @@ map(Modifier.weight(2.2f).fillMaxHeight())
 Column(Modifier.width(widgetW).fillMaxHeight().padding(top = carTopPad), verticalArrangement = Arrangement.spacedBy(gap)) {
 WeatherCard(weather, dense)
 TripCard(speedMph, route, dense)
-GateHintCard(cfg, dense)
+if (!dense) GateHintCard(cfg, dense)
 media(Modifier.weight(1f).fillMaxWidth(), true)
 }
 }
@@ -552,7 +579,7 @@ Box(Modifier.weight(0.75f).fillMaxHeight().background(a.copy(alpha = 0.25f), Rou
 }
 }
 @Composable
-private fun Rail(page: DrivePage, gateOn: Boolean, onMenu: () -> Unit, onPage: (DrivePage) -> Unit, onToggleGate: () -> Unit, railW: androidx.compose.ui.unit.Dp = 92.dp, compact: Boolean = false) {
+private fun Rail(page: DrivePage, gateOn: Boolean, onMenu: () -> Unit, onPage: (DrivePage) -> Unit, onToggleGate: () -> Unit, railW: androidx.compose.ui.unit.Dp = 92.dp, compact: Boolean = false, onMap: (() -> Unit)? = null) {
 val p = LocalAmni.current
 Column(
 Modifier.width(railW).fillMaxHeight()
@@ -576,8 +603,26 @@ RailBtn(Icons.Rounded.Menu, "MENU", false, compact, railW, onClick = onMenu)
 RailBtn(Icons.Rounded.Home, "HOME", page == DrivePage.HOME, compact, railW) { onPage(DrivePage.HOME) }
 RailBtn(Icons.Rounded.Apps, "APPS", page == DrivePage.APPS, compact, railW) { onPage(DrivePage.APPS) }
 RailBtn(Icons.Rounded.Map, "NAV", page == DrivePage.NAV, compact, railW) { onPage(DrivePage.NAV) }
+onMap?.let { RailBtn(Icons.Rounded.Explore, "AMNI-MAP", false, compact, railW, onClick = it) }
 Spacer(Modifier.weight(1f))
 RailBtn(Icons.Rounded.Security, if (gateOn) "GATE" else "OPEN", gateOn, compact, railW, err = !gateOn, onClick = onToggleGate)
+}
+}
+@Composable
+fun EmbedRail(theme: UiTheme, onHome: () -> Unit, onApps: () -> Unit) {
+val p = rememberPalette(theme).forCar()
+val ctx = LocalContext.current
+CompositionLocalProvider(LocalAmni provides p) {
+Row(Modifier.fillMaxSize().background(p.bg)) {
+Column(Modifier.width(EMBED_RAIL).fillMaxHeight().background(Brush.verticalGradient(listOf(p.panel, p.bg))).padding(vertical = 7.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(7.dp)) {
+Box(Modifier.size(8.dp).clip(CircleShape).background(p.acc))
+RailBtn(Icons.Rounded.Home, "HOME", false, true, EMBED_RAIL, onClick = onHome)
+RailBtn(Icons.Rounded.Apps, "APPS", false, true, EMBED_RAIL, onClick = onApps)
+Spacer(Modifier.weight(1f))
+RailBtn(Icons.Rounded.MusicNote, "PLAY", false, true, EMBED_RAIL) { if (!MediaSessionBridge.playPause()) mediaKey(ctx, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) }
+}
+AndroidView({ c -> SurfaceView(c).apply { setZOrderMediaOverlay(true); holder.addCallback(object : SurfaceHolder.Callback { override fun surfaceCreated(h: SurfaceHolder) = Unit; override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, hh: Int) = CarEmbed.surface(h.surface, w, hh, resources.displayMetrics.densityDpi); override fun surfaceDestroyed(h: SurfaceHolder) = CarEmbed.surface(null, 0, 0, 0) }) } }, Modifier.weight(1f).fillMaxHeight().onGloballyPositioned { lc -> lc.boundsInWindow().let { b -> CarEmbed.area(b.left.toInt(), b.top.toInt(), b.right.toInt(), b.bottom.toInt()) } })
+}
 }
 }
 @Composable
@@ -821,67 +866,71 @@ val title = np?.title?.takeIf { it.isNotBlank() } ?: preferred?.takeIf { it.isNo
 val subtitle = np?.let { listOf(it.artist, it.appLabel).filter { s -> s.isNotBlank() }.joinToString(" · ") } ?: ""
 val hasAccess = remember { MediaSessionBridge.hasAccess(ctx) }
 val pad = if (dense) 10.dp else 16.dp
-Box(modifier) {
+BoxWithConstraints(modifier) {
+val short = maxHeight < 300.dp
 GlassCard(Modifier.fillMaxSize()) {
 Column(Modifier.fillMaxSize().padding(pad), horizontalAlignment = Alignment.CenterHorizontally) {
 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
 AccentBar(Modifier.width(if (dense) 18.dp else 28.dp).height(3.dp))
 Spacer(Modifier.width(8.dp))
-Text("NOW PLAYING", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = if (dense) 8.sp else 10.sp, letterSpacing = 1.sp)
+Text("NOW PLAYING", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = if (dense) 10.sp else 11.sp, letterSpacing = 1.sp)
 Spacer(Modifier.weight(1f))
-Text("CHANGE", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { onOpenPicker() })
+Box(Modifier.clip(RoundedCornerShape(99.dp)).background(p.accDim).border(1.dp, p.acc.copy(alpha = 0.5f), RoundedCornerShape(99.dp)).clickable { onOpenPicker() }.padding(horizontal = 12.dp, vertical = 6.dp)) {
+Text("CHOOSE APP", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+}
 }
 Spacer(Modifier.weight(1f))
+val artSz = when { short -> 44.dp; dense -> 56.dp; else -> 88.dp }
 Box(
-Modifier.size(if (dense) 56.dp else 88.dp).clip(RoundedCornerShape(if (dense) 16.dp else 24.dp)).background(p.accDim).border(1.dp, p.acc.copy(alpha = 0.25f), RoundedCornerShape(if (dense) 16.dp else 24.dp))
+Modifier.size(artSz).clip(RoundedCornerShape(if (dense) 14.dp else 24.dp)).background(p.accDim).border(1.dp, p.acc.copy(alpha = 0.25f), RoundedCornerShape(if (dense) 14.dp else 24.dp))
 .clickable { onOpenPicker() },
 contentAlignment = Alignment.Center
 ) {
 val art = np?.art
 if (art != null) Image(art.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-else Icon(Icons.Rounded.MusicNote, null, Modifier.size(if (dense) 28.dp else 42.dp), tint = p.acc)
+else Icon(Icons.Rounded.MusicNote, null, Modifier.size(artSz / 2), tint = p.acc)
 }
-Spacer(Modifier.height(if (dense) 8.dp else 12.dp))
-Text(title, color = p.ink, fontSize = if (dense) 14.sp else 17.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.clickable { onOpenPicker() })
+Spacer(Modifier.height(if (short) 4.dp else if (dense) 8.dp else 12.dp))
+Text(title, color = p.ink, fontSize = if (dense) 15.sp else 17.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.clickable { onOpenPicker() })
 Text(
 when {
 subtitle.isNotBlank() -> subtitle
-!hasAccess -> "Grant media access for track info"
-playing -> "Playing · tap art to switch source"
-mediaApps.isNotEmpty() -> "Tap art · pick Spotify / music app"
-surfaceDisplayId != null -> "Dash panel · media keys"
+playing -> "Playing"
+mediaApps.isNotEmpty() -> "Tap CHOOSE APP to start music"
+!hasAccess -> "Grant media access on phone for track info"
 else -> "Tap art to choose source"
 },
-color = p.dim, fontSize = if (dense) 10.sp else 12.sp, textAlign = TextAlign.Center, maxLines = 2
+color = p.soft, fontSize = if (dense) 12.sp else 13.sp, textAlign = TextAlign.Center, maxLines = if (short) 1 else 2, overflow = TextOverflow.Ellipsis
 )
-if (!hasAccess && surfaceDisplayId == null) {
+if (!hasAccess && surfaceDisplayId == null && !short) {
 Spacer(Modifier.height(6.dp))
 Box(Modifier.clip(RoundedCornerShape(99.dp)).background(p.accDim).border(1.dp, p.acc.copy(alpha = 0.4f), RoundedCornerShape(99.dp)).clickable { MediaSessionBridge.requestAccess(ctx) }.padding(horizontal = 10.dp, vertical = 5.dp)) {
-Text("ENABLE MEDIA ACCESS", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+Text("ENABLE MEDIA ACCESS", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)
 }
 }
-Spacer(Modifier.height(if (dense) 10.dp else 16.dp))
-Row(horizontalArrangement = Arrangement.spacedBy(if (dense) 8.dp else 12.dp), verticalAlignment = Alignment.CenterVertically) {
+Spacer(Modifier.height(if (short) 6.dp else if (dense) 10.dp else 16.dp))
+Row(horizontalArrangement = Arrangement.spacedBy(if (dense) 10.dp else 12.dp), verticalAlignment = Alignment.CenterVertically) {
 MediaCtrl(Icons.Rounded.SkipPrevious, "Prev", dense) { if (!MediaSessionBridge.prev()) mediaKey(ctx, KeyEvent.KEYCODE_MEDIA_PREVIOUS) }
 Box(
-Modifier.size(if (dense) 48.dp else 56.dp).clip(CircleShape).background(p.accentBrush)
+Modifier.size(if (dense) 52.dp else 56.dp).clip(CircleShape).background(p.accentBrush)
 .clickable { if (!MediaSessionBridge.playPause()) mediaKey(ctx, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) },
 contentAlignment = Alignment.Center
 ) {
-Text(if (playing) "❚❚" else "▶", color = if (p.isLight) Color.White else Color(0xFF05070A), fontSize = if (dense) 16.sp else 18.sp, fontWeight = FontWeight.Bold)
+Text(if (playing) "❚❚" else "▶", color = if (p.isLight) Color.White else Color(0xFF05070A), fontSize = 18.sp, fontWeight = FontWeight.Bold)
 }
 MediaCtrl(Icons.Rounded.SkipNext, "Next", dense) { if (!MediaSessionBridge.next()) mediaKey(ctx, KeyEvent.KEYCODE_MEDIA_NEXT) }
 }
+if (!short) {
 Spacer(Modifier.height(if (dense) 8.dp else 12.dp))
 Box(
 Modifier.clip(RoundedCornerShape(12.dp)).border(1.dp, p.acc.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
 .clickable { if (!MediaSessionBridge.play()) mediaKey(ctx, KeyEvent.KEYCODE_MEDIA_PLAY) }
 .padding(horizontal = if (dense) 12.dp else 18.dp, vertical = if (dense) 8.dp else 10.dp)
 ) {
-Text("PLAY / RESUME", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = if (dense) 9.sp else 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)
+Text("PLAY / RESUME", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = if (dense) 10.sp else 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)
+}
 }
 Spacer(Modifier.weight(1f))
-Text("Tap music tile to change source", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 8.sp, textAlign = TextAlign.Center)
 }
 }
 }

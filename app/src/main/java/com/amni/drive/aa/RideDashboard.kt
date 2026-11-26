@@ -12,8 +12,10 @@ import com.amni.drive.DriveController
 import com.amni.drive.config.DriveConfig
 import com.amni.drive.gate.DriveState
 import com.amni.drive.launcher.AppEntry
+import com.amni.drive.launcher.CarEmbed
 import com.amni.drive.ui.AmniDriveTheme
 import com.amni.drive.ui.Dashboard
+import com.amni.drive.ui.EmbedRail
 import com.amni.drive.ui.DrivePage
 import com.amni.drive.ui.UiTheme
 import com.amni.drive.ui.rememberPalette
@@ -26,7 +28,8 @@ fun RideDashboard(
 app: AmniDriveApp,
 controller: DriveController,
 initialPage: DrivePage = DrivePage.HOME,
-surfaceDisplayId: Int? = null
+surfaceDisplayId: Int? = null,
+reserveAaChrome: Boolean = true
 ) {
 val theme by app.themeStore.theme.collectAsState(UiTheme())
 val cfg by controller.config.collectAsState(DriveConfig())
@@ -50,8 +53,10 @@ delay(900_000L)
 } else delay(5_000L)
 }
 }
+val embed by CarEmbed.shown.collectAsState()
+var back by remember { mutableStateOf(initialPage) }
 AmniDriveTheme(rememberPalette(theme)) {
-Dashboard(
+if (CarEmbed.up(embed, surfaceDisplayId)) EmbedRail(theme, { back = DrivePage.HOME; CarEmbed.home() }, { back = DrivePage.APPS; CarEmbed.home() }) else Dashboard(
 apps = apps,
 cfg = cfg,
 driveState = state,
@@ -72,9 +77,10 @@ scope.launch { controller.setDriverGate(!eff) }
 onToggleWeather = { v -> scope.launch { app.themeStore.setWeather(v) } },
 onConfirmPassenger = { controller.confirmPassenger() },
 onOpenSettings = { },
-initialPage = initialPage,
+initialPage = back,
 carSurface = true,
 surfaceDisplayId = surfaceDisplayId,
+reserveAaChrome = reserveAaChrome,
 onSetTileLayout = { v -> scope.launch { app.themeStore.setTileLayout(v) } },
 onCycleTheme = {
 android.util.Log.i("Amni.Theme", "cycle from ${theme.preset}")

@@ -135,12 +135,15 @@ object AaCertStore {
         status
     }
 
-    /**
-     * Loads KeyManagers from imported or downloaded PEM files, or returns null
-     * if none are installed (caller should fall back to bundled PKCS#12).
-     */
+    @Volatile var lastAuthStatus: Int? = null
+        private set
+    @Volatile var preferFallbackThisBoot: Boolean = false
+        private set
+    fun noteAuthRefusal(status: Int) { lastAuthStatus = status; if (status != 0) { preferFallbackThisBoot = !preferFallbackThisBoot; Log.w(TAG, "AuthComplete refused status=$status; preferFallbackNext=$preferFallbackThisBoot") } }
+    fun ensureReady(ctx: Context) { val st = status(ctx); if (st.source == "FALLBACK" || (st.source == "DOWNLOADED" && st.expired)) downloadFromIscle(ctx) }
     fun loadKeyManagers(ctx: Context?, log: (String) -> Unit = {}): Array<KeyManager>? {
         if (ctx == null) return null
+        if (preferFallbackThisBoot) { log("TLS cert fallback active after prior auth refusal (self-signed)"); return null }
         val dir = certDir(ctx)
         val pairs = listOf(
             Triple("IMPORTED", File(dir, IMP_CERT), File(dir, IMP_KEY)),
@@ -154,6 +157,7 @@ object AaCertStore {
                     keyFile.readBytes(),
                     requireGoogleRoot = false
                 )
+                if (label == "DOWNLOADED" && st.expired) { log("TLS cert $label expired (${st.expiryLabel()}), skipping"); continue }
                 val ks = KeyStore.getInstance("PKCS12")
                 val pass = CharArray(0)
                 ks.load(null, pass)
