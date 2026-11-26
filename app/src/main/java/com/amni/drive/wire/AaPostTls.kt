@@ -273,9 +273,9 @@ log("POST-TLS TX tunnel fail $tag ${e.message}")
 fun txControl(msgId: Int, body: ByteArray, tag: String, forceModes: String = "auto") {
 val modes = when (forceModes) {
 "plain" -> listOf("plain")
-"enc" -> listOf("enc", "tunnel")
+"enc" -> listOf("enc")
 "all" -> listOf("plain", "enc", "tunnel")
-else -> if (preferPlain) listOf("plain", "enc") else listOf("enc", "plain", "tunnel")
+else -> listOf("enc")
 }
 for (m in modes) {
 when (m) {
@@ -286,23 +286,36 @@ when (m) {
 }
 }
 fun sendAuth() {
-log("POST-TLS send AuthComplete.OK (plain-first, HU live uses flags=0x03)")
-txControl(MSG_AUTH_COMPLETE, authCompleteBody(), "AuthComplete.OK", "all")
+log("POST-TLS waiting for HU AuthComplete (phone does not blast plain/tunnel AuthComplete)")
 }
 fun sendDiscovery(why: String) {
 val idx = (sdSent++).coerceAtMost(nameVariants.lastIndex)
 val (name, brand) = nameVariants[idx]
 discovery = true
 notes.append("sd-req-$why-$name;")
-log("POST-TLS send ServiceDiscoveryRequest ($why / $name/$brand) plainPrefer=$preferPlain authFail=$authFailed")
-txControl(MSG_SERVICE_DISCOVERY_REQUEST, serviceDiscoveryRequestBody(name, brand), "ServiceDiscoveryRequest-$name", if (authFailed) "all" else "auto")
+log("POST-TLS send ServiceDiscoveryRequest ($why / $name/$brand) enc-only authFail=$authFailed")
+txControl(MSG_SERVICE_DISCOVERY_REQUEST, serviceDiscoveryRequestBody(name, brand), "ServiceDiscoveryRequest-$name", "enc")
+}
+fun txEncChannel(chId: Int, msgId: Int, body: ByteArray, tag: String) {
+try {
+val plain = ByteArray(2 + body.size)
+plain[0] = ((msgId ushr 8) and 0xFF).toByte()
+plain[1] = (msgId and 0xFF).toByte()
+System.arraycopy(body, 0, plain, 2, body.size)
+val cipher = ssl.encryptApp(plain)
+val frame = AaAapVersion.encodeFrame(chId, AaAapVersion.frameFlags(encrypted = true), cipher)
+io.write(frame)
+log("POST-TLS TX enc ch=$chId $tag msg=0x${msgId.toString(16)} plain=${plain.size} cipher=${cipher.size}")
+} catch (e: Exception) {
+log("POST-TLS TX enc ch=$chId fail $tag ${e.message}")
+}
 }
 fun openChannel(chId: Int, kind: String) {
 if (chId <= 0) return
 notes.append("open-$kind-$chId;")
 log("POST-TLS send ChannelOpenRequest ch=$chId kind=$kind")
-txControl(MSG_CHANNEL_OPEN_REQUEST, channelOpenRequestBody(chId, 0), "ChannelOpenRequest-$chId")
-if (kind == "av" || kind == "unk") {
+txEncChannel(chId, MSG_CHANNEL_OPEN_REQUEST, channelOpenRequestBody(chId, 0), "ChannelOpenRequest-$chId")
+if (kind == "av" && videoCh <= 0) {
 videoCh = chId
 onVideoChannel(chId)
 }

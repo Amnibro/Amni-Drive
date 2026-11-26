@@ -206,7 +206,7 @@ return false
 private fun doWrap(send: (ByteArray) -> Unit): Boolean {
 netOut.clear()
 val res = try {
-engine.wrap(appOut, netOut)
+engine.wrap(ByteBuffer.allocate(0), netOut)
 } catch (e: Exception) {
 val cause = generateSequence(e as Throwable?) { it.cause }.mapNotNull { it.message }.joinToString(" | ")
 log("TLS wrap ex ${e.javaClass.simpleName}: $cause")
