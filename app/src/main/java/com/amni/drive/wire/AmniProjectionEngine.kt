@@ -214,7 +214,12 @@ class AmniProjectionEngine(
                 }
             }
 
-            val carDpi = (dpi * 1.55f).toInt().coerceIn(320, 420)
+            val effH = (height - heightMargin).coerceAtLeast(360)
+            val carDpi = if (effH < 600) {
+                (dpi * 1.35f).toInt().coerceIn(200, 280)
+            } else {
+                (dpi * 1.62f).toInt().coerceIn(320, 430)
+            }
             val dm = context.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
             val flags = DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY or
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_PRESENTATION
@@ -234,17 +239,22 @@ class AmniProjectionEngine(
                     val padX = (widthMargin / 2f).coerceAtLeast(0f)
                     val padY = (heightMargin / 2f).coerceAtLeast(0f)
                     val p = RearPresentation(context, display) {
-                        val dens = LocalDensity.current
-                        Box(
-                            Modifier
-                                .fillMaxSize()
-                                .background(Color.Black)
-                                .padding(
-                                    horizontal = with(dens) { padX.toDp() },
-                                    vertical = with(dens) { padY.toDp() }
-                                )
+                        val baseDens = LocalDensity.current
+                        val carFontScale = (baseDens.fontScale * 1.24f).coerceIn(1.20f, 1.40f)
+                        androidx.compose.runtime.CompositionLocalProvider(
+                            LocalDensity provides androidx.compose.ui.unit.Density(baseDens.density, fontScale = carFontScale)
                         ) {
-                            RideDashboard(app, controller, DrivePage.HOME, surfaceDisplayId = display.displayId)
+                            Box(
+                                Modifier
+                                    .fillMaxSize()
+                                    .background(Color.Black)
+                                    .padding(
+                                        horizontal = with(baseDens) { padX.toDp() },
+                                        vertical = with(baseDens) { padY.toDp() }
+                                    )
+                            ) {
+                                RideDashboard(app, controller, DrivePage.HOME, surfaceDisplayId = display.displayId)
+                            }
                         }
                     }
                     p.window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED)

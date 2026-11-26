@@ -94,6 +94,25 @@ object CarEmbed {
         return true
     }
     fun key(ev: KeyEvent, displayId: Int): Boolean = on(displayId)?.let { if (it.slot != null) return CarApps.key(it.slot, ev); if (it.mirror) return (ev.keyCode == KeyEvent.KEYCODE_BACK || ev.keyCode == KeyEvent.KEYCODE_ESCAPE) && (ev.action != KeyEvent.ACTION_UP || CarMirror.back() || true); send(Message.obtain(null, KEY).apply { obj = KeyEvent(ev) }); true } ?: false
+    fun sendKeyCode(keyCode: Int) {
+        val now = SystemClock.uptimeMillis()
+        val down = KeyEvent(now, now, KeyEvent.ACTION_DOWN, keyCode, 0, 0, android.view.KeyCharacterMap.VIRTUAL_KEYBOARD, 0, KeyEvent.FLAG_FROM_SYSTEM)
+        val up = KeyEvent(now, now + 12L, KeyEvent.ACTION_UP, keyCode, 0, 0, android.view.KeyCharacterMap.VIRTUAL_KEYBOARD, 0, KeyEvent.FLAG_FROM_SYSTEM)
+        send(Message.obtain(null, KEY).apply { obj = down })
+        send(Message.obtain(null, KEY).apply { obj = up })
+    }
+    fun sendText(text: String) {
+        if (text.isEmpty()) return
+        ipc.post {
+            val kcm = android.view.KeyCharacterMap.load(android.view.KeyCharacterMap.VIRTUAL_KEYBOARD)
+            val events = kcm.getEvents(text.toCharArray())
+            if (events != null && events.isNotEmpty()) {
+                for (ev in events) {
+                    runCatching { remote?.send(Message.obtain(null, KEY).apply { obj = KeyEvent(ev) }) }
+                }
+            }
+        }
+    }
     private fun sendFrame() { frame?.let { f -> send(Message.obtain(null, SURFACE).apply { data = Bundle(f) }) } }
     private fun send(m: Message) { ipc.post { runCatching { remote?.send(m) }.onFailure { Log.w(TAG, "send ${m.what} failed: ${it.message}") } } }
     private fun bind(app: Context, pkg: String): Boolean {

@@ -218,15 +218,24 @@ fun MapCard(
             if (routing) Box(Modifier.align(Alignment.TopStart).padding(10.dp).clip(RoundedCornerShape(99.dp)).background(p.accDim).border(1.dp, p.acc.copy(alpha = 0.45f), RoundedCornerShape(99.dp)).padding(horizontal = 14.dp, vertical = 7.dp)) { Text("Routing…", color = p.acc, fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
             if (route == null && !routing && !searchOpen && (!dense || fullNav)) Box(Modifier.align(Alignment.BottomStart).padding(10.dp).clip(RoundedCornerShape(99.dp)).background(chromeBg).border(1.dp, chromeLine, RoundedCornerShape(99.dp)).padding(horizontal = 12.dp, vertical = 7.dp)) { Text("Search or long-press for destination", color = p.soft, fontSize = 11.sp) }
             if (!netOk) Box(Modifier.align(Alignment.BottomCenter).padding(10.dp).clip(RoundedCornerShape(99.dp)).background(Color(0xEE3A2808)).border(1.dp, Color(0xFFFFB454).copy(alpha = 0.55f), RoundedCornerShape(99.dp)).padding(horizontal = 14.dp, vertical = 8.dp)) { Text("No network — map, search & routing need Wi‑Fi/hotspot", color = Color(0xFFFFB454), fontSize = 11.sp, fontWeight = FontWeight.SemiBold) }
-            if (searchOpen) SearchPanel(location, route != null, dense, Modifier.align(Alignment.TopCenter).fillMaxWidth(if (dense) 0.92f else 0.7f).padding(top = 8.dp, start = 8.dp, end = if (dense) 48.dp else 8.dp), { searchOpen = false; onGo(it) }, { searchOpen = false; onAddStop(it) }, { searchOpen = false }, hostKeyboard?.let { hk -> { searchOpen = false; hk() } })
+            if (searchOpen) SearchPanel(location, route != null, dense, Modifier.align(Alignment.TopCenter).fillMaxWidth(if (dense) 0.94f else 0.72f).padding(top = 6.dp, start = 6.dp, end = if (dense) 48.dp else 8.dp), { searchOpen = false; onGo(it) }, { searchOpen = false; onAddStop(it) }, { searchOpen = false }, onVoice = onVoice)
             if (showLayers) LayersPanel(camera, tiles, Modifier.align(Alignment.TopEnd).padding(end = 62.dp, top = if (dense) 48.dp else 8.dp))
             if (showReport) ReportPanel(location, reportStore, Modifier.align(if (fullNav) Alignment.BottomCenter else Alignment.BottomEnd).padding(8.dp)) { onShowReport(false) }
-            if (!dense || fullNav) Text("© OSM · OpenFreeMap", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 8.sp, modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp))
+            if (!dense || fullNav) Text("© OSM · OpenFreeMap", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 8.5.sp, modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp))
         }
     }
 }
 @Composable
-private fun SearchPanel(location: Location?, hasRoute: Boolean, dense: Boolean, modifier: Modifier, onGo: (Place) -> Unit, onAddStop: (Place) -> Unit, onClose: () -> Unit, onHostKeyboard: (() -> Unit)? = null) {
+private fun SearchPanel(
+    location: Location?,
+    hasRoute: Boolean,
+    dense: Boolean,
+    modifier: Modifier,
+    onGo: (Place) -> Unit,
+    onAddStop: (Place) -> Unit,
+    onClose: () -> Unit,
+    onVoice: (() -> Unit)? = null
+) {
     val p = LocalAmni.current
     var query by remember { mutableStateOf(AaNavState.lastQuery) }
     var results by remember { mutableStateOf<List<Place>>(emptyList()) }
@@ -240,48 +249,65 @@ private fun SearchPanel(location: Location?, hasRoute: Boolean, dense: Boolean, 
         searching = false
     }
     GlassCard(modifier) {
-        Column(Modifier.padding(if (dense) 8.dp else 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(Modifier.padding(if (dense) 8.dp else 10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("MAP SEARCH", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.weight(1f))
-                if (onHostKeyboard != null) Box(Modifier.clip(RoundedCornerShape(99.dp)).background(p.accDim).border(1.dp, p.acc.copy(alpha = 0.4f), RoundedCornerShape(99.dp)).clickable { onHostKeyboard() }.padding(horizontal = 8.dp, vertical = 3.dp)) { Text("⌨ CAR KEYBOARD", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 8.sp, fontWeight = FontWeight.Bold) }
-                Text("✕", color = p.dim, fontSize = 14.sp, modifier = Modifier.clickable { onClose() })
+                Text("MAP SEARCH", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 10.5.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.weight(1f))
+                if (onVoice != null) {
+                    Box(Modifier.clip(RoundedCornerShape(99.dp)).background(p.accDim).border(1.dp, p.acc.copy(alpha = 0.55f), RoundedCornerShape(99.dp)).clickable { onClose(); onVoice() }.padding(horizontal = 9.dp, vertical = 3.dp)) {
+                        Text("🎤 VOICE", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+                Box(Modifier.clip(RoundedCornerShape(99.dp)).background(p.panel2).border(1.dp, p.hairline, RoundedCornerShape(99.dp)).clickable { onClose() }.padding(horizontal = 8.dp, vertical = 3.dp)) {
+                    Text("✕", color = p.ink, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
             }
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(99.dp)).background(p.panel2).border(1.dp, p.line2, RoundedCornerShape(99.dp)).padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("🔎", fontSize = 13.sp)
-                BasicTextField(query, { query = it }, Modifier.weight(1f), textStyle = TextStyle(color = p.ink, fontFamily = FontFamily.Monospace, fontSize = 12.sp), cursorBrush = SolidColor(p.acc), singleLine = true, decorationBox = { inner -> Box { if (query.isEmpty()) Text("SEARCH PLACES & ADDRESSES", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 10.sp, letterSpacing = 1.sp); inner() } })
-                if (query.isNotEmpty()) Text("✕", color = p.dim, fontSize = 12.sp, modifier = Modifier.clickable { query = "" })
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(99.dp)).background(p.panel2).border(1.dp, p.line2, RoundedCornerShape(99.dp)).padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("🔎", fontSize = 14.sp)
+                BasicTextField(query, { query = it }, Modifier.weight(1f), textStyle = TextStyle(color = p.ink, fontFamily = FontFamily.Monospace, fontSize = 13.sp, fontWeight = FontWeight.SemiBold), cursorBrush = SolidColor(p.acc), singleLine = true, decorationBox = { inner -> Box { if (query.isEmpty()) Text("SEARCH PLACES & ADDRESSES", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 10.5.sp, letterSpacing = 0.8.sp); inner() } })
+                if (query.isNotEmpty()) Text("✕", color = p.soft, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { query = "" })
             }
             if (dense) {
+                val keyH = 29.dp
                 listOf("1234567890", "QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM").forEach { keys ->
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                         keys.forEach { ch ->
-                            Box(Modifier.weight(1f).height(28.dp).clip(RoundedCornerShape(6.dp)).background(p.panel2).border(1.dp, p.hairline, RoundedCornerShape(6.dp)).clickable { query += ch.lowercaseChar() }, contentAlignment = Alignment.Center) {
-                                Text(ch.toString(), color = p.ink, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                            Box(Modifier.weight(1f).height(keyH).clip(RoundedCornerShape(6.dp)).background(p.panel2).border(1.dp, p.hairline, RoundedCornerShape(6.dp)).clickable { query += ch.lowercaseChar() }, contentAlignment = Alignment.Center) {
+                                Text(ch.toString(), color = p.ink, fontFamily = FontFamily.Monospace, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Box(Modifier.weight(4f).height(28.dp).clip(RoundedCornerShape(6.dp)).background(p.panel2).border(1.dp, p.hairline, RoundedCornerShape(6.dp)).clickable { query += " " }, contentAlignment = Alignment.Center) {
-                        Text("SPACE", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 9.sp, letterSpacing = 1.sp)
+                    if (onVoice != null) {
+                        Box(Modifier.weight(1.1f).height(keyH).clip(RoundedCornerShape(6.dp)).background(p.accDim).border(1.dp, p.acc.copy(alpha = 0.6f), RoundedCornerShape(6.dp)).clickable { onClose(); onVoice() }, contentAlignment = Alignment.Center) {
+                            Text("🎤", fontSize = 13.sp)
+                        }
                     }
-                    Box(Modifier.weight(1f).height(28.dp).clip(RoundedCornerShape(6.dp)).background(p.panel2).border(1.dp, p.err.copy(alpha = 0.35f), RoundedCornerShape(6.dp)).clickable { query = query.dropLast(1) }, contentAlignment = Alignment.Center) {
-                        Text("⌫", color = p.err, fontSize = 12.sp)
+                    Box(Modifier.weight(3.5f).height(keyH).clip(RoundedCornerShape(6.dp)).background(p.panel2).border(1.dp, p.hairline, RoundedCornerShape(6.dp)).clickable { query += " " }, contentAlignment = Alignment.Center) {
+                        Text("SPACE", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                    }
+                    Box(Modifier.weight(1.2f).height(keyH).clip(RoundedCornerShape(6.dp)).background(p.panel2).border(1.dp, p.err.copy(alpha = 0.45f), RoundedCornerShape(6.dp)).clickable { query = query.dropLast(1) }, contentAlignment = Alignment.Center) {
+                        Text("⌫", color = p.err, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    }
+                    if (results.isNotEmpty()) {
+                        Box(Modifier.weight(1.3f).height(keyH).clip(RoundedCornerShape(6.dp)).background(p.acc).clickable { onGo(results.first()) }, contentAlignment = Alignment.Center) {
+                            Text("GO ↵", color = if (p.isLight) Color.White else Color(0xFF05070A), fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
-            if (searching) Text("SEARCHING…", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 9.sp, letterSpacing = 1.sp)
-            results.take(5).forEach { place ->
-                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(p.panel2.copy(alpha = 0.8f)).padding(8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (searching) Text("SEARCHING…", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 10.sp, letterSpacing = 1.sp)
+            results.take(4).forEach { place ->
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(p.panel2.copy(alpha = 0.85f)).padding(8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Column(Modifier.weight(1f)) {
-                        Text(place.name, color = p.ink, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                        if (place.detail.isNotEmpty()) Text(place.detail, color = p.dim, fontSize = 9.sp, maxLines = 1)
+                        Text(place.name, color = p.ink, fontSize = 12.5.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                        if (place.detail.isNotEmpty()) Text(place.detail, color = p.soft, fontSize = 10.sp, maxLines = 1)
                     }
-                    Box(Modifier.clip(RoundedCornerShape(8.dp)).background(p.acc).clickable { onGo(place) }.padding(horizontal = 10.dp, vertical = 6.dp)) { Text("GO", color = Color(0xFF05070A), fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold) }
-                    if (hasRoute) Box(Modifier.clip(RoundedCornerShape(8.dp)).border(1.dp, p.acc, RoundedCornerShape(8.dp)).clickable { onAddStop(place) }.padding(horizontal = 8.dp, vertical = 6.dp)) { Text("+STOP", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold) }
+                    Box(Modifier.clip(RoundedCornerShape(8.dp)).background(p.acc).clickable { onGo(place) }.padding(horizontal = 11.dp, vertical = 6.dp)) { Text("GO", color = Color(0xFF05070A), fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold) }
+                    if (hasRoute) Box(Modifier.clip(RoundedCornerShape(8.dp)).border(1.dp, p.acc, RoundedCornerShape(8.dp)).clickable { onAddStop(place) }.padding(horizontal = 9.dp, vertical = 6.dp)) { Text("+STOP", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold) }
                 }
             }
-            if (!searching && query.length >= 3 && results.isEmpty()) Text("NO MATCHES — TRY A FULLER ADDRESS", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 9.sp)
+            if (!searching && query.length >= 3 && results.isEmpty()) Text("NO MATCHES — TRY A FULLER ADDRESS", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 10.sp)
         }
     }
 }

@@ -161,6 +161,18 @@ object CarApps {
         }
         return true
     }
+    fun sendKeyCode(name: String, keyCode: Int) {
+        key(name, KeyEvent(KeyEvent.ACTION_DOWN, keyCode))
+        key(name, KeyEvent(KeyEvent.ACTION_UP, keyCode))
+    }
+    fun sendText(name: String, text: String) {
+        if (text.isEmpty() || !ready.value) return
+        val kcm = android.view.KeyCharacterMap.load(android.view.KeyCharacterMap.VIRTUAL_KEYBOARD)
+        val events = kcm.getEvents(text.toCharArray()) ?: return
+        for (ev in events) {
+            key(name, ev)
+        }
+    }
     fun drop() {
         slots.values.forEach { s ->
             runCatching { s.vd?.release() }

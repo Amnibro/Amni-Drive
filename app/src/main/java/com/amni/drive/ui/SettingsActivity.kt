@@ -259,6 +259,15 @@ private fun WirePane() {
         runCatching { ctx.packageManager.getApplicationInfo("com.google.android.projection.gearhead", 0).enabled }.getOrNull()
     }
     val overlayOk = remember { Settings.canDrawOverlays(ctx) }
+    var micGranted by remember { mutableStateOf(com.amni.drive.voice.VoiceSearch.hasMicPermission(ctx)) }
+    val speechReady = remember { com.amni.drive.voice.VoiceSearch.available(ctx) }
+    var voiceTestMsg by remember { mutableStateOf<String?>(null) }
+    val micPermLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        micGranted = granted || com.amni.drive.voice.VoiceSearch.hasMicPermission(ctx)
+        voiceTestMsg = if (micGranted) "Microphone granted ✓ — tap 🎤 on the car display anytime" else "Microphone permission denied"
+    }
     val importLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments()
     ) { uris ->
@@ -357,6 +366,38 @@ private fun WirePane() {
         com.amni.drive.launcher.CarApps.probe()
     }.padding(horizontal = 14.dp, vertical = 10.dp)) {
         Text("RECHECK DIRECT CAR APP ENGINE", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+    }
+
+    Text(
+        when {
+            micGranted && speechReady -> "4. Car Voice & Dictation READY ✓ — tap 🎤 on the car bar, Amni-Map, or YouTube to speak."
+            micGranted -> "4. Microphone GRANTED ✓ — on-device speech service check: $speechReady."
+            else -> "4. Car Voice needs Microphone permission once on your phone so 🎤 works on the car display."
+        },
+        color = if (micGranted) p.acc else p.gold,
+        fontFamily = FontFamily.Monospace,
+        fontSize = 10.sp,
+        lineHeight = 14.sp
+    )
+    voiceTestMsg?.let { Text(it, color = p.ink, fontFamily = FontFamily.Monospace, fontSize = 10.sp) }
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (!micGranted) {
+            Box(Modifier.clip(RoundedCornerShape(12.dp)).background(p.acc).clickable {
+                micPermLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+            }.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                Text("GRANT MICROPHONE (CAR VOICE)", color = if (p.isLight) Color.White else Color(0xFF05070A), fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            }
+        } else {
+            Box(Modifier.clip(RoundedCornerShape(12.dp)).background(p.panel2).border(1.dp, p.acc, RoundedCornerShape(12.dp)).clickable {
+                com.amni.drive.voice.VoiceSearch.listen(
+                    ctx,
+                    onState = { voiceTestMsg = "🎤 $it" },
+                    onResult = { spoken -> if (!spoken.isNullOrBlank()) voiceTestMsg = "✓ Heard: “$spoken”" }
+                )
+            }.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                Text("🎤 TEST CAR VOICE", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            }
+        }
     }
 
     Text("CAR WEB SIGN-INS (SYNCED PHONE → CAR)", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
