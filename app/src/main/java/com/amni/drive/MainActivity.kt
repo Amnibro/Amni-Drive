@@ -71,7 +71,8 @@ onToggleWeather = { v -> lifecycleScope.launch { app.themeStore.setWeather(v) } 
 onConfirmPassenger = { controller.confirmPassenger() },
 onOpenSettings = { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) },
 initialPage = startPage,
-onSetTileLayout = { v -> lifecycleScope.launch { app.themeStore.setTileLayout(v) } }
+onSetTileLayout = { v -> lifecycleScope.launch { app.themeStore.setTileLayout(v) } },
+onSetWidgets = { v -> lifecycleScope.launch { app.themeStore.setWidgets(v) } }
 )
 }
 }

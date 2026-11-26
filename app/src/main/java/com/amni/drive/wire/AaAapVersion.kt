@@ -47,6 +47,8 @@ payload[1] = (msgId and 0xFF).toByte()
 System.arraycopy(body, 0, payload, 2, body.size)
 return encodeFrame(channel, flags, payload)
 }
+fun cappedVersionReply(major: Int, minor: Int): Pair<Int, Int> =
+if (major < 1 || (major == 1 && minor <= 7)) major to minor else 6 to 2
 fun versionResponse(major: Int = MAJOR, minor: Int = MINOR, status: Int = STATUS_OK): ByteArray {
 val body = ByteBuffer.allocate(6).order(ByteOrder.BIG_ENDIAN)
 body.putShort(major.toShort())
@@ -162,11 +164,12 @@ val req = frames.firstOrNull { it.msgId == MSG_VERSION_REQUEST }
 if (req != null) {
 val maj = if (req.payload.size >= 2) ((req.payload[0].toInt() and 0xFF) shl 8) or (req.payload[1].toInt() and 0xFF) else MAJOR
 val min = if (req.payload.size >= 4) ((req.payload[2].toInt() and 0xFF) shl 8) or (req.payload[3].toInt() and 0xFF) else MINOR
-val rsp = versionResponse(maj, min, STATUS_OK)
+val (rMaj, rMin) = cappedVersionReply(maj, min)
+val rsp = versionResponse(rMaj, rMin, STATUS_OK)
 io.write(rsp)
-log("AAP TX VersionResponse (reply) ${rsp.size}B hex=${hexHead(rsp)} echo=$maj.$min")
+log("AAP TX VersionResponse (reply) ${rsp.size}B hex=${hexHead(rsp)} hu=$maj.$min reply=$rMaj.$rMin")
 resetHold()
-return afterVersionOk("reply $maj.$min")
+return afterVersionOk("reply $rMaj.$rMin")
 }
 val earlySsl = sslBodiesOf(frames)
 if (earlySsl.isNotEmpty()) {
@@ -185,11 +188,12 @@ if (frames.any { it.msgId == MSG_VERSION_REQUEST }) {
 val r = frames.first { it.msgId == MSG_VERSION_REQUEST }
 val maj = if (r.payload.size >= 2) ((r.payload[0].toInt() and 0xFF) shl 8) or (r.payload[1].toInt() and 0xFF) else MAJOR
 val min = if (r.payload.size >= 4) ((r.payload[2].toInt() and 0xFF) shl 8) or (r.payload[3].toInt() and 0xFF) else minor
-val rsp = versionResponseFlags(maj, min, control)
+val (rMaj, rMin) = cappedVersionReply(maj, min)
+val rsp = versionResponseFlags(rMaj, rMin, control)
 io.write(rsp)
-log("AAP TX VersionResponse after phone-first ${rsp.size}B hex=${hexHead(rsp)}")
+log("AAP TX VersionResponse after phone-first ${rsp.size}B hex=${hexHead(rsp)} hu=$maj.$min reply=$rMaj.$rMin")
 resetHold()
-return afterVersionOk("phone-first 1.$minor $tag")
+return afterVersionOk("phone-first $rMaj.$rMin $tag")
 }
 val ssl = sslBodiesOf(frames)
 if (ssl.isNotEmpty()) {

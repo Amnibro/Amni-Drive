@@ -17,6 +17,7 @@ import com.amni.drive.gate.speed.MotionSource
 import com.amni.drive.launcher.AppEntry
 import com.amni.drive.launcher.AppInventory
 import com.amni.drive.launcher.AppLauncher
+import com.amni.drive.launcher.CarApps
 import com.amni.drive.launcher.CarEmbed
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -54,7 +55,10 @@ class DriveController(context: Context, private val store: ConfigStore) {
                 useRear -> rearId
                 else -> null
             }
-            val embedded = surfaceDisplayId != null && CarEmbed.supports(app, entry.packageName) && CarEmbed.open(app, entry, surfaceDisplayId)
+            val slot = if (entry.packageName == CarEmbed.MAP_PKG) CarApps.MAP else CarApps.MEDIA
+            val direct = surfaceDisplayId != null && CarApps.ready.value
+            if (direct) { CarApps.open(app, slot, entry.packageName); CarEmbed.slot(entry.packageName, entry.label, surfaceDisplayId!!, slot) }
+            val embedded = direct || surfaceDisplayId != null && CarEmbed.supports(app, entry.packageName) && CarEmbed.open(app, entry, surfaceDisplayId)
             val ok = embedded || (surfaceDisplayId != null && CarEmbed.mirror(app, entry, surfaceDisplayId)) || launcher.launch(entry, target)
             if (!ok && surfaceDisplayId != null) launcher.launch(entry, null)
         }

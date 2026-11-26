@@ -26,7 +26,7 @@ object CarEmbed {
     private const val SURFACE = 4
     private const val GONE = 5
     private const val TAG = "Amni.Embed"
-    data class Shown(val pkg: String, val label: String, val displayId: Int, val at: Long, val front: Boolean = true, val mirror: Boolean = false)
+    data class Shown(val pkg: String, val label: String, val displayId: Int, val at: Long, val front: Boolean = true, val mirror: Boolean = false, val slot: String? = null)
     val shown = MutableStateFlow<Shown?>(null)
     private var remote: Messenger? = null
     private var conn: ServiceConnection? = null
@@ -55,20 +55,22 @@ object CarEmbed {
         Log.i(TAG, "mirror ${entry.packageName} on display $displayId")
         return true
     }
+    fun slot(pkg: String, label: String, displayId: Int, slot: String) { shown.value = Shown(pkg, label, displayId, SystemClock.uptimeMillis(), slot = slot); target = 0 }
     fun attach(ctx: Context, pkg: String) { if (conn == null) bind(ctx.applicationContext, pkg) }
     fun full(pkg: String, displayId: Int, mirror: Boolean) { shown.value = Shown(pkg, pkg, displayId, SystemClock.uptimeMillis(), mirror = mirror) }
     fun home() { shown.value = shown.value?.copy(front = false); target = 0 }
-    fun drop(displayId: Int) { shown.value = null; target = 0; area = null; CarMirror.area = null; unbind() }
+    fun drop(displayId: Int) { shown.value = null; target = 0; area = null; CarMirror.area = null; CarApps.drop(); unbind() }
     fun surface(s: Surface?, w: Int, h: Int, dpi: Int) { frame = Bundle().apply { putParcelable("s", s); putInt("w", w); putInt("h", h); putInt("dpi", dpi) }; sendFrame() }
     fun area(a: IntArray?) { area = a }
     private fun hit(a: IntArray?, ev: MotionEvent): Boolean = a != null && ev.x >= a[0] && ev.x < a[2] && ev.y >= a[1] && ev.y < a[3]
     fun route(root: View, ev: MotionEvent, displayId: Int): Boolean {
-        if (ev.actionMasked == MotionEvent.ACTION_DOWN) target = if (hit(CarMirror.area, ev)) 2 else if (hit(area, ev) && remote != null) 1 else 0
+        if (ev.actionMasked == MotionEvent.ACTION_DOWN) target = if (CarApps.pick(ev)) 3 else if (hit(CarMirror.area, ev)) 2 else if (hit(area, ev) && remote != null) 1 else 0
+        if (target == 3) { CarApps.touch(ev); return true }
         val a = (if (target == 2) CarMirror.area else if (target == 1) area else null) ?: return root.dispatchTouchEvent(ev)
         if (target == 2) CarMirror.touch(ev, a[0], a[1]) else MotionEvent.obtain(ev).let { c -> c.source = InputDevice.SOURCE_TOUCHSCREEN; c.offsetLocation(-a[0].toFloat(), -a[1].toFloat()); send(Message.obtain(null, TOUCH).apply { obj = c }); c.recycle() }
         return true
     }
-    fun key(ev: KeyEvent, displayId: Int): Boolean = on(displayId)?.let { if (it.mirror) return (ev.keyCode == KeyEvent.KEYCODE_BACK || ev.keyCode == KeyEvent.KEYCODE_ESCAPE) && (ev.action != KeyEvent.ACTION_UP || CarMirror.back() || true); send(Message.obtain(null, KEY).apply { obj = KeyEvent(ev) }); true } ?: false
+    fun key(ev: KeyEvent, displayId: Int): Boolean = on(displayId)?.let { if (it.slot != null) return CarApps.key(it.slot, ev); if (it.mirror) return (ev.keyCode == KeyEvent.KEYCODE_BACK || ev.keyCode == KeyEvent.KEYCODE_ESCAPE) && (ev.action != KeyEvent.ACTION_UP || CarMirror.back() || true); send(Message.obtain(null, KEY).apply { obj = KeyEvent(ev) }); true } ?: false
     private fun sendFrame() { frame?.let { f -> send(Message.obtain(null, SURFACE).apply { data = Bundle(f) }) } }
     private fun send(m: Message) { runCatching { remote?.send(m) }.onFailure { Log.w(TAG, "send ${m.what} failed: ${it.message}") } }
     private fun bind(app: Context, pkg: String): Boolean {

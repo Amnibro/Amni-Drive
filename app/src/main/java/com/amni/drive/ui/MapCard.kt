@@ -102,32 +102,53 @@ fun MapCard(
     GlassCard(modifier) {
         Box(Modifier.fillMaxSize().clip(RoundedCornerShape(corner))) {
             AmniMap(camera, tiles, route, reports, stops, stops.lastOrNull(), location, p.acc, p.panel2, onLongPress, Modifier.fillMaxSize())
-            Column(Modifier.align(Alignment.TopEnd).padding(btnPad), verticalArrangement = Arrangement.spacedBy(btnGap), horizontalAlignment = Alignment.CenterHorizontally) {
-                MapBtn(Icons.Rounded.Search, if (dense) "" else "FIND", searchOpen, p.acc, dense) { searchOpen = !searchOpen; onShowLayers(false); onShowReport(false) }
-                onVoice?.let { v -> MapBtn(Icons.Rounded.Mic, if (dense) "" else "VOICE", false, p.acc, dense) { searchOpen = false; v() } }
-                if (!dense) MapBtn(Icons.Rounded.Warning, "REPORT", showReport, p.err, dense) { onShowReport(!showReport); onShowLayers(false); searchOpen = false }
-                MapBtn(Icons.Rounded.MyLocation, if (dense) "" else "FOLLOW", camera.follow, p.acc, dense) { camera.follow = true }
-                MapBtn(Icons.Rounded.Layers, if (dense) "" else "MAP", showLayers, p.acc, dense) { onShowLayers(!showLayers); onShowReport(false); searchOpen = false }
-                MapBtn(Icons.Rounded.Add, "", false, p.acc, dense) { camera.zoom = (camera.zoom + 1).coerceAtMost(17) }
-                MapBtn(Icons.Rounded.Remove, "", false, p.acc, dense) { camera.zoom = (camera.zoom - 1).coerceAtLeast(11) }
-            }
-            route?.let { r ->
-                Row(Modifier.align(Alignment.TopStart).padding(10.dp).clip(RoundedCornerShape(16.dp)).background(chromeBg).border(1.dp, p.acc.copy(alpha = 0.2f), RoundedCornerShape(16.dp)).padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Box(Modifier.size(36.dp).clip(CircleShape).background(p.accDim), contentAlignment = Alignment.Center) { Text("↱", color = p.acc, fontSize = 18.sp) }
-                    Column {
-                        Text("${(r.durationS / 60).roundToInt()} min · " + "%.1f mi".format(r.distanceM / 1609.34), color = p.ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                        Text(if (stops.size > 1) "Via ${stops.size - 1} stop${if (stops.size > 2) "s" else ""} · traffic on route" else "Traffic colored on route", color = p.dim, fontSize = 11.sp)
-                    }
-                    Box(Modifier.clip(RoundedCornerShape(99.dp)).border(1.dp, p.err.copy(alpha = 0.55f), RoundedCornerShape(99.dp)).clickable { onEndRoute() }.padding(horizontal = 12.dp, vertical = 6.dp)) { Text("END", color = p.err, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold) }
+            if (dense) {
+                Row(
+                    Modifier.align(Alignment.TopEnd).padding(btnPad),
+                    horizontalArrangement = Arrangement.spacedBy(btnGap),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    MapBtn(Icons.Rounded.Search, "", searchOpen, p.acc, true) { searchOpen = !searchOpen; onShowLayers(false); onShowReport(false) }
+                    onVoice?.let { v -> MapBtn(Icons.Rounded.Mic, "", false, p.acc, true) { searchOpen = false; v() } }
+                    MapBtn(Icons.Rounded.MyLocation, "", camera.follow, p.acc, true) { camera.follow = true }
+                    MapBtn(Icons.Rounded.Layers, "", showLayers, p.acc, true) { onShowLayers(!showLayers); onShowReport(false); searchOpen = false }
+                }
+                Column(
+                    Modifier.align(Alignment.CenterEnd).padding(end = btnPad),
+                    verticalArrangement = Arrangement.spacedBy(btnGap),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    MapBtn(Icons.Rounded.Add, "", false, p.acc, true) { camera.zoom = (camera.zoom + 1).coerceAtMost(17) }
+                    MapBtn(Icons.Rounded.Remove, "", false, p.acc, true) { camera.zoom = (camera.zoom - 1).coerceAtLeast(11) }
+                }
+            } else {
+                Column(Modifier.align(Alignment.TopEnd).padding(btnPad), verticalArrangement = Arrangement.spacedBy(btnGap), horizontalAlignment = Alignment.CenterHorizontally) {
+                    MapBtn(Icons.Rounded.Search, "FIND", searchOpen, p.acc, false) { searchOpen = !searchOpen; onShowLayers(false); onShowReport(false) }
+                    onVoice?.let { v -> MapBtn(Icons.Rounded.Mic, "VOICE", false, p.acc, false) { searchOpen = false; v() } }
+                    MapBtn(Icons.Rounded.Warning, "REPORT", showReport, p.err, false) { onShowReport(!showReport); onShowLayers(false); searchOpen = false }
+                    MapBtn(Icons.Rounded.MyLocation, "FOLLOW", camera.follow, p.acc, false) { camera.follow = true }
+                    MapBtn(Icons.Rounded.Layers, "MAP", showLayers, p.acc, false) { onShowLayers(!showLayers); onShowReport(false); searchOpen = false }
+                    MapBtn(Icons.Rounded.Add, "", false, p.acc, false) { camera.zoom = (camera.zoom + 1).coerceAtMost(17) }
+                    MapBtn(Icons.Rounded.Remove, "", false, p.acc, false) { camera.zoom = (camera.zoom - 1).coerceAtLeast(11) }
                 }
             }
-            if (routing) Box(Modifier.align(Alignment.TopStart).padding(10.dp).clip(RoundedCornerShape(99.dp)).background(p.accDim).border(1.dp, p.acc.copy(alpha = 0.3f), RoundedCornerShape(99.dp)).padding(horizontal = 14.dp, vertical = 7.dp)) { Text("Routing…", color = p.acc, fontSize = 12.sp, fontWeight = FontWeight.Medium) }
-            if (route == null && !routing && !searchOpen) Box(Modifier.align(Alignment.BottomStart).padding(10.dp).clip(RoundedCornerShape(99.dp)).background(chromeBg).border(1.dp, chromeLine, RoundedCornerShape(99.dp)).padding(horizontal = 12.dp, vertical = 7.dp)) { Text("Search or long-press for destination", color = p.dim, fontSize = 11.sp) }
-            if (!netOk) Box(Modifier.align(Alignment.BottomCenter).padding(10.dp).clip(RoundedCornerShape(99.dp)).background(Color(0xEE3A2808)).border(1.dp, Color(0xFFFFB454).copy(alpha = 0.45f), RoundedCornerShape(99.dp)).padding(horizontal = 14.dp, vertical = 8.dp)) { Text("No network — map, search & routing need Wi‑Fi/hotspot", color = Color(0xFFFFB454), fontSize = 11.sp, fontWeight = FontWeight.SemiBold) }
+            route?.let { r ->
+                Row(Modifier.align(Alignment.TopStart).padding(10.dp).clip(RoundedCornerShape(16.dp)).background(chromeBg).border(1.dp, p.acc.copy(alpha = 0.35f), RoundedCornerShape(16.dp)).padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(Modifier.size(32.dp).clip(CircleShape).background(p.accDim), contentAlignment = Alignment.Center) { Text("↱", color = p.acc, fontSize = 16.sp) }
+                    Column {
+                        Text("${(r.durationS / 60).roundToInt()} min · " + "%.1f mi".format(r.distanceM / 1609.34), color = p.ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        Text(if (stops.size > 1) "Via ${stops.size - 1} stop${if (stops.size > 2) "s" else ""}" else "Traffic on route", color = p.soft, fontSize = 11.sp)
+                    }
+                    Box(Modifier.clip(RoundedCornerShape(99.dp)).border(1.dp, p.err.copy(alpha = 0.7f), RoundedCornerShape(99.dp)).clickable { onEndRoute() }.padding(horizontal = 10.dp, vertical = 5.dp)) { Text("END", color = p.err, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold) }
+                }
+            }
+            if (routing) Box(Modifier.align(Alignment.TopStart).padding(10.dp).clip(RoundedCornerShape(99.dp)).background(p.accDim).border(1.dp, p.acc.copy(alpha = 0.45f), RoundedCornerShape(99.dp)).padding(horizontal = 14.dp, vertical = 7.dp)) { Text("Routing…", color = p.acc, fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
+            if (route == null && !routing && !searchOpen && (!dense || fullNav)) Box(Modifier.align(Alignment.BottomStart).padding(10.dp).clip(RoundedCornerShape(99.dp)).background(chromeBg).border(1.dp, chromeLine, RoundedCornerShape(99.dp)).padding(horizontal = 12.dp, vertical = 7.dp)) { Text("Search or long-press for destination", color = p.soft, fontSize = 11.sp) }
+            if (!netOk) Box(Modifier.align(Alignment.BottomCenter).padding(10.dp).clip(RoundedCornerShape(99.dp)).background(Color(0xEE3A2808)).border(1.dp, Color(0xFFFFB454).copy(alpha = 0.55f), RoundedCornerShape(99.dp)).padding(horizontal = 14.dp, vertical = 8.dp)) { Text("No network — map, search & routing need Wi‑Fi/hotspot", color = Color(0xFFFFB454), fontSize = 11.sp, fontWeight = FontWeight.SemiBold) }
             if (searchOpen) SearchPanel(location, route != null, dense, Modifier.align(Alignment.TopCenter).fillMaxWidth(if (dense) 0.92f else 0.7f).padding(top = 8.dp, start = 8.dp, end = if (dense) 48.dp else 8.dp), { searchOpen = false; onGo(it) }, { searchOpen = false; onAddStop(it) }, { searchOpen = false }, hostKeyboard?.let { hk -> { searchOpen = false; hk() } })
-            if (showLayers) LayersPanel(camera, tiles, Modifier.align(Alignment.TopEnd).padding(end = 62.dp, top = 8.dp))
+            if (showLayers) LayersPanel(camera, tiles, Modifier.align(Alignment.TopEnd).padding(end = 62.dp, top = if (dense) 48.dp else 8.dp))
             if (showReport) ReportPanel(location, reportStore, Modifier.align(if (fullNav) Alignment.BottomCenter else Alignment.BottomEnd).padding(8.dp)) { onShowReport(false) }
-            Text("© OSM · CARTO · ESRI", color = Color(0xFF5B6A7D), fontFamily = FontFamily.Monospace, fontSize = 7.sp, modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp))
+            if (!dense || fullNav) Text("© OSM · OpenFreeMap", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 8.sp, modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp))
         }
     }
 }

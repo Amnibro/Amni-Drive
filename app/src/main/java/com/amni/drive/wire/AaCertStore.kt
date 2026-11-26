@@ -135,11 +135,42 @@ object AaCertStore {
         status
     }
 
+    fun importPkcs12(ctx: Context, p12Bytes: ByteArray, password: String = ""): Result<CertStatus> = runCatching {
+        val ks = KeyStore.getInstance("PKCS12")
+        val pass = password.toCharArray()
+        ks.load(ByteArrayInputStream(p12Bytes), pass)
+        val alias = ks.aliases().toList().firstOrNull { ks.isKeyEntry(it) }
+            ?: error("No private key entry in PKCS#12 file")
+        val key = ks.getKey(alias, pass) as? PrivateKey ?: error("PKCS#12 key is not a PrivateKey")
+        val chain = ks.getCertificateChain(alias)?.map { it as X509Certificate }
+            ?: listOfNotNull(ks.getCertificate(alias) as? X509Certificate)
+        require(chain.isNotEmpty()) { "No certificate chain in PKCS#12 file" }
+        val certPem = chain.joinToString("\n") { c ->
+            "-----BEGIN CERTIFICATE-----\n" +
+                java.util.Base64.getMimeEncoder(64, "\n".toByteArray()).encodeToString(c.encoded) +
+                "\n-----END CERTIFICATE-----"
+        }.toByteArray(Charsets.UTF_8)
+        val keyPem = (
+            "-----BEGIN PRIVATE KEY-----\n" +
+                java.util.Base64.getMimeEncoder(64, "\n".toByteArray()).encodeToString(key.encoded) +
+                "\n-----END PRIVATE KEY-----\n"
+            ).toByteArray(Charsets.UTF_8)
+        importPem(ctx, certPem, keyPem, requireGoogleRoot = false).getOrThrow()
+    }
+
     @Volatile var lastAuthStatus: Int? = null
         private set
     @Volatile var preferFallbackThisBoot: Boolean = false
         private set
-    fun noteAuthRefusal(status: Int) { lastAuthStatus = status; if (status != 0) { preferFallbackThisBoot = !preferFallbackThisBoot; Log.w(TAG, "AuthComplete refused status=$status; preferFallbackNext=$preferFallbackThisBoot") } }
+    fun noteAuthRefusal(status: Int) {
+        lastAuthStatus = status
+        if (status == 0) {
+            preferFallbackThisBoot = false
+        } else {
+            preferFallbackThisBoot = !preferFallbackThisBoot
+            runCatching { Log.w(TAG, "AuthComplete refused status=$status; preferFallbackNext=$preferFallbackThisBoot") }
+        }
+    }
     fun ensureReady(ctx: Context) { val st = status(ctx); if (st.source == "FALLBACK" || (st.source == "DOWNLOADED" && st.expired)) downloadFromIscle(ctx) }
     fun loadKeyManagers(ctx: Context?, log: (String) -> Unit = {}): Array<KeyManager>? {
         if (ctx == null) return null

@@ -60,13 +60,19 @@ object AaPostTls {
 
     data class TouchSpec(val width: Int, val height: Int)
 
+    data class KeyEvt(val keycode: Int, val down: Boolean)
+
+    data class RelEvt(val keycode: Int, val delta: Int)
+
     data class ChanInfo(
         val id: Int,
         val kind: String,
-        val videoSpec: VideoSpec? = null,
+        val videoSpecs: List<VideoSpec> = emptyList(),
         val touchSpec: TouchSpec? = null,
         val keys: List<Int> = emptyList()
-    )
+    ) {
+        val videoSpec: VideoSpec? get() = videoSpecs.firstOrNull()
+    }
 
     data class Result(val discovery: Boolean, val videoChannel: Int, val rxFrames: Int, val notes: String)
 
@@ -262,7 +268,7 @@ object AaPostTls {
     private fun parseService(emb: ByteArray): ChanInfo? {
         var id = -1
         var kind = "unk"
-        var videoSpec: VideoSpec? = null
+        var videoSpecs = emptyList<VideoSpec>()
         var touchSpec: TouchSpec? = null
         var keys = emptyList<Int>()
         val pos = intArrayOf(0)
@@ -284,7 +290,7 @@ object AaPostTls {
                         2 -> kind = "sensor"
                         3 -> {
                             kind = "av"
-                            videoSpec = parseMediaSinkVideo(sub)
+                            videoSpecs = parseMediaSinkVideo(sub)
                         }
                         4 -> {
                             kind = "input"
@@ -300,36 +306,149 @@ object AaPostTls {
                 !skipField(emb, pos, wire) -> break
             }
         }
-        return if (id >= 0) ChanInfo(id, kind, videoSpec, touchSpec, keys) else null
+        return if (id >= 0) ChanInfo(id, kind, videoSpecs, touchSpec, keys) else null
     }
 
-    private fun parseMediaSinkVideo(sub: ByteArray): VideoSpec? {
-        var availType = 0
-        var firstVideo: VideoSpec? = null
+    private fun parseMediaSinkVideo(sub: ByteArray): List<VideoSpec> {
+        val specs = ArrayList<VideoSpec>()
         val pos = intArrayOf(0)
         while (pos[0] < sub.size) {
             val tag = readVarint(sub, pos).toInt()
             val field = tag ushr 3
             val wire = tag and 7
             when {
-                wire == 0 -> {
-                    val v = readVarint(sub, pos).toInt()
-                    if (field == 1) availType = v
-                }
                 wire == 2 -> {
                     val len = readVarint(sub, pos).toInt()
                     if (len < 0 || pos[0] + len > sub.size) break
                     val vc = sub.copyOfRange(pos[0], pos[0] + len)
                     pos[0] += len
-                    if (field == 4 && firstVideo == null) {
-                        firstVideo = parseVideoConfig(vc)
+                    if (field == 4) {
+                        specs.add(parseVideoConfig(vc))
                     }
                 }
                 !skipField(sub, pos, wire) -> break
             }
         }
-        // availType 3 = H264_BP (or video_configs present without audio configs)
-        return if (firstVideo != null && (availType == 3 || availType == 5)) firstVideo else firstVideo
+        return specs
+    }
+
+    fun selectVideoConfig(specs: List<VideoSpec>, indices: List<Int>): Pair<Int, VideoSpec> {
+        if (specs.isEmpty()) return (indices.firstOrNull() ?: 0) to VideoSpec()
+        val candidates = if (indices.isNotEmpty()) indices else specs.indices.toList()
+        val valid = candidates.mapNotNull { idx -> specs.getOrNull(idx)?.let { idx to it } }
+        val chosen = valid
+            .filter { (_, s) -> s.width <= 1920 && s.height <= 1080 }
+            .maxByOrNull { (_, s) -> s.width.toLong() * s.height.toLong() }
+            ?: valid.firstOrNull()
+            ?: (0 to specs.first())
+        return chosen
+    }
+
+    fun keyBindingRequestBody(keycodes: List<Int>): ByteArray {
+        val list = if (keycodes.isNotEmpty()) keycodes else listOf(3, 4, 19, 20, 21, 22, 23, 66, 85, 87, 88, 260, 261)
+        val out = ByteArrayOutputStream()
+        for (code in list.distinct()) {
+            out.write(AaPb.u32(1, code))
+        }
+        return out.toByteArray()
+    }
+
+    fun parseKeyEvents(body: ByteArray): List<KeyEvt> {
+        val out = ArrayList<KeyEvt>()
+        val pos = intArrayOf(0)
+        while (pos[0] < body.size) {
+            val tag = readVarint(body, pos).toInt()
+            val field = tag ushr 3
+            val wire = tag and 7
+            if (wire == 2) {
+                val len = readVarint(body, pos).toInt()
+                if (len < 0 || pos[0] + len > body.size) break
+                val kb = body.copyOfRange(pos[0], pos[0] + len)
+                pos[0] += len
+                if (field == 4) {
+                    val kp = intArrayOf(0)
+                    while (kp[0] < kb.size) {
+                        val kt = readVarint(kb, kp).toInt()
+                        val kf = kt ushr 3
+                        val kw = kt and 7
+                        if (kw == 2) {
+                            val klen = readVarint(kb, kp).toInt()
+                            if (klen < 0 || kp[0] + klen > kb.size) break
+                            val entry = kb.copyOfRange(kp[0], kp[0] + klen)
+                            kp[0] += klen
+                            if (kf == 1) {
+                                var code = -1
+                                var down = false
+                                val ep = intArrayOf(0)
+                                while (ep[0] < entry.size) {
+                                    val et = readVarint(entry, ep).toInt()
+                                    val ef = et ushr 3
+                                    val ew = et and 7
+                                    if (ew == 0) {
+                                        val ev = readVarint(entry, ep).toInt()
+                                        when (ef) {
+                                            1 -> code = ev
+                                            2 -> down = ev != 0
+                                        }
+                                    } else if (!skipField(entry, ep, ew)) break
+                                }
+                                if (code >= 0) out.add(KeyEvt(code, down))
+                            }
+                        } else if (!skipField(kb, kp, kw)) break
+                    }
+                }
+            } else if (!skipField(body, pos, wire)) break
+        }
+        return out
+    }
+
+    fun parseRelativeEvents(body: ByteArray): List<RelEvt> {
+        val out = ArrayList<RelEvt>()
+        val pos = intArrayOf(0)
+        while (pos[0] < body.size) {
+            val tag = readVarint(body, pos).toInt()
+            val field = tag ushr 3
+            val wire = tag and 7
+            if (wire == 2) {
+                val len = readVarint(body, pos).toInt()
+                if (len < 0 || pos[0] + len > body.size) break
+                val rb = body.copyOfRange(pos[0], pos[0] + len)
+                pos[0] += len
+                if (field == 6) {
+                    val rp = intArrayOf(0)
+                    while (rp[0] < rb.size) {
+                        val rt = readVarint(rb, rp).toInt()
+                        val rf = rt ushr 3
+                        val rw = rt and 7
+                        if (rw == 2) {
+                            val rlen = readVarint(rb, rp).toInt()
+                            if (rlen < 0 || rp[0] + rlen > rb.size) break
+                            val entry = rb.copyOfRange(rp[0], rp[0] + rlen)
+                            rp[0] += rlen
+                            if (rf == 1) {
+                                var code = 0
+                                var delta = 0
+                                val ep = intArrayOf(0)
+                                while (ep[0] < entry.size) {
+                                    val et = readVarint(entry, ep).toInt()
+                                    val ef = et ushr 3
+                                    val ew = et and 7
+                                    if (ew == 0) {
+                                        val ev = readVarint(entry, ep).toInt()
+                                        when (ef) {
+                                            1 -> code = ev
+                                            2 -> delta = ev
+                                        }
+                                    } else if (!skipField(entry, ep, ew)) break
+                                }
+                                if (delta != 0) out.add(RelEvt(code, delta))
+                            }
+                        } else if (!skipField(rb, rp, rw)) break
+                    }
+                }
+            } else if (!skipField(body, pos, wire)) break
+        }
+        return out
     }
 
     private data class TouchPtr(val x: Float, val y: Float, val id: Int)
@@ -418,11 +537,14 @@ object AaPostTls {
         var opened = 0
         val notes = StringBuilder()
         var videoSpec = VideoSpec()
+        var videoSpecs: List<VideoSpec> = emptyList()
         var inputKeys: List<Int> = emptyList()
         var touchSpec: TouchSpec? = null
         var engine: AmniProjectionEngine? = null
         var videoStarted = false
         var videoFocused = false
+        var pendingStartIdx = -1
+        var waitConfigDeadlineMs = 0L
         val codecConfigBytes = java.util.concurrent.atomic.AtomicReference<ByteArray?>(null)
         val unacked = AtomicInteger(0)
         val maxUnacked = AtomicInteger(2)
@@ -518,6 +640,16 @@ object AaPostTls {
             }
         }
 
+        fun beginVideoStream(cfgIndex: Int) {
+            if (videoStarted || videoCh <= 0) return
+            videoStarted = true
+            pendingStartIdx = -1
+            waitConfigDeadlineMs = 0L
+            txEncrypted(videoCh, MEDIA_START, AaPb.cat(AaPb.u32(1, 0), AaPb.u32(2, cfgIndex)), control = false, tag = "VideoStart idx=$cfgIndex")
+            txEncrypted(videoCh, MEDIA_VIDEO_FOCUS_REQUEST, AaPb.cat(AaPb.u32(2, 1), AaPb.u32(3, 0)), control = false, tag = "VideoFocusRequest")
+            startProjectionIfNeeded()
+        }
+
         val nameVariants = listOf(
             "AmniDrive" to "Amni",
             "Android Auto" to "Google"
@@ -558,13 +690,14 @@ object AaPostTls {
                         discovery = true
                         val chans = parseChannels(body)
                         log("POST-TLS ServiceDiscoveryResponse channels=${chans.size} ${chans.joinToString { "${it.id}:${it.kind}" }}")
-                        val av = chans.firstOrNull { it.kind == "av" }
+                        val av = chans.firstOrNull { it.kind == "av" && it.videoSpecs.isNotEmpty() } ?: chans.firstOrNull { it.kind == "av" }
                         val inp = chans.firstOrNull { it.kind == "input" }
                         val sens = chans.firstOrNull { it.kind == "sensor" }
                         if (av != null) {
                             videoCh = av.id
+                            videoSpecs = av.videoSpecs
                             av.videoSpec?.let { videoSpec = it }
-                            log("POST-TLS picked videoCh=$videoCh spec=${videoSpec.width}x${videoSpec.height} margins=${videoSpec.widthMargin}x${videoSpec.heightMargin} dpi=${videoSpec.dpi}")
+                            log("POST-TLS picked videoCh=$videoCh configs=${videoSpecs.size} primary=${videoSpec.width}x${videoSpec.height} margins=${videoSpec.widthMargin}x${videoSpec.heightMargin} dpi=${videoSpec.dpi}")
                             openChannel(videoCh, "av")
                         } else {
                             videoCh = CH_VIDEO
@@ -610,7 +743,7 @@ object AaPostTls {
                                 // Setup { type = 3 (MEDIA_CODEC_VIDEO_H264_BP) }
                                 txEncrypted(videoCh, MEDIA_SETUP, AaPb.u32(1, 3), control = false, tag = "VideoSetup")
                             }
-                            inputCh -> txEncrypted(inputCh, INPUT_KEY_BINDING_REQUEST, AaPb.cat(*inputKeys.map { AaPb.u32(1, it) }.toTypedArray()), control = false, tag = "KeyBindingRequest keys=${inputKeys.size}")
+                            inputCh -> txEncrypted(inputCh, INPUT_KEY_BINDING_REQUEST, keyBindingRequestBody(inputKeys), control = false, tag = "KeyBindingRequest keys=${inputKeys.size}")
                         }
                     }
                     return
@@ -626,35 +759,45 @@ object AaPostTls {
             if (channel == videoCh) {
                 when (msgId) {
                     MEDIA_CONFIG -> {
-                        // Parse status (field 1), max_unacked (field 2), config_indices (field 3)
+                        // Parse status (field 1), max_unacked (field 2), configuration_indices (field 3, repeated or packed)
                         var cfgStatus = 2
                         var cfgMaxUnacked = 2
-                        var cfgIndex = -1
+                        val indices = ArrayList<Int>()
                         val pos = intArrayOf(0)
                         while (pos[0] < body.size) {
                             val tag = readVarint(body, pos).toInt()
                             val field = tag ushr 3
                             val wire = tag and 7
-                            if (wire == 0) {
-                                val v = readVarint(body, pos).toInt()
-                                when (field) {
-                                    1 -> cfgStatus = v
-                                    2 -> cfgMaxUnacked = v
-                                    3 -> if (cfgIndex < 0) cfgIndex = v
+                            when {
+                                wire == 0 -> {
+                                    val v = readVarint(body, pos).toInt()
+                                    when (field) {
+                                        1 -> cfgStatus = v
+                                        2 -> cfgMaxUnacked = v
+                                        3 -> indices.add(v)
+                                    }
                                 }
-                            } else if (!skipField(body, pos, wire)) break
+                                wire == 2 && field == 3 -> {
+                                    val len = readVarint(body, pos).toInt()
+                                    val end = (pos[0] + len).coerceAtMost(body.size)
+                                    while (pos[0] < end) indices.add(readVarint(body, pos).toInt())
+                                }
+                                !skipField(body, pos, wire) -> break
+                            }
                         }
-                        if (cfgIndex < 0) cfgIndex = 0
+                        val (chosenIdx, chosenSpec) = selectVideoConfig(videoSpecs, indices)
+                        videoSpec = chosenSpec
                         maxUnacked.set(cfgMaxUnacked.coerceAtLeast(1))
                         notes.append("vcfg-st$cfgStatus;")
-                        log("POST-TLS Video Config status=$cfgStatus maxUnacked=${maxUnacked.get()} idx=$cfgIndex")
+                        log("POST-TLS Video Config status=$cfgStatus maxUnacked=${maxUnacked.get()} indices=$indices chosen=$chosenIdx (${chosenSpec.width}x${chosenSpec.height} dpi=${chosenSpec.dpi})")
                         if (!videoStarted) {
-                            videoStarted = true
-                            // Start { session_id=0, configuration_index=cfgIndex }
-                            txEncrypted(videoCh, MEDIA_START, AaPb.cat(AaPb.u32(1, 0), AaPb.u32(2, cfgIndex)), control = false, tag = "VideoStart")
-                            // VideoFocusRequestNotification { mode=1 (VIDEO_FOCUS_PROJECTED), reason=0 }
-                            txEncrypted(videoCh, MEDIA_VIDEO_FOCUS_REQUEST, AaPb.cat(AaPb.u32(2, 1), AaPb.u32(3, 0)), control = false, tag = "VideoFocusRequest")
-                            startProjectionIfNeeded()
+                            if (cfgStatus == 1) {
+                                // STATUS_WAIT: give HU up to 1200ms to send STATUS_READY, then start anyway
+                                pendingStartIdx = chosenIdx
+                                waitConfigDeadlineMs = System.currentTimeMillis() + 1_200L
+                            } else {
+                                beginVideoStream(chosenIdx)
+                            }
                         }
                     }
                     MEDIA_ACK -> {
@@ -708,8 +851,16 @@ object AaPostTls {
                 }
             } else if (channel == inputCh) {
                 if (msgId == INPUT_REPORT) {
-                    parseEvents(body, 4).forEach { (code, down) -> engine?.dispatchKey(code, down != 0) }
-                    parseEvents(body, 6).forEach { (code, delta) -> if (delta != 0) { log("POST-TLS rotary code=$code delta=$delta"); engine?.moveFocus(if (delta > 0) KeyEvent.KEYCODE_NAVIGATE_NEXT else KeyEvent.KEYCODE_NAVIGATE_PREVIOUS, kotlin.math.abs(delta)) } }
+                    parseKeyEvents(body).forEach { k -> engine?.dispatchKey(k.keycode, k.down) }
+                    parseRelativeEvents(body).forEach { r ->
+                        if (r.delta != 0) {
+                            log("POST-TLS rotary code=${r.keycode} delta=${r.delta}")
+                            engine?.moveFocus(
+                                if (r.delta > 0) android.view.KeyEvent.KEYCODE_NAVIGATE_NEXT else android.view.KeyEvent.KEYCODE_NAVIGATE_PREVIOUS,
+                                kotlin.math.abs(r.delta)
+                            )
+                        }
+                    }
                     parseTouchReport(body)?.let { (act, ptrs, idx) ->
                         val p = ptrs.getOrNull(idx) ?: ptrs.first()
                         val ts = touchSpec
@@ -794,8 +945,13 @@ object AaPostTls {
             while (System.currentTimeMillis() - t0 < maxDurationMs && io.isAlive()) {
                 val chunk = io.waitDrain(100)
                 if (chunk.isEmpty()) {
-                    if (sdSent == 0 && System.currentTimeMillis() - t0 > 1_500L) {
+                    val now = System.currentTimeMillis()
+                    if (sdSent == 0 && now - t0 > 1_500L) {
                         sendDiscovery("timeout-proactive")
+                    }
+                    if (!videoStarted && pendingStartIdx >= 0 && now >= waitConfigDeadlineMs) {
+                        log("POST-TLS Video Config STATUS_WAIT timeout — starting idx=$pendingStartIdx")
+                        beginVideoStream(pendingStartIdx)
                     }
                     continue
                 }

@@ -100,17 +100,16 @@ data class AmniPalette(
     val largeTargets: Boolean = false,
     val reduceMotion: Boolean = false
 ) {
-    val accDim: Color get() = acc.copy(alpha = if (highContrast) 0.28f else if (isLight) 0.14f else 0.16f)
-    val accGlow: Color get() = acc.copy(alpha = if (highContrast) 0.55f else 0.35f)
-    val glassA: Color get() = if (highContrast) panel else if (isLight) panel.copy(alpha = 0.94f) else panel.copy(alpha = 0.88f)
-    val glassB: Color get() = if (highContrast) bg else if (isLight) panel2.copy(alpha = 0.90f) else bg.copy(alpha = 0.82f)
+    val accDim: Color get() = acc.copy(alpha = if (highContrast) 0.28f else if (isLight) 0.16f else 0.20f)
+    val accGlow: Color get() = acc.copy(alpha = if (highContrast) 0.55f else 0.40f)
+    val glassA: Color get() = if (highContrast) panel else if (isLight) panel.copy(alpha = 0.96f) else panel.copy(alpha = 0.94f)
+    val glassB: Color get() = if (highContrast) bg else if (isLight) panel2.copy(alpha = 0.94f) else bg.copy(alpha = 0.90f)
     val elev: Color get() = panel2
-    val scrim: Color get() = Color.Black.copy(alpha = if (highContrast) 0.78f else if (isLight) 0.28f else 0.55f)
-    val hairline: Color get() = if (highContrast) line2 else if (isLight) Color.Black.copy(alpha = 0.10f) else Color.White.copy(alpha = 0.10f)
-    val accentBrush: Brush get() = Brush.linearGradient(listOf(acc, acc.copy(alpha = if (highContrast) 0.85f else 0.55f)))
+    val scrim: Color get() = Color.Black.copy(alpha = if (highContrast) 0.80f else if (isLight) 0.36f else 0.65f)
+    val hairline: Color get() = if (highContrast) line2 else if (isLight) Color.Black.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.20f)
+    val accentBrush: Brush get() = Brush.linearGradient(listOf(acc, acc.copy(alpha = if (highContrast) 0.85f else 0.65f)))
     val surfaceBrush: Brush get() = if (highContrast) Brush.verticalGradient(listOf(panel, panel))
         else Brush.verticalGradient(listOf(panel2, panel))
-    fun forCar(): AmniPalette = copy(soft = androidx.compose.ui.graphics.lerp(soft, ink, 0.55f), dim = androidx.compose.ui.graphics.lerp(dim, ink, 0.45f), line = androidx.compose.ui.graphics.lerp(line, ink, 0.15f))
 }
 
 fun paletteFor(
@@ -132,38 +131,38 @@ fun paletteFor(
 
     // Haven's color-mix derivation: tint surfaces and borders from (bg, accent)
     val base = if (preset.light) {
-        val panel = lerp(Color.White, acc, 0.05f)
-        val panel2 = lerp(bg, acc, 0.08f)
-        val line = lerp(bg, Color.Black, 0.18f)
-        val line2 = lerp(bg, Color.Black, 0.30f)
+        val panel = lerp(Color.White, acc, 0.04f)
+        val panel2 = lerp(bg, acc, 0.07f)
+        val line = lerp(bg, Color.Black, 0.22f)
+        val line2 = lerp(bg, Color.Black, 0.36f)
         AmniPalette(
             bg = bg, panel = panel, panel2 = panel2, line = line, line2 = line2,
-            acc = acc, ink = Color(0xFF14161B), soft = Color(0xFF3E4450), dim = Color(0xFF646C7A),
-            gold = Color(0xFFB88600), err = Color(0xFFC62D42), isLight = true
+            acc = acc, ink = Color(0xFF0A0D12), soft = Color(0xFF232934), dim = Color(0xFF424B5A),
+            gold = Color(0xFFA67600), err = Color(0xFFC62D42), isLight = true
         )
     } else if (preset == AmniPreset.NIGHT_RED) {
         AmniPalette(
-            bg = Color(0xFF000000), panel = Color(0xFF120404), panel2 = Color(0xFF1C0707),
-            line = Color(0xFF4A1212), line2 = Color(0xFF7A1E1E),
-            acc = acc, ink = Color(0xFFFF6B63), soft = Color(0xFFD94A43), dim = Color(0xFF99302B),
-            gold = Color(0xFFFF6B35), err = Color(0xFFFF2D20), isLight = false
+            bg = Color(0xFF000000), panel = Color(0xFF140404), panel2 = Color(0xFF200808),
+            line = Color(0xFF5E1717), line2 = Color(0xFF942424),
+            acc = acc, ink = Color(0xFFFF8A82), soft = Color(0xFFF2665E), dim = Color(0xFFC44D47),
+            gold = Color(0xFFFF7A45), err = Color(0xFFFF3B30), isLight = false
         )
     } else if (preset == AmniPreset.NIGHT_AMBER) {
         AmniPalette(
-            bg = Color(0xFF000000), panel = Color(0xFF140D02), panel2 = Color(0xFF1F1404),
-            line = Color(0xFF4D3208), line2 = Color(0xFF7A500D),
-            acc = acc, ink = Color(0xFFFFC86B), soft = Color(0xFFD99A3B), dim = Color(0xFF94661F),
-            gold = Color(0xFFFFB703), err = Color(0xFFFF5A36), isLight = false
+            bg = Color(0xFF000000), panel = Color(0xFF140D02), panel2 = Color(0xFF211604),
+            line = Color(0xFF5C3C0A), line2 = Color(0xFF946110),
+            acc = acc, ink = Color(0xFFFFD891), soft = Color(0xFFF2B655), dim = Color(0xFFC78F38),
+            gold = Color(0xFFFFC32B), err = Color(0xFFFF6B47), isLight = false
         )
     } else {
-        val panel = lerp(bg, acc, 0.07f)
-        val panel2 = lerp(bg, acc, 0.12f)
-        val line = lerp(bg, acc, 0.26f)
-        val line2 = lerp(bg, acc, 0.38f)
+        val panel = lerp(bg, acc, 0.06f)
+        val panel2 = lerp(bg, acc, 0.11f)
+        val line = lerp(bg, acc, 0.28f)
+        val line2 = lerp(bg, acc, 0.42f)
         AmniPalette(
             bg = bg, panel = panel, panel2 = panel2, line = line, line2 = line2,
-            acc = acc, ink = Color(0xFFEDF0F5), soft = Color(0xFFB0B7C3), dim = Color(0xFF767F8F),
-            gold = Color(0xFFFFD166), err = Color(0xFFE74C5F), isLight = false,
+            acc = acc, ink = Color(0xFFFFFFFF), soft = Color(0xFFDCE3EE), dim = Color(0xFFAAB6C8),
+            gold = Color(0xFFFFD166), err = Color(0xFFFF5C70), isLight = false,
             highContrast = preset == AmniPreset.HIGH_CONTRAST
         )
     }
@@ -220,6 +219,25 @@ enum class TileLayout(val label: String, val blurb: String) {
     MAP_ONLY("Map only", "Full-bleed map")
 }
 
+enum class DashWidget(val label: String, val emoji: String, val blurb: String) {
+    WEATHER("Weather", "🌤️", "Live temp & conditions"),
+    TRIP("Trip & Speed", "🧭", "Speed MPH or route ETA"),
+    GATE("Driver Gate", "🛡️", "Tap to toggle video gate"),
+    CLOCK("Big Clock", "🕒", "Large time & day"),
+    MEDIA_MINI("Quick Media", "🎵", "Compact play/pause/skip"),
+    SHORTCUTS("Quick Apps", "⚡", "1-tap Spotify / YT / Map"),
+    VEHICLE("Car & Link", "🚗", "GPS, net & mirror status");
+
+    companion object {
+        val DEFAULTS = listOf(WEATHER, TRIP, GATE)
+        fun parse(raw: String?): List<DashWidget> {
+            if (raw.isNullOrBlank()) return DEFAULTS
+            val parsed = raw.split(',').mapNotNull { runCatching { valueOf(it.trim()) }.getOrNull() }.distinct()
+            return if (parsed.isEmpty()) DEFAULTS else parsed
+        }
+    }
+}
+
 data class UiTheme(
     val preset: AmniPreset = AmniPreset.AMNI_DARK,
     val accent: Long? = null,
@@ -231,7 +249,8 @@ data class UiTheme(
     val highContrast: Boolean = false,
     val largeTargets: Boolean = false,
     val reduceMotion: Boolean = false,
-    val cornerStyle: Int = 1
+    val cornerStyle: Int = 1,
+    val widgets: List<DashWidget> = DashWidget.DEFAULTS
 )
 
 class ThemeStore(private val context: Context) {
@@ -247,7 +266,8 @@ class ThemeStore(private val context: Context) {
             highContrast = it[HIGH_CONTRAST] ?: false,
             largeTargets = it[LARGE_TARGETS] ?: false,
             reduceMotion = it[REDUCE_MOTION] ?: false,
-            cornerStyle = (it[CORNER_STYLE] ?: 1).coerceIn(0, 2)
+            cornerStyle = (it[CORNER_STYLE] ?: 1).coerceIn(0, 2),
+            widgets = DashWidget.parse(it[WIDGETS])
         )
     }
 
@@ -262,6 +282,10 @@ class ThemeStore(private val context: Context) {
     suspend fun setLargeTargets(v: Boolean) = context.themeStore.edit { it[LARGE_TARGETS] = v }
     suspend fun setReduceMotion(v: Boolean) = context.themeStore.edit { it[REDUCE_MOTION] = v }
     suspend fun setCornerStyle(v: Int) = context.themeStore.edit { it[CORNER_STYLE] = v.coerceIn(0, 2) }
+    suspend fun setWidgets(list: List<DashWidget>) = context.themeStore.edit {
+        val clean = list.distinct().ifEmpty { DashWidget.DEFAULTS }
+        it[WIDGETS] = clean.joinToString(",") { w -> w.name }
+    }
 
     companion object {
         private val PRESET = stringPreferencesKey("preset")
@@ -275,6 +299,7 @@ class ThemeStore(private val context: Context) {
         private val LARGE_TARGETS = booleanPreferencesKey("large_targets")
         private val REDUCE_MOTION = booleanPreferencesKey("reduce_motion")
         private val CORNER_STYLE = intPreferencesKey("corner_style")
+        private val WIDGETS = stringPreferencesKey("dash_widgets")
     }
 }
 

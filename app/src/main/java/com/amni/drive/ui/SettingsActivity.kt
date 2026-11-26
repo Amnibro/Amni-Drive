@@ -235,8 +235,144 @@ private fun WirePane() {
     val app = ctx.applicationContext as AmniDriveApp
     val cfg by app.configStore.config.collectAsStateWithLifecycle(DriveConfig())
     val scope = rememberCoroutineScope()
+    var certStatus by remember { mutableStateOf(com.amni.drive.wire.AaCertStore.status(ctx)) }
+    var certBusy by remember { mutableStateOf(false) }
+    var certMsg by remember { mutableStateOf<String?>(null) }
+    val gearheadEnabled = remember {
+        runCatching { ctx.packageManager.getApplicationInfo("com.google.android.projection.gearhead", 0).enabled }.getOrNull()
+    }
+    val overlayOk = remember { Settings.canDrawOverlays(ctx) }
+    val importLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        certBusy = true
+        certMsg = "Importing certificate…"
+        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val res = runCatching {
+                val files = uris.mapNotNull { u ->
+                    val name = u.lastPathSegment.orEmpty().lowercase()
+                    val bytes = ctx.contentResolver.openInputStream(u)?.use { it.readBytes() } ?: return@mapNotNull null
+                    name to bytes
+                }
+                val p12 = files.firstOrNull { (n, _) -> n.endsWith(".p12") || n.endsWith(".pfx") }
+                if (p12 != null) {
+                    com.amni.drive.wire.AaCertStore.importPkcs12(ctx, p12.second, "")
+                        .recoverCatching { com.amni.drive.wire.AaCertStore.importPkcs12(ctx, p12.second, "android").getOrThrow() }
+                        .getOrThrow()
+                } else {
+                    val joined = files.joinToString("\n") { (_, b) -> b.toString(Charsets.UTF_8) }
+                    val certRx = Regex("-----BEGIN CERTIFICATE-----[\\s\\S]+?-----END CERTIFICATE-----")
+                    val keyRx = Regex("-----BEGIN [A-Z ]*PRIVATE KEY-----[\\s\\S]+?-----END [A-Z ]*PRIVATE KEY-----")
+                    val certs = certRx.findAll(joined).map { it.value }.joinToString("\n")
+                    val key = keyRx.find(joined)?.value ?: error("No PEM private key found in selected file(s)")
+                    if (certs.isBlank()) error("No PEM certificate found in selected file(s)")
+                    com.amni.drive.wire.AaCertStore.importPem(ctx, certs.toByteArray(Charsets.UTF_8), key.toByteArray(Charsets.UTF_8), requireGoogleRoot = false).getOrThrow()
+                }
+            }
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                certBusy = false
+                res.onSuccess {
+                    certStatus = it
+                    certMsg = "Imported & verified (valid until ${it.expiryLabel()})"
+                }.onFailure {
+                    certMsg = "Import failed: ${it.message}"
+                }
+            }
+        }
+    }
+
+    Text("CAR READINESS & ZERO-ADB SETUP", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+    Text(
+        when (gearheadEnabled) {
+            true -> "1. Android Auto is ENABLED — it may grab USB first. Tap below → Disable (or Clear defaults) — no PC or ADB needed."
+            false -> "1. Android Auto is DISABLED — Amni-Drive claims USB automatically ✓"
+            null -> "1. Android Auto not installed — Amni-Drive claims USB automatically ✓"
+        },
+        color = if (gearheadEnabled == true) p.gold else p.acc,
+        fontFamily = FontFamily.Monospace,
+        fontSize = 10.sp,
+        lineHeight = 14.sp
+    )
+    if (gearheadEnabled != null) {
+        Box(Modifier.clip(RoundedCornerShape(12.dp)).background(if (gearheadEnabled) p.acc else p.panel2).border(1.dp, p.acc, RoundedCornerShape(12.dp)).clickable {
+            runCatching {
+                ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:com.google.android.projection.gearhead")))
+            }
+        }.padding(horizontal = 14.dp, vertical = 10.dp)) {
+            Text(
+                if (gearheadEnabled) "OPEN ANDROID AUTO APP INFO (DISABLE / CLEAR DEFAULTS)" else "MANAGE ANDROID AUTO APP INFO",
+                color = if (gearheadEnabled) (if (p.isLight) Color.White else Color(0xFF05070A)) else p.acc,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+    Text(
+        if (overlayOk) "2. Background app launch (Overlay) GRANTED — dash can wake music & apps ✓"
+        else "2. Grant 'Display over other apps' so tapping Music or Apps on the car screen wakes them while the phone is locked.",
+        color = if (overlayOk) p.acc else p.soft,
+        fontFamily = FontFamily.Monospace,
+        fontSize = 10.sp,
+        lineHeight = 14.sp
+    )
+    if (!overlayOk) {
+        Box(Modifier.clip(RoundedCornerShape(12.dp)).background(p.panel2).border(1.dp, p.acc, RoundedCornerShape(12.dp)).clickable {
+            runCatching {
+                ctx.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${ctx.packageName}")))
+            }
+        }.padding(horizontal = 14.dp, vertical = 10.dp)) {
+            Text("ALLOW DASH APP LAUNCH (OVERLAY PERMISSION)", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        }
+    }
+
+    Text("PHONE CERTIFICATE (FACTORY HEAD UNITS)", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+    val lastRefusal = com.amni.drive.wire.AaCertStore.lastAuthStatus ?: 0
+    val certSummary = when (certStatus.source) {
+        "DOWNLOADED", "IMPORTED" -> "${certStatus.source} · valid until ${certStatus.expiryLabel()} · Google root=${certStatus.googleRootVerified}" + if (certStatus.expired) " (EXPIRED)" else ""
+        else -> "FALLBACK self-signed (factory head units usually need the AA cert)"
+    } + if (lastRefusal != 0) "\nLast car auth refusal: status=$lastRefusal (auto-fallback armed)" else ""
+    Text(certSummary, color = if (certStatus.googleRootVerified && !certStatus.expired && lastRefusal == 0) p.acc else p.soft, fontFamily = FontFamily.Monospace, fontSize = 10.sp, lineHeight = 14.sp)
+    certMsg?.let { Text(it, color = p.ink, fontFamily = FontFamily.Monospace, fontSize = 10.sp) }
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Box(Modifier.clip(RoundedCornerShape(12.dp)).background(if (certBusy) p.panel2 else p.acc).clickable(enabled = !certBusy) {
+            certBusy = true
+            certMsg = "Downloading & verifying against Google Automotive Link root…"
+            scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                val res = com.amni.drive.wire.AaCertStore.downloadFromIscle(ctx)
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    certBusy = false
+                    res.onSuccess {
+                        certStatus = it
+                        certMsg = "Verified & installed (valid until ${it.expiryLabel()})"
+                    }.onFailure {
+                        certMsg = "Download failed: ${it.message}"
+                    }
+                }
+            }
+        }.padding(horizontal = 14.dp, vertical = 10.dp)) {
+            Text(if (certBusy) "DOWNLOADING…" else "DOWNLOAD AA CERT", color = if (certBusy) p.dim else (if (p.isLight) Color.White else Color(0xFF05070A)), fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        }
+        Box(Modifier.clip(RoundedCornerShape(12.dp)).background(p.panel2).border(1.dp, p.acc, RoundedCornerShape(12.dp)).clickable(enabled = !certBusy) {
+            importLauncher.launch(arrayOf("*/*"))
+        }.padding(horizontal = 12.dp, vertical = 10.dp)) {
+            Text("IMPORT PEM / P12", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        }
+        if (certStatus.source != "FALLBACK") {
+            Box(Modifier.clip(RoundedCornerShape(12.dp)).background(p.panel2).border(1.dp, p.line2, RoundedCornerShape(12.dp)).clickable {
+                com.amni.drive.wire.AaCertStore.clearDownloaded(ctx)
+                com.amni.drive.wire.AaCertStore.clearImported(ctx)
+                certStatus = com.amni.drive.wire.AaCertStore.status(ctx)
+                certMsg = "Cleared — reverted to self-signed fallback"
+            }.padding(horizontal = 12.dp, vertical = 10.dp)) {
+                Text("CLEAR", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+
     Text("DUAL-PATH — FULL AMNI UI ON THE CAR", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-    Text("Path A RIDE: Gearhead keeps USB/TLS; Amni paints full UI on AA nav Surface. Path B OWN: Amni is AA phone-host (AOA+video). AUTO prefers A when gearhead is alive, B when free. Pivot only on hard walls.", color = p.soft, fontSize = 12.sp, lineHeight = 17.sp)
+    Text("AUTO (default): uses own USB stack when Android Auto isn't projecting, or rides AA when active. OWN: always claim USB directly.", color = p.soft, fontSize = 12.sp, lineHeight = 17.sp)
     Text("MODE: ${cfg.aaPathMode.uppercase()}", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 14.sp, fontWeight = FontWeight.Bold)
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         listOf(
@@ -267,46 +403,6 @@ private fun WirePane() {
         com.amni.drive.wire.AaSessionWatchService.tick(ctx)
     }.padding(horizontal = 16.dp, vertical = 12.dp)) {
         Text("FORCE DUAL-PATH WATCH TICK", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-    }
-    Text("PHONE CERTIFICATE (FACTORY HEAD UNITS)", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-    var certStatus by remember { mutableStateOf(com.amni.drive.wire.AaCertStore.status(ctx)) }
-    var certBusy by remember { mutableStateOf(false) }
-    var certMsg by remember { mutableStateOf<String?>(null) }
-    val certSummary = when (certStatus.source) {
-        "DOWNLOADED", "IMPORTED" -> "${certStatus.source} · valid until ${certStatus.expiryLabel()} · Google root=${certStatus.googleRootVerified}" + if (certStatus.expired) " (EXPIRED)" else ""
-        else -> "FALLBACK self-signed (factory head units will reject with status -3)"
-    }
-    Text(certSummary, color = if (certStatus.googleRootVerified && !certStatus.expired) p.acc else p.soft, fontFamily = FontFamily.Monospace, fontSize = 10.sp, lineHeight = 14.sp)
-    certMsg?.let { Text(it, color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 10.sp) }
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Box(Modifier.clip(RoundedCornerShape(12.dp)).background(if (certBusy) p.panel2 else p.acc).clickable(enabled = !certBusy) {
-            certBusy = true
-            certMsg = "Downloading & verifying against Google Automotive Link root…"
-            scope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                val res = com.amni.drive.wire.AaCertStore.downloadFromIscle(ctx)
-                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                    certBusy = false
-                    res.onSuccess {
-                        certStatus = it
-                        certMsg = "Verified & installed (valid until ${it.expiryLabel()})"
-                    }.onFailure {
-                        certMsg = "Download failed: ${it.message}"
-                    }
-                }
-            }
-        }.padding(horizontal = 14.dp, vertical = 10.dp)) {
-            Text(if (certBusy) "DOWNLOADING…" else "DOWNLOAD AA CERTIFICATE", color = if (certBusy) p.dim else (if (p.isLight) Color.White else Color(0xFF05070A)), fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-        }
-        if (certStatus.source != "FALLBACK") {
-            Box(Modifier.clip(RoundedCornerShape(12.dp)).background(p.panel2).border(1.dp, p.line2, RoundedCornerShape(12.dp)).clickable {
-                com.amni.drive.wire.AaCertStore.clearDownloaded(ctx)
-                com.amni.drive.wire.AaCertStore.clearImported(ctx)
-                certStatus = com.amni.drive.wire.AaCertStore.status(ctx)
-                certMsg = "Cleared — reverted to self-signed fallback"
-            }.padding(horizontal = 12.dp, vertical = 10.dp)) {
-                Text("CLEAR", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-            }
-        }
     }
     Text("MESHNET DEV BRIDGE", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
     Text("HTTP on all ifaces port ${com.amni.drive.wire.MeshDevBridgeService.PORT} (Nord Meshnet / LAN). Default RIDE never opens USB — keeps wifi adb alive. Agent uses /status /logs /action over mesh.", color = p.soft, fontSize = 12.sp, lineHeight = 17.sp)
