@@ -238,21 +238,33 @@ fun AmniMap(
     var loadedStyle by remember { mutableStateOf<Style?>(null) }
     var styleGen by remember { mutableIntStateOf(0) }
     var userDragging by remember { mutableStateOf(false) }
+    var mapDestroyed by remember { mutableStateOf(false) }
 
     DisposableEffect(lifecycleOwner, mapView) {
         val obs = LifecycleEventObserver { _, event ->
-            when (event) {
-                Lifecycle.Event.ON_START -> mapView.onStart()
-                Lifecycle.Event.ON_RESUME -> mapView.onResume()
-                Lifecycle.Event.ON_PAUSE -> mapView.onPause()
-                Lifecycle.Event.ON_STOP -> mapView.onStop()
-                Lifecycle.Event.ON_DESTROY -> mapView.onDestroy()
-                else -> {}
+            if (mapDestroyed) return@LifecycleEventObserver
+            runCatching {
+                when (event) {
+                    Lifecycle.Event.ON_START -> mapView.onStart()
+                    Lifecycle.Event.ON_RESUME -> mapView.onResume()
+                    Lifecycle.Event.ON_PAUSE -> mapView.onPause()
+                    Lifecycle.Event.ON_STOP -> mapView.onStop()
+                    Lifecycle.Event.ON_DESTROY -> {
+                        mapDestroyed = true
+                        loadedStyle = null
+                        map = null
+                        mapView.onDestroy()
+                    }
+                    else -> {}
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(obs)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(obs)
+            mapDestroyed = true
+            loadedStyle = null
+            map = null
             runCatching {
                 mapView.onPause()
                 mapView.onStop()
@@ -270,41 +282,53 @@ fun AmniMap(
         }
     }
 
-    LaunchedEffect(map, camera.basemap) {
+    LaunchedEffect(map, camera.basemap, mapDestroyed) {
         val m = map ?: return@LaunchedEffect
-        m.setStyle(styleBuilderFor(camera.basemap)) { style ->
-            installOverlayLayers(style, accentArgb)
-            loadedStyle = style
-            styleGen++
+        if (mapDestroyed) return@LaunchedEffect
+        loadedStyle = null
+        runCatching {
+            m.setStyle(styleBuilderFor(camera.basemap)) { style ->
+                if (mapDestroyed) return@setStyle
+                runCatching {
+                    installOverlayLayers(style, accentArgb)
+                    loadedStyle = style
+                    styleGen++
+                }
+            }
         }
     }
 
-    LaunchedEffect(loadedStyle, styleGen, route, reports, stops, destination, location, accentArgb) {
+    LaunchedEffect(loadedStyle, styleGen, route, reports, stops, destination, location, accentArgb, mapDestroyed) {
+        if (mapDestroyed) return@LaunchedEffect
         val st = loadedStyle ?: return@LaunchedEffect
-        syncOverlays(st, route, stops, destination, reports, location, accentArgb)
+        if (!st.isFullyLoaded) return@LaunchedEffect
+        runCatching { syncOverlays(st, route, stops, destination, reports, location, accentArgb) }
     }
 
-    LaunchedEffect(map, camera.lat, camera.lon, camera.zoom, camera.tilt, camera.northUp, location?.bearing) {
+    LaunchedEffect(map, camera.lat, camera.lon, camera.zoom, camera.tilt, camera.northUp, location?.bearing, mapDestroyed) {
+        if (mapDestroyed) return@LaunchedEffect
         val m = map ?: return@LaunchedEffect
         if (userDragging) return@LaunchedEffect
-        val targetBearing = if (camera.northUp) 0.0 else (location?.bearing?.toDouble() ?: 0.0)
-        val targetTilt = if (camera.tilt) 45.0 else 0.0
-        val cur = m.cameraPosition
-        val curT = cur.target
-        val moved = curT == null ||
-            abs(curT.latitude - camera.lat) > 1e-6 ||
-            abs(curT.longitude - camera.lon) > 1e-6 ||
-            abs(cur.zoom - camera.zoom.toDouble()) > 0.05 ||
-            abs(cur.tilt - targetTilt) > 0.5 ||
-            abs(cur.bearing - targetBearing) > 0.5
-        if (moved) {
-            val pos = CameraPosition.Builder()
-                .target(LatLng(camera.lat, camera.lon))
-                .zoom(camera.zoom.toDouble())
-                .tilt(targetTilt)
-                .bearing(targetBearing)
-                .build()
-            m.moveCamera(CameraUpdateFactory.newCameraPosition(pos))
+        runCatching {
+            val targetBearing = if (camera.northUp) 0.0 else (location?.bearing?.toDouble() ?: 0.0)
+            val targetTilt = if (camera.tilt) 45.0 else 0.0
+            val cur = m.cameraPosition
+            val curT = cur.target
+            val moved = curT == null ||
+                abs(curT.latitude - camera.lat) > 1e-6 ||
+                abs(curT.longitude - camera.lon) > 1e-6 ||
+                abs(cur.zoom - camera.zoom.toDouble()) > 0.05 ||
+                abs(cur.tilt - targetTilt) > 0.5 ||
+                abs(cur.bearing - targetBearing) > 0.5
+            if (moved) {
+                val pos = CameraPosition.Builder()
+                    .target(LatLng(camera.lat, camera.lon))
+                    .zoom(camera.zoom.toDouble())
+                    .tilt(targetTilt)
+                    .bearing(targetBearing)
+                    .build()
+                m.moveCamera(CameraUpdateFactory.newCameraPosition(pos))
+            }
         }
     }
 

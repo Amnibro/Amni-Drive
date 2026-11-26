@@ -104,6 +104,10 @@ log("CLAIM → force OWN session open gearhead=${gearheadProjectionAlive()}")
 runBlocking {
 try { ConfigStore(this@AoaProbeService).setAaPathMode(DriveConfig.PATH_OWN) } catch (_: Exception) {}
 }
+if (accessoryFd.get() != null && sessionRunning.get()) {
+log("CLAIM skipped — active OWN session already running")
+return START_STICKY
+}
 freePollActive.set(false)
 sessionRunning.set(false)
 closeAccessory()
@@ -163,8 +167,11 @@ log("requestPermission error: ${e.message}")
 private fun pathMode(): String = try {
 runBlocking { ConfigStore(this@AoaProbeService).config.first().aaPathMode }
 } catch (_: Exception) { DriveConfig.PATH_AUTO }
+private val openLock = Any()
+
 private fun tryOpen(acc: UsbAccessory?) {
 if (acc == null) return
+synchronized(openLock) {
 val mode = pathMode()
 val ghCar = gearheadCarSessionAlive()
 if (mode == DriveConfig.PATH_RIDE) {
@@ -205,6 +212,7 @@ sniffThread = Thread({ sessionAfterOpen(pfd) }, "aoa-session").also { it.isDaemo
 log("open error: ${e.message}")
 updateNotif("AOA error ${e.message}")
 scheduleFreePoll()
+}
 }
 }
 private fun gearheadProjectionAlive(): Boolean {
@@ -346,73 +354,30 @@ log("TLS bulk error ${e.message}")
 updateNotif("AOA TLS error · project anyway")
 }
 if (tlsOk && ssl != null) {
-updateNotif("AOA · Auth/Discovery")
+updateNotif("AOA · Amni-Drive Live")
 try {
-val post = AaPostTls.run(io, ssl, { log(it) }, 18_000L) { ch ->
-videoChannel = ch
-log("POST-TLS video channel armed=$ch")
+val post = AaPostTls.runLiveSession(io, ssl, { log(it) }, 3_600_000L) { spec ->
+val eng = AmniProjectionEngine(
+context = applicationContext,
+width = spec.width,
+height = spec.height,
+dpi = spec.dpi,
+fps = spec.fps,
+widthMargin = spec.widthMargin,
+heightMargin = spec.heightMargin
+)
+eng.onLog = { log("proj $it") }
+ProjectionHostService.active = eng
+eng
 }
 postOk = post.discovery || post.rxFrames > 0
 videoChannel = post.videoChannel
-log("POST-TLS result discovery=${post.discovery} videoCh=${post.videoChannel} rx=${post.rxFrames} notes=${post.notes}")
-updateNotif("AOA post-TLS · rx=${post.rxFrames} sd=${post.discovery}")
+if (ProjectionHostService.active != null) ProjectionHostService.active = null
+log("POST-TLS session end discovery=${post.discovery} videoCh=${post.videoChannel} rx=${post.rxFrames} notes=${post.notes}")
+updateNotif("AOA session end · rx=${post.rxFrames}")
 } catch (e: Exception) {
 log("POST-TLS error ${e.message}")
 }
-}
-try {
-val eng = AmniProjectionEngine(applicationContext)
-eng.onLog = { log("proj $it") }
-val sslRef = ssl
-val vCh = videoChannel
-eng.setFrameSink { nalu, key ->
-try {
-if (tlsOk && sslRef != null) {
-val plain = ByteArray(2 + 8 + nalu.size)
-plain[0] = 0
-plain[1] = 0
-val ts = System.nanoTime() / 1000
-java.nio.ByteBuffer.wrap(plain, 2, 8).order(java.nio.ByteOrder.BIG_ENDIAN).putLong(ts)
-System.arraycopy(nalu, 0, plain, 10, nalu.size)
-val cipher = sslRef.encryptApp(plain)
-val flags = AaAapVersion.FRAME_BULK or AaAapVersion.ENC_ENCRYPTED
-io.write(AaAapVersion.encodeFrame(vCh, flags, cipher))
-} else {
-val frame = AaFrameCodec.video(nalu, key)
-io.write(AaFrameCodec.encode(frame))
-}
-} catch (e: Exception) {
-log("wire write fail: ${e.message}")
-}
-}
-if (eng.start()) {
-log("FULL UI projection attached to AOA bulk tls=$tlsOk videoCh=$vCh")
-updateNotif(if (tlsOk) "OWN STACK · TLS+UI → AOA" else "OWN STACK · UI → AOA")
-ProjectionHostService.active = eng
-val tHold = System.currentTimeMillis()
-while (accessoryFd.get() != null && System.currentTimeMillis() - tHold < 45_000L) {
-val chunk = io.waitDrain(200)
-if (chunk.isNotEmpty()) {
-total += chunk.size
-log("RX during project ${chunk.size} total=$total hex=${AaAapVersion.hexHead(chunk)}")
-if (tlsOk && ssl != null) {
-try {
-val fr = AaAapVersion.scanFrames(chunk, { }, "proj")
-for (p in fr) {
-if ((p.flags and AaAapVersion.ENC_ENCRYPTED) != 0) {
-val plain = ssl.decryptApp(p.payload)
-log("proj RX enc msg head=${AaAapVersion.hexHead(plain)}")
-} else log("proj RX plain msg=0x${p.msgId.toString(16)} body=${p.payload.size}")
-}
-} catch (_: Exception) {}
-}
-}
-}
-eng.stop()
-if (ProjectionHostService.active === eng) ProjectionHostService.active = null
-} else log("projection engine failed to start")
-} catch (e: Exception) {
-log("projection phase error ${e.message}")
 }
 log("session end totalRX=$total tls=$tlsOk aap=$aapOk post=$postOk bulkAlive=${io.isAlive()}")
 } catch (e: Exception) {
@@ -420,7 +385,12 @@ log("session error ${e.message}")
 } finally {
 sessionRunning.set(false)
 io.close()
-closeAccessory()
+if (accessoryFd.compareAndSet(pfd, null)) {
+sniffThread = null
+try { pfd.close() } catch (_: Exception) {}
+} else {
+try { pfd.close() } catch (_: Exception) {}
+}
 scheduleFreePoll()
 }
 }
