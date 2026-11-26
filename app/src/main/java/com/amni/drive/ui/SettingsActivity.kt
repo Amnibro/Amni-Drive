@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -167,39 +168,61 @@ private fun AutoPane(store: ConfigStore) {
 private fun LooksPane(themes: ThemeStore, theme: UiTheme) {
     val p = LocalAmni.current
     val scope = rememberCoroutineScope()
-    Text("PRESET THEMES — FROM THE AMNI-SCIENT FAMILY", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 9.sp, letterSpacing = 1.5.sp)
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Text("HAVEN & DRIVING THEMES (${AmniPreset.entries.size})", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 9.sp, letterSpacing = 1.5.sp)
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         AmniPreset.entries.forEach { preset ->
             val sel = theme.preset == preset && theme.accent == null
             val pp = paletteFor(preset, null)
-            Column(Modifier.clip(RoundedCornerShape(12.dp)).background(pp.bg).border(1.dp, if (sel) p.acc else p.line2, RoundedCornerShape(12.dp)).clickable { scope.launch { themes.setPreset(preset) } }.padding(horizontal = 12.dp, vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Aa", color = pp.acc, fontFamily = FontFamily.Monospace, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                Text(preset.label.uppercase(), color = pp.acc, fontFamily = FontFamily.Monospace, fontSize = 7.sp, letterSpacing = 0.5.sp)
+            Column(
+                Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(pp.bg)
+                    .border(if (sel) 2.dp else 1.dp, if (sel) p.acc else pp.line2, RoundedCornerShape(12.dp))
+                    .clickable { scope.launch { themes.setPreset(preset) } }
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(if (sel) "✓ Aa" else "Aa", color = pp.acc, fontFamily = FontFamily.Monospace, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                Text(preset.label.uppercase(), color = pp.ink, fontFamily = FontFamily.Monospace, fontSize = 8.sp, letterSpacing = 0.5.sp)
             }
         }
     }
     Text("CUSTOM ACCENT", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 9.sp, letterSpacing = 1.5.sp)
-    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        listOf(0xFF00FF9DL, 0xFF7FCFFFL, 0xFFFF8A3DL, 0xFFB18CFFL, 0xFFFF5A5AL, 0xFFFFD700L).forEach { c ->
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        listOf(
+            0xFF00FF9DL, 0xFF7C5CFCL, 0xFF5BA8FFL, 0xFF00E5FFL, 0xFFFF8A3DL,
+            0xFFFFD700L, 0xFFFF5A5AL, 0xFFFF2D6FL, 0xFF14FE17L, 0xFFFFFFFFL
+        ).forEach { c ->
             val sel = theme.accent == c
-            Box(Modifier.size(34.dp).clip(CircleShape).background(Color(c)).border(if (sel) 3.dp else 1.dp, if (sel) p.ink else Color.White.copy(alpha = 0.2f), CircleShape).clickable { scope.launch { themes.setAccent(if (sel) null else c) } })
+            Box(Modifier.size(34.dp).clip(CircleShape).background(Color(c)).border(if (sel) 3.dp else 1.dp, if (sel) p.ink else Color.White.copy(alpha = 0.25f), CircleShape).clickable { scope.launch { themes.setAccent(if (sel) null else c) } })
         }
+    }
+    Text("ACCESSIBILITY & COMFORT", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
+    Text("TEXT SIZE", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 9.sp, letterSpacing = 1.5.sp)
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        listOf("NORMAL" to 1.0f, "LARGE" to 1.15f, "XL" to 1.3f).forEach { (label, sc) ->
+            Seg(label, kotlin.math.abs(theme.fontScale - sc) < 0.04f) { scope.launch { themes.setFontScale(sc) } }
+        }
+    }
+    SetRow("👁️", "High contrast mode", "Pure black/white surfaces, crisp borders, and stronger legibility for sun glare or low vision.", theme.highContrast) { scope.launch { themes.setHighContrast(it) } }
+    SetRow("🧤", "Large touch targets", "Extra padding on dash buttons for bumpy roads or gloves.", theme.largeTargets) { scope.launch { themes.setLargeTargets(it) } }
+    SetRow("🧘", "Reduce motion", "Disables animated weather particles and extra visual motion.", theme.reduceMotion) { scope.launch { themes.setReduceMotion(it) } }
+    Text("CORNER STYLE", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 9.sp, letterSpacing = 1.5.sp)
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        listOf("SHARP" to 0, "ROUNDED" to 1, "SOFT" to 2).forEach { (label, v) -> Seg(label, theme.cornerStyle == v) { scope.launch { themes.setCornerStyle(v) } } }
     }
     SetRow("🌦️", "Weather background", "Live rain/snow particles behind the dashboard by GPS — auto-calms while MOVING.", theme.weatherBg) { scope.launch { themes.setWeather(it) } }
     Text("TILE SIZE", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 9.sp, letterSpacing = 1.5.sp)
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         listOf("COMPACT", "COZY", "BIG").forEachIndexed { i, label -> Seg(label, theme.tileScale == i) { scope.launch { themes.setScale(i) } } }
     }
     Text("TILE LAYOUT — DASH ARRANGEMENT", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 9.sp, letterSpacing = 1.5.sp)
     Text("Tiles resize to window · Auto re-picks for phone / DHU / car glass", color = p.soft, fontSize = 11.sp)
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        TileLayout.entries.take(3).forEach { mode -> Seg(mode.label.uppercase(), theme.tileLayout == mode) { scope.launch { themes.setTileLayout(mode) } } }
-    }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        TileLayout.entries.drop(3).forEach { mode -> Seg(mode.label.uppercase(), theme.tileLayout == mode) { scope.launch { themes.setTileLayout(mode) } } }
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        TileLayout.entries.forEach { mode -> Seg(mode.label.uppercase(), theme.tileLayout == mode) { scope.launch { themes.setTileLayout(mode) } } }
     }
     Text("MAP STYLE", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 9.sp, letterSpacing = 1.5.sp)
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         listOf("AUTO — MATCH THEME" to -1, "DARK" to 0, "LIGHT" to 1, "SATELLITE" to 2).forEach { (label, v) -> Seg(label, theme.basemap == v) { scope.launch { themes.setBasemap(v) } } }
     }
 }
