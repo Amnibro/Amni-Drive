@@ -1,44 +1,45 @@
 package com.amni.drive.map
+
 import android.location.Location
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.rotate
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.nativeCanvas
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.launch
-import kotlin.math.ceil
-import kotlin.math.floor
-import kotlin.math.pow
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import org.maplibre.android.MapLibre
+import org.maplibre.android.camera.CameraPosition
+import org.maplibre.android.camera.CameraUpdateFactory
+import org.maplibre.android.geometry.LatLng
+import org.maplibre.android.maps.MapLibreMap
+import org.maplibre.android.maps.MapLibreMapOptions
+import org.maplibre.android.maps.Style
+import org.maplibre.android.style.layers.CircleLayer
+import org.maplibre.android.style.layers.LineLayer
+import org.maplibre.android.style.layers.Property
+import org.maplibre.android.style.layers.PropertyFactory
+import org.maplibre.android.style.sources.GeoJsonSource
+import org.maplibre.geojson.Feature
+import org.maplibre.geojson.FeatureCollection
+import org.maplibre.geojson.LineString
+import org.maplibre.geojson.Point
+import kotlin.math.abs
 import kotlin.math.roundToInt
+
 class MapCamera(lat: Double, lon: Double) {
     var lat by mutableDoubleStateOf(lat)
     var lon by mutableDoubleStateOf(lon)
@@ -48,142 +49,297 @@ class MapCamera(lat: Double, lon: Double) {
     var tilt by mutableStateOf(false)
     var basemap by mutableIntStateOf(0)
 }
+
 @Composable
 fun rememberMapCamera(): MapCamera = remember { MapCamera(30.2672, -97.7431) }
+
+private const val SRC_ROUTE = "amni-route-src"
+private const val LYR_ROUTE_CASING = "amni-route-casing"
+private const val LYR_ROUTE_LINE = "amni-route-line"
+private const val SRC_STOPS = "amni-stops-src"
+private const val LYR_STOPS = "amni-stops-lyr"
+private const val SRC_DEST = "amni-dest-src"
+private const val LYR_DEST = "amni-dest-lyr"
+private const val SRC_REPORTS = "amni-reports-src"
+private const val LYR_REPORTS = "amni-reports-lyr"
+private const val SRC_LOC = "amni-loc-src"
+private const val LYR_LOC_HALO = "amni-loc-halo"
+private const val LYR_LOC_DOT = "amni-loc-dot"
+
+private fun styleBuilderFor(basemap: Int): Style.Builder = when (basemap) {
+    2 -> Style.Builder().fromJson(
+        """
+        {
+          "version": 8,
+          "sources": {
+            "esri-sat": {
+              "type": "raster",
+              "tiles": ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
+              "tileSize": 256
+            }
+          },
+          "layers": [
+            { "id": "esri-sat-layer", "type": "raster", "source": "esri-sat" }
+          ]
+        }
+        """.trimIndent()
+    )
+    1 -> Style.Builder().fromUri("https://tiles.openfreemap.org/styles/liberty")
+    else -> Style.Builder().fromUri("https://tiles.openfreemap.org/styles/dark")
+}
+
+private fun installOverlayLayers(style: Style, accentArgb: Int) {
+    fun ensureSource(id: String) {
+        if (style.getSource(id) == null) style.addSource(GeoJsonSource(id))
+    }
+    ensureSource(SRC_ROUTE)
+    ensureSource(SRC_STOPS)
+    ensureSource(SRC_DEST)
+    ensureSource(SRC_REPORTS)
+    ensureSource(SRC_LOC)
+
+    if (style.getLayer(LYR_ROUTE_CASING) == null) {
+        style.addLayer(
+            LineLayer(LYR_ROUTE_CASING, SRC_ROUTE).withProperties(
+                PropertyFactory.lineColor(0xAA000000.toInt()),
+                PropertyFactory.lineWidth(11f),
+                PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+                PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)
+            )
+        )
+    }
+    if (style.getLayer(LYR_ROUTE_LINE) == null) {
+        style.addLayer(
+            LineLayer(LYR_ROUTE_LINE, SRC_ROUTE).withProperties(
+                PropertyFactory.lineColor(accentArgb),
+                PropertyFactory.lineWidth(6f),
+                PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+                PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)
+            )
+        )
+    }
+    if (style.getLayer(LYR_STOPS) == null) {
+        style.addLayer(
+            CircleLayer(LYR_STOPS, SRC_STOPS).withProperties(
+                PropertyFactory.circleColor(accentArgb),
+                PropertyFactory.circleRadius(8f),
+                PropertyFactory.circleStrokeColor(0xFF0A0B0E.toInt()),
+                PropertyFactory.circleStrokeWidth(2.5f)
+            )
+        )
+    }
+    if (style.getLayer(LYR_DEST) == null) {
+        style.addLayer(
+            CircleLayer(LYR_DEST, SRC_DEST).withProperties(
+                PropertyFactory.circleColor(accentArgb),
+                PropertyFactory.circleRadius(10f),
+                PropertyFactory.circleStrokeColor(0xFF0A0B0E.toInt()),
+                PropertyFactory.circleStrokeWidth(3f)
+            )
+        )
+    }
+    if (style.getLayer(LYR_REPORTS) == null) {
+        style.addLayer(
+            CircleLayer(LYR_REPORTS, SRC_REPORTS).withProperties(
+                PropertyFactory.circleColor(0xFFFFB454.toInt()),
+                PropertyFactory.circleRadius(9f),
+                PropertyFactory.circleStrokeColor(0xFF0A0B0E.toInt()),
+                PropertyFactory.circleStrokeWidth(2f)
+            )
+        )
+    }
+    if (style.getLayer(LYR_LOC_HALO) == null) {
+        style.addLayer(
+            CircleLayer(LYR_LOC_HALO, SRC_LOC).withProperties(
+                PropertyFactory.circleColor(accentArgb),
+                PropertyFactory.circleOpacity(0.22f),
+                PropertyFactory.circleRadius(18f)
+            )
+        )
+    }
+    if (style.getLayer(LYR_LOC_DOT) == null) {
+        style.addLayer(
+            CircleLayer(LYR_LOC_DOT, SRC_LOC).withProperties(
+                PropertyFactory.circleColor(accentArgb),
+                PropertyFactory.circleRadius(8f),
+                PropertyFactory.circleStrokeColor(0xFF0A0B0E.toInt()),
+                PropertyFactory.circleStrokeWidth(3f)
+            )
+        )
+    }
+}
+
+private fun syncOverlays(
+    style: Style,
+    route: RouteResult?,
+    stops: List<RoutePoint>,
+    destination: RoutePoint?,
+    reports: List<Report>,
+    location: Location?,
+    accentArgb: Int
+) {
+    style.getLayerAs<LineLayer>(LYR_ROUTE_LINE)?.setProperties(PropertyFactory.lineColor(accentArgb))
+    style.getLayerAs<CircleLayer>(LYR_STOPS)?.setProperties(PropertyFactory.circleColor(accentArgb))
+    style.getLayerAs<CircleLayer>(LYR_DEST)?.setProperties(PropertyFactory.circleColor(accentArgb))
+    style.getLayerAs<CircleLayer>(LYR_LOC_HALO)?.setProperties(PropertyFactory.circleColor(accentArgb))
+    style.getLayerAs<CircleLayer>(LYR_LOC_DOT)?.setProperties(PropertyFactory.circleColor(accentArgb))
+
+    val routeFeatures = if (route != null && route.points.size > 1) {
+        listOf(Feature.fromGeometry(LineString.fromLngLats(route.points.map { Point.fromLngLat(it.lon, it.lat) })))
+    } else emptyList()
+    style.getSourceAs<GeoJsonSource>(SRC_ROUTE)?.setGeoJson(FeatureCollection.fromFeatures(routeFeatures))
+
+    val stopFeatures = stops.dropLast(1).map { Feature.fromGeometry(Point.fromLngLat(it.lon, it.lat)) }
+    style.getSourceAs<GeoJsonSource>(SRC_STOPS)?.setGeoJson(FeatureCollection.fromFeatures(stopFeatures))
+
+    val destFeatures = destination?.let { listOf(Feature.fromGeometry(Point.fromLngLat(it.lon, it.lat))) } ?: emptyList()
+    style.getSourceAs<GeoJsonSource>(SRC_DEST)?.setGeoJson(FeatureCollection.fromFeatures(destFeatures))
+
+    val reportFeatures = reports.map { Feature.fromGeometry(Point.fromLngLat(it.lon, it.lat)) }
+    style.getSourceAs<GeoJsonSource>(SRC_REPORTS)?.setGeoJson(FeatureCollection.fromFeatures(reportFeatures))
+
+    val locFeatures = location?.let { listOf(Feature.fromGeometry(Point.fromLngLat(it.longitude, it.latitude))) } ?: emptyList()
+    style.getSourceAs<GeoJsonSource>(SRC_LOC)?.setGeoJson(FeatureCollection.fromFeatures(locFeatures))
+}
+
 @Composable
 fun AmniMap(
     camera: MapCamera,
-    tiles: TileStore,
+    @Suppress("UNUSED_PARAMETER") tiles: TileStore,
     route: RouteResult?,
     reports: List<Report>,
     stops: List<RoutePoint>,
     destination: RoutePoint?,
     location: Location?,
     accent: Color,
-    panel: Color,
+    @Suppress("UNUSED_PARAMETER") panel: Color,
     onLongPress: (Double, Double) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val scope = rememberCoroutineScope()
-    val density = LocalDensity.current
-    val tilePx = with(density) { 230.dp.toPx() }
-    var size by remember { mutableStateOf(IntSize.Zero) }
-    val bitmaps = remember { mutableStateMapOf<String, ImageBitmap>() }
-    val inflight = remember { mutableSetOf<String>() }
-    val emojiPaint = remember { android.graphics.Paint().apply { textAlign = android.graphics.Paint.Align.CENTER; textSize = tilePx * 0.085f } }
-    val numPaint = remember { android.graphics.Paint().apply { textAlign = android.graphics.Paint.Align.CENTER; textSize = tilePx * 0.075f; color = android.graphics.Color.BLACK; isFakeBoldText = true } }
-    LaunchedEffect(location, camera.follow) { if (camera.follow) location?.let { camera.lat = it.latitude; camera.lon = it.longitude } }
-    LaunchedEffect(camera.lat, camera.lon, camera.zoom, camera.basemap, size) {
-        if (size == IntSize.Zero) return@LaunchedEffect
-        val z = camera.zoom
-        val cx = GeoMath.lonToTileX(camera.lon, z)
-        val cy = GeoMath.latToTileY(camera.lat, z)
-        val hx = size.width / tilePx / 2.0 + 1.2
-        val hy = size.height / tilePx / 2.0 + 1.5
-        val max = 2.0.pow(z).toInt() - 1
-        val needed = mutableListOf<Triple<String, Int, Int>>()
-        for (tx in floor(cx - hx).toInt()..ceil(cx + hx).toInt()) for (ty in floor(cy - hy).toInt()..ceil(cy + hy).toInt()) {
-            if (tx in 0..max && ty in 0..max) needed.add(Triple("${camera.basemap}_${z}_${tx}_$ty", tx, ty))
+    val ctx = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val liveLongPress by rememberUpdatedState(onLongPress)
+    val accentArgb = accent.toArgb()
+
+    remember(ctx) { MapLibre.getInstance(ctx.applicationContext) }
+
+    val mapView = remember(ctx) {
+        org.maplibre.android.maps.MapView(
+            ctx,
+            MapLibreMapOptions.createFromAttributes(ctx).textureMode(true)
+        ).apply {
+            onCreate(null)
+            onStart()
+            onResume()
         }
-        val neededKeys = needed.map { it.first }.toSet()
-        if (bitmaps.size > 90) bitmaps.keys.filterNot { it in neededKeys }.forEach { bitmaps.remove(it) }
-        needed.forEach { (key, tx, ty) ->
-            if (!bitmaps.containsKey(key) && inflight.add(key)) scope.launch {
-                tiles.tile(camera.basemap, z, tx, ty)?.let { bitmaps[key] = it.asImageBitmap() }
-                inflight.remove(key)
+    }
+
+    var map by remember { mutableStateOf<MapLibreMap?>(null) }
+    var loadedStyle by remember { mutableStateOf<Style?>(null) }
+    var styleGen by remember { mutableIntStateOf(0) }
+    var userDragging by remember { mutableStateOf(false) }
+
+    DisposableEffect(lifecycleOwner, mapView) {
+        val obs = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> mapView.onStart()
+                Lifecycle.Event.ON_RESUME -> mapView.onResume()
+                Lifecycle.Event.ON_PAUSE -> mapView.onPause()
+                Lifecycle.Event.ON_STOP -> mapView.onStop()
+                Lifecycle.Event.ON_DESTROY -> mapView.onDestroy()
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(obs)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(obs)
+            runCatching {
+                mapView.onPause()
+                mapView.onStop()
+                mapView.onDestroy()
             }
         }
     }
-    Box(modifier.onSizeChanged { size = it }.graphicsLayer {
-        if (camera.tilt) { rotationX = 38f; scaleX = 1.45f; scaleY = 1.45f; cameraDistance = 10f * density.density }
-        if (!camera.northUp) rotationZ = -(location?.bearing ?: 0f)
-    }) {
-        Canvas(Modifier.fillMaxSize()
-            .pointerInput(tilePx) {
-                detectDragGestures { change, drag ->
-                    change.consume()
-                    camera.follow = false
-                    val z = camera.zoom
-                    camera.lon = GeoMath.tileXToLon(GeoMath.lonToTileX(camera.lon, z) - drag.x / tilePx, z)
-                    camera.lat = GeoMath.tileYToLat((GeoMath.latToTileY(camera.lat, z) - drag.y / tilePx).coerceIn(0.0, 2.0.pow(z)), z)
-                }
-            }
-            .pointerInput(tilePx) {
-                detectTapGestures(onLongPress = { off ->
-                    val z = camera.zoom
-                    val la = GeoMath.tileYToLat(GeoMath.latToTileY(camera.lat, z) + (off.y - this.size.height / 2f) / tilePx, z)
-                    val lo = GeoMath.tileXToLon(GeoMath.lonToTileX(camera.lon, z) + (off.x - this.size.width / 2f) / tilePx, z)
-                    onLongPress(la, lo)
-                })
-            }
-        ) {
-            val z = camera.zoom
-            val cx = GeoMath.lonToTileX(camera.lon, z)
-            val cy = GeoMath.latToTileY(camera.lat, z)
-            val w = this.size.width
-            val h = this.size.height
-            fun toScreen(lat: Double, lon: Double) = Offset(((GeoMath.lonToTileX(lon, z) - cx) * tilePx + w / 2f).toFloat(), ((GeoMath.latToTileY(lat, z) - cy) * tilePx + h / 2f).toFloat())
-            for (tx in floor(cx - w / tilePx / 2.0 - 1).toInt()..ceil(cx + w / tilePx / 2.0 + 1).toInt()) for (ty in floor(cy - h / tilePx / 2.0 - 1).toInt()..ceil(cy + h / tilePx / 2.0 + 1).toInt()) {
-                val dx = ((tx - cx) * tilePx + w / 2f).roundToInt()
-                val dy = ((ty - cy) * tilePx + h / 2f).roundToInt()
-                val sz = ceil(tilePx).toInt() + 1
-                val bmp = bitmaps["${camera.basemap}_${z}_${tx}_$ty"]
-                if (bmp != null) drawImage(bmp, srcOffset = IntOffset.Zero, srcSize = IntSize(bmp.width, bmp.height), dstOffset = IntOffset(dx, dy), dstSize = IntSize(sz, sz))
-                else drawRect(panel, topLeft = Offset(dx.toFloat(), dy.toFloat()), size = Size(sz.toFloat(), sz.toFloat()))
-            }
-            if (camera.basemap != 2) drawRect(accent.copy(alpha = 0.05f))
-            route?.let { r ->
-                if (r.points.size > 1) {
-                    val pts = r.points.map { toScreen(it.lat, it.lon) }
-                    val path = Path().apply { moveTo(pts[0].x, pts[0].y); for (i in 1 until pts.size) lineTo(pts[i].x, pts[i].y) }
-                    drawPath(path, Color.Black.copy(alpha = 0.55f), style = Stroke(13.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
-                    drawPath(path, accent.copy(alpha = 0.16f), style = Stroke(20.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
-                    if (r.segmentSpeeds.isNotEmpty()) {
-                        val n = pts.size - 1
-                        for (i in 0 until n) {
-                            val s = r.segmentSpeeds.getOrElse(i) {
-                                r.segmentSpeeds[((i.toDouble() / n.coerceAtLeast(1)) * r.segmentSpeeds.size).toInt().coerceIn(0, r.segmentSpeeds.lastIndex)]
-                            }
-                            val col = when {
-                                s < 2.5 -> Color(0xFFFF3B3B)
-                                s < 7.0 -> Color(0xFFFF8A3D)
-                                s < 13.0 -> Color(0xFFFFD54A)
-                                else -> accent
-                            }
-                            drawLine(col, pts[i], pts[i + 1], strokeWidth = 7.dp.toPx(), cap = StrokeCap.Round)
-                        }
-                    } else drawPath(path, accent, style = Stroke(7.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
-                }
-            }
-            stops.dropLast(1).forEachIndexed { i, s ->
-                val p = toScreen(s.lat, s.lon)
-                drawCircle(accent, 10.dp.toPx(), p)
-                drawCircle(Color(0xFF0A0B0E), 10.dp.toPx(), p, style = Stroke(2.5.dp.toPx()))
-                drawContext.canvas.nativeCanvas.drawText("${i + 1}", p.x, p.y + numPaint.textSize * 0.35f, numPaint)
-            }
-            destination?.let { d ->
-                val p = toScreen(d.lat, d.lon)
-                val tip = Path().apply { moveTo(p.x - 7.dp.toPx(), p.y - 8.dp.toPx()); lineTo(p.x, p.y + 4.dp.toPx()); lineTo(p.x + 7.dp.toPx(), p.y - 8.dp.toPx()); close() }
-                drawPath(tip, accent)
-                drawCircle(accent, 11.dp.toPx(), Offset(p.x, p.y - 14.dp.toPx()))
-                drawCircle(Color(0xFF0A0B0E), 4.dp.toPx(), Offset(p.x, p.y - 14.dp.toPx()))
-            }
-            reports.forEach { rp ->
-                val p = toScreen(rp.lat, rp.lon)
-                drawCircle(Color(0xFFFFB454), 11.dp.toPx(), p)
-                drawCircle(Color(0xFF0A0B0E), 11.dp.toPx(), p, style = Stroke(2.dp.toPx()))
-                drawContext.canvas.nativeCanvas.drawText(rp.emoji, p.x, p.y + emojiPaint.textSize * 0.35f, emojiPaint)
-            }
-            location?.let { l ->
-                val p = toScreen(l.latitude, l.longitude)
-                drawCircle(accent.copy(alpha = 0.15f), 22.dp.toPx(), p)
-                if (l.hasBearing() && l.speed > 1f) rotate(l.bearing, p) {
-                    val cone = Path().apply { moveTo(p.x, p.y); lineTo(p.x - 12.dp.toPx(), p.y - 32.dp.toPx()); lineTo(p.x + 12.dp.toPx(), p.y - 32.dp.toPx()); close() }
-                    drawPath(cone, accent.copy(alpha = 0.30f))
-                }
-                drawCircle(accent, 9.dp.toPx(), p)
-                drawCircle(Color(0xFF0A0B0E), 9.dp.toPx(), p, style = Stroke(3.dp.toPx()))
+
+    LaunchedEffect(location, camera.follow) {
+        if (camera.follow) {
+            location?.let {
+                camera.lat = it.latitude
+                camera.lon = it.longitude
             }
         }
+    }
+
+    LaunchedEffect(map, camera.basemap) {
+        val m = map ?: return@LaunchedEffect
+        m.setStyle(styleBuilderFor(camera.basemap)) { style ->
+            installOverlayLayers(style, accentArgb)
+            loadedStyle = style
+            styleGen++
+        }
+    }
+
+    LaunchedEffect(loadedStyle, styleGen, route, reports, stops, destination, location, accentArgb) {
+        val st = loadedStyle ?: return@LaunchedEffect
+        syncOverlays(st, route, stops, destination, reports, location, accentArgb)
+    }
+
+    LaunchedEffect(map, camera.lat, camera.lon, camera.zoom, camera.tilt, camera.northUp, location?.bearing) {
+        val m = map ?: return@LaunchedEffect
+        if (userDragging) return@LaunchedEffect
+        val targetBearing = if (camera.northUp) 0.0 else (location?.bearing?.toDouble() ?: 0.0)
+        val targetTilt = if (camera.tilt) 45.0 else 0.0
+        val cur = m.cameraPosition
+        val curT = cur.target
+        val moved = curT == null ||
+            abs(curT.latitude - camera.lat) > 1e-6 ||
+            abs(curT.longitude - camera.lon) > 1e-6 ||
+            abs(cur.zoom - camera.zoom.toDouble()) > 0.05 ||
+            abs(cur.tilt - targetTilt) > 0.5 ||
+            abs(cur.bearing - targetBearing) > 0.5
+        if (moved) {
+            val pos = CameraPosition.Builder()
+                .target(LatLng(camera.lat, camera.lon))
+                .zoom(camera.zoom.toDouble())
+                .tilt(targetTilt)
+                .bearing(targetBearing)
+                .build()
+            m.moveCamera(CameraUpdateFactory.newCameraPosition(pos))
+        }
+    }
+
+    Box(modifier) {
+        AndroidView(
+            factory = {
+                mapView.getMapAsync { m ->
+                    m.uiSettings.isCompassEnabled = false
+                    m.uiSettings.isLogoEnabled = false
+                    m.uiSettings.isAttributionEnabled = false
+                    m.addOnCameraMoveStartedListener { reason ->
+                        if (reason == MapLibreMap.OnCameraMoveStartedListener.REASON_API_GESTURE) {
+                            userDragging = true
+                            camera.follow = false
+                        }
+                    }
+                    m.addOnCameraIdleListener {
+                        if (userDragging) {
+                            userDragging = false
+                            m.cameraPosition.target?.let { t ->
+                                camera.lat = t.latitude
+                                camera.lon = t.longitude
+                            }
+                            camera.zoom = m.cameraPosition.zoom.roundToInt().coerceIn(3, 19)
+                        }
+                    }
+                    m.addOnMapLongClickListener { latLng ->
+                        liveLongPress(latLng.latitude, latLng.longitude)
+                        true
+                    }
+                    map = m
+                }
+                mapView
+            },
+            modifier = Modifier.fillMaxSize()
+        )
     }
 }
