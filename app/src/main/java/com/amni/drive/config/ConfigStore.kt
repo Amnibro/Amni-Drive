@@ -29,7 +29,7 @@ DriveConfig.normalizePath(it[AAPATH]),
 it[MESH] ?: true,
 it[VOICENAV] ?: true,
 it[MSGBANNER] ?: true,
-it[MSGREAD] ?: false,
+it[MSGREAD] ?: true,
 it[HUFULL] ?: true
 )
 }

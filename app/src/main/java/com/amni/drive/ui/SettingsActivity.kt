@@ -77,7 +77,8 @@ class SettingsActivity : ComponentActivity() {
 @Composable
 private fun SettingsScreen(store: ConfigStore, themes: ThemeStore, theme: UiTheme, onBack: () -> Unit) {
     val p = LocalAmni.current
-    var page by remember { mutableStateOf(SettingsPage.GATE) }
+    var page by remember { mutableStateOf(SettingsPage.LOOKS) }
+    var advanced by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().background(p.bg).padding(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("‹", color = p.acc, fontSize = 22.sp, modifier = Modifier.clickable { onBack() }.padding(horizontal = 8.dp))
@@ -87,7 +88,7 @@ private fun SettingsScreen(store: ConfigStore, themes: ThemeStore, theme: UiThem
         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             GlassCard(Modifier.width(250.dp).fillMaxHeight()) {
                 Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    SettingsPage.entries.forEach { pg ->
+                    SettingsPage.entries.filter { advanced || it == SettingsPage.LOOKS || it == SettingsPage.ABOUT }.forEach { pg ->
                         val sel = page == pg
                         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(if (sel) p.accDim else Color.Transparent).border(1.dp, if (sel) p.acc.copy(alpha = 0.4f) else Color.Transparent, RoundedCornerShape(12.dp)).clickable { page = pg }.padding(10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text(pg.icon, fontSize = 18.sp)
@@ -97,6 +98,7 @@ private fun SettingsScreen(store: ConfigStore, themes: ThemeStore, theme: UiThem
                             }
                         }
                     }
+                    Text(if (advanced) "HIDE ADVANCED" else "ADVANCED", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { advanced = !advanced; if (!advanced) page = SettingsPage.LOOKS }.padding(horizontal = 12.dp, vertical = 14.dp))
                 }
             }
             GlassCard(Modifier.weight(1f).fillMaxHeight()) {

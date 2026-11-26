@@ -14,7 +14,7 @@ val aaPathMode: String = PATH_AUTO,
 val meshBridgeEnabled: Boolean = true,
 val voiceNav: Boolean = true,
 val msgBanner: Boolean = true,
-val msgAutoRead: Boolean = false,
+val msgAutoRead: Boolean = true,
 val huFullscreen: Boolean = true
 ) {
 companion object {

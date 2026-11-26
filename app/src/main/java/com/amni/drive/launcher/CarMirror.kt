@@ -50,9 +50,16 @@ object CarMirror {
     private fun measure(ctx: Context) { phone(ctx).let { m -> aspect.value = m.widthPixels.toFloat() / m.heightPixels.coerceAtLeast(1) } }
     fun locked(ctx: Context): Boolean = (ctx.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager).isKeyguardLocked
     fun touchReady(): Boolean = MirrorTouch.me != null
+    fun setup(ctx: Context) {
+        if (ctx.checkSelfPermission("android.permission.WRITE_SECURE_SETTINGS") != android.content.pm.PackageManager.PERMISSION_GRANTED) return
+        val cr = ctx.contentResolver
+        listOf("enabled_accessibility_services" to "${ctx.packageName}/${MirrorTouch::class.java.name}", "enabled_notification_listeners" to "${ctx.packageName}/com.amni.drive.media.AmniNotifListener").forEach { (key, me) -> runCatching { val cur = Settings.Secure.getString(cr, key).orEmpty(); if (cur.split(':').none { it == me }) Settings.Secure.putString(cr, key, if (cur.isBlank()) me else "$cur:$me") }.onFailure { Log.w(TAG, "setup $key failed: ${it.message}") } }
+        runCatching { Settings.Secure.putInt(cr, "accessibility_enabled", 1) }
+    }
     fun open(ctx: Context, pkg: String) {
         val c = ctx.applicationContext
         app = c
+        setup(c)
         measure(c)
         this.pkg.value = pkg
         closed = false
