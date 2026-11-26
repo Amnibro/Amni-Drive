@@ -34,7 +34,7 @@ val built = buildContext(ctx, log)
 engine = built.createSSLEngine().apply {
 useClientMode = false
 needClientAuth = false
-wantClientAuth = false
+wantClientAuth = true
 try {
 enabledProtocols = arrayOf("TLSv1.2")
 } catch (_: Exception) {
@@ -340,7 +340,7 @@ private const val ALIAS = "amni_aa"
 private const val P12_ASSET = "amni_aa_host.p12"
 private const val P12_PASS = "amni_aa_research"
 fun buildContext(ctx: Context? = null, log: (String) -> Unit = {}): SSLContext {
-val km = softwareKeyManagers(ctx, log)
+val km = AaCertStore.loadKeyManagers(ctx, log) ?: softwareKeyManagers(ctx, log)
 val tm = arrayOf<TrustManager>(object : X509TrustManager {
 override fun checkClientTrusted(chain: Array<X509Certificate>?, authType: String?) {}
 override fun checkServerTrusted(chain: Array<X509Certificate>?, authType: String?) {}

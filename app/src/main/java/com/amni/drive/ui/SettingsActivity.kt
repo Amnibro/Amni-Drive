@@ -243,6 +243,46 @@ private fun WirePane() {
     }.padding(horizontal = 16.dp, vertical = 12.dp)) {
         Text("FORCE DUAL-PATH WATCH TICK", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
     }
+    Text("PHONE CERTIFICATE (FACTORY HEAD UNITS)", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+    var certStatus by remember { mutableStateOf(com.amni.drive.wire.AaCertStore.status(ctx)) }
+    var certBusy by remember { mutableStateOf(false) }
+    var certMsg by remember { mutableStateOf<String?>(null) }
+    val certSummary = when (certStatus.source) {
+        "DOWNLOADED", "IMPORTED" -> "${certStatus.source} · valid until ${certStatus.expiryLabel()} · Google root=${certStatus.googleRootVerified}" + if (certStatus.expired) " (EXPIRED)" else ""
+        else -> "FALLBACK self-signed (factory head units will reject with status -3)"
+    }
+    Text(certSummary, color = if (certStatus.googleRootVerified && !certStatus.expired) p.acc else p.soft, fontFamily = FontFamily.Monospace, fontSize = 10.sp, lineHeight = 14.sp)
+    certMsg?.let { Text(it, color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 10.sp) }
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Box(Modifier.clip(RoundedCornerShape(12.dp)).background(if (certBusy) p.panel2 else p.acc).clickable(enabled = !certBusy) {
+            certBusy = true
+            certMsg = "Downloading & verifying against Google Automotive Link root…"
+            scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                val res = com.amni.drive.wire.AaCertStore.downloadFromIscle(ctx)
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    certBusy = false
+                    res.onSuccess {
+                        certStatus = it
+                        certMsg = "Verified & installed (valid until ${it.expiryLabel()})"
+                    }.onFailure {
+                        certMsg = "Download failed: ${it.message}"
+                    }
+                }
+            }
+        }.padding(horizontal = 14.dp, vertical = 10.dp)) {
+            Text(if (certBusy) "DOWNLOADING…" else "DOWNLOAD AA CERTIFICATE", color = if (certBusy) p.dim else (if (p.isLight) Color.White else Color(0xFF05070A)), fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        }
+        if (certStatus.source != "FALLBACK") {
+            Box(Modifier.clip(RoundedCornerShape(12.dp)).background(p.panel2).border(1.dp, p.line2, RoundedCornerShape(12.dp)).clickable {
+                com.amni.drive.wire.AaCertStore.clearDownloaded(ctx)
+                com.amni.drive.wire.AaCertStore.clearImported(ctx)
+                certStatus = com.amni.drive.wire.AaCertStore.status(ctx)
+                certMsg = "Cleared — reverted to self-signed fallback"
+            }.padding(horizontal = 12.dp, vertical = 10.dp)) {
+                Text("CLEAR", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
     Text("MESHNET DEV BRIDGE", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
     Text("HTTP on all ifaces port ${com.amni.drive.wire.MeshDevBridgeService.PORT} (Nord Meshnet / LAN). Default RIDE never opens USB — keeps wifi adb alive. Agent uses /status /logs /action over mesh.", color = p.soft, fontSize = 12.sp, lineHeight = 17.sp)
     val meshTok = remember { com.amni.drive.wire.MeshDevBridgeService.token(ctx) }
