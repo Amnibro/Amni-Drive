@@ -33,8 +33,11 @@ private var freePollThread: Thread? = null
 private val freePollActive = AtomicReference(false)
 private val sessionRunning = AtomicReference(false)
 private val usbIo = java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r, "aoa-usb-io").apply { isDaemon = true } }
+private val logIo = java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r, "aoa-log-io").apply { isDaemon = true } }
 private val svcScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
 @Volatile private var cachedMode: String = DriveConfig.PATH_AUTO
+private val permPromptedForAttach = java.util.concurrent.atomic.AtomicBoolean(false)
+private val noAccessoryLogCount = java.util.concurrent.atomic.AtomicInteger(0)
 override fun onBind(intent: Intent?): IBinder? = null
 private fun shouldClaimUsb(mode: String = cachedMode): Boolean =
 mode == DriveConfig.PATH_OWN || (mode == DriveConfig.PATH_AUTO && !gearheadCarSessionAlive())
@@ -62,12 +65,13 @@ UsbManager.ACTION_USB_ACCESSORY_ATTACHED -> {
 val acc = readAccessory(intent)
 log("ATTACHED ${desc(acc)}")
 usbIo.execute {
-if (shouldClaimUsb()) requestOrOpen(acc)
+if (shouldClaimUsb()) openOrWaitForAttachPerm(acc, allowPrompt = true)
 else log("ATTACHED ignored · mode=${pathMode()} (protect wifi adb)")
 }
 }
 UsbManager.ACTION_USB_ACCESSORY_DETACHED -> {
 val acc = readAccessory(intent)
+permPromptedForAttach.set(false)
 log("DETACHED ${desc(acc)}")
 usbIo.execute {
 closeAccessory()
@@ -80,6 +84,7 @@ val connected = intent.getBooleanExtra("connected", false)
 val configured = intent.getBooleanExtra("configured", false)
 val accessory = intent.getBooleanExtra("accessory", false)
 log("USB_STATE connected=$connected configured=$configured accessory=$accessory mode=${pathMode()}")
+if (!connected || !accessory) permPromptedForAttach.set(false)
 if (accessory) {
 usbIo.execute {
 if (shouldClaimUsb()) {
@@ -117,6 +122,16 @@ log("probe service started mode=${pathMode()} gearhead=${gearheadProjectionAlive
 }
 override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 when (intent?.action) {
+ACTION_ATTACH -> {
+val acc = readAccessory(intent)
+usbIo.execute {
+if (shouldClaimUsb()) {
+if (acc != null) tryOpen(acc)
+else pollAccessories(requestPerm = false)
+if (accessoryFd.get() == null) scheduleFreePoll()
+} else log("ATTACH activity ignored · mode=${pathMode()}")
+}
+}
 ACTION_POLL -> {
 usbIo.execute {
 if (shouldClaimUsb()) {
@@ -158,18 +173,44 @@ private fun pollAccessories(requestPerm: Boolean) {
 val usb = getSystemService(USB_SERVICE) as UsbManager
 val list = usb.accessoryList
 if (list.isNullOrEmpty()) {
-log("poll: no accessories gearhead=${gearheadProjectionAlive()}")
+permPromptedForAttach.set(false)
+val c = noAccessoryLogCount.getAndIncrement()
+if (c == 0 || c % 30 == 0) log("poll: no accessories (#$c) gearhead=${gearheadProjectionAlive()}")
 updateNotif("AOA probe · no accessory")
 return
 }
+noAccessoryLogCount.set(0)
 list.forEach { acc ->
 val has = try { usb.hasPermission(acc) } catch (_: Exception) { false }
 log("poll: ${desc(acc)} perm=$has gearhead=${gearheadProjectionAlive()}")
 if (has) {
 updateNotif("AOA perm OK · opening")
 tryOpen(acc)
-} else if (requestPerm) requestOrOpen(acc)
+} else if (requestPerm) openOrWaitForAttachPerm(acc, allowPrompt = true)
 }
+}
+private fun openOrWaitForAttachPerm(acc: UsbAccessory?, allowPrompt: Boolean) {
+if (acc == null) return
+val usb = getSystemService(USB_SERVICE) as UsbManager
+if (usb.hasPermission(acc)) {
+tryOpen(acc)
+return
+}
+// Wait up to 1.8s for Android's persistent "Always open" AoaAttachActivity grant to land
+// before ever popping a one-time programmatic UsbManager.requestPermission dialog.
+val deadline = System.currentTimeMillis() + 1_800L
+while (System.currentTimeMillis() < deadline) {
+if (accessoryFd.get() != null || sessionRunning.get()) return
+if (try { usb.hasPermission(acc) } catch (_: Exception) { false }) {
+log("persistent attach permission arrived — opening without dialog")
+tryOpen(acc)
+return
+}
+try { Thread.sleep(120L) } catch (_: InterruptedException) { return }
+}
+if (!allowPrompt || accessoryFd.get() != null || sessionRunning.get()) return
+if (!permPromptedForAttach.compareAndSet(false, true)) return
+requestOrOpen(acc)
 }
 private fun requestOrOpen(acc: UsbAccessory?) {
 if (acc == null) return
@@ -434,22 +475,27 @@ if (acc == null) return "null"
 val sn = try { acc.serial } catch (_: SecurityException) { "(no-perm)" }
 return "mfr=${acc.manufacturer} model=${acc.model} ver=${acc.version} desc=${acc.description} uri=${acc.uri} sn=$sn"
 }
+private val dayFmt = SimpleDateFormat("yyyyMMdd", Locale.US)
+private val timeFmt = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
 private fun log(msg: String) {
 Log.i(TAG, msg)
-val day = SimpleDateFormat("yyyyMMdd", Locale.US).format(Date())
-val line = "${SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(Date())} $msg\n"
-val bytes = line.toByteArray()
+val now = System.currentTimeMillis()
+logIo.execute {
 try {
+val d = Date(now)
+val day = dayFmt.format(d)
+val bytes = "${timeFmt.format(d)} $msg\n".toByteArray()
 val dir = File(filesDir, "aoa_probe")
 if (!dir.exists()) dir.mkdirs()
 FileOutputStream(File(dir, "probe-$day.log"), true).use { it.write(bytes) }
+val ext = getExternalFilesDir(null)
+if (ext != null) {
+val edir = File(ext, "aoa_probe")
+if (!edir.exists()) edir.mkdirs()
+FileOutputStream(File(edir, "probe-$day.log"), true).use { it.write(bytes) }
+}
 } catch (_: Exception) {}
-try {
-val ext = getExternalFilesDir(null) ?: return
-val dir = File(ext, "aoa_probe")
-if (!dir.exists()) dir.mkdirs()
-FileOutputStream(File(dir, "probe-$day.log"), true).use { it.write(bytes) }
-} catch (_: Exception) {}
+}
 }
 private fun ensureChannel() {
 if (Build.VERSION.SDK_INT < 26) return
@@ -472,12 +518,19 @@ companion object {
 const val TAG = "Amni.AoaProbe"
 const val CHANNEL = "amni_wire_aoa"
 const val NOTIF_ID = 7731
+const val ACTION_ATTACH = "com.amni.drive.wire.ATTACH_AOA"
 const val ACTION_POLL = "com.amni.drive.wire.POLL_AOA"
 const val ACTION_CLAIM = "com.amni.drive.wire.CLAIM_AOA"
 const val ACTION_USB_STATE = "android.hardware.usb.action.USB_STATE"
 const val ACTION_USB_PERMISSION = "com.amni.drive.wire.USB_PERMISSION"
 fun start(ctx: Context) {
 val i = Intent(ctx, AoaProbeService::class.java)
+if (Build.VERSION.SDK_INT >= 26) ctx.startForegroundService(i) else ctx.startService(i)
+}
+fun onAttach(ctx: Context, acc: UsbAccessory?) {
+val i = Intent(ctx, AoaProbeService::class.java).setAction(ACTION_ATTACH).apply {
+if (acc != null) putExtra(UsbManager.EXTRA_ACCESSORY, acc)
+}
 if (Build.VERSION.SDK_INT >= 26) ctx.startForegroundService(i) else ctx.startService(i)
 }
 fun poll(ctx: Context) {

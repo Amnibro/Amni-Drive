@@ -33,6 +33,7 @@ object CarEmbed {
     private var bound: Context? = null
     private var target = 0
     private var frame: Bundle? = null
+    @Volatile var overlayBlocking: Boolean = false
     private var area: IntArray? = null
     private val main = Handler(Looper.getMainLooper())
     private val inbox = Messenger(Handler(Looper.getMainLooper()) { m -> if (m.what == GONE && shown.value?.let { SystemClock.uptimeMillis() - it.at > 777 } == true) { Log.i(TAG, "app asked to go back home"); home() }; true })
@@ -59,11 +60,15 @@ object CarEmbed {
     fun attach(ctx: Context, pkg: String) { if (conn == null) bind(ctx.applicationContext, pkg) }
     fun full(pkg: String, displayId: Int, mirror: Boolean) { shown.value = Shown(pkg, pkg, displayId, SystemClock.uptimeMillis(), mirror = mirror) }
     fun home() { shown.value = shown.value?.copy(front = false); target = 0 }
-    fun drop(displayId: Int) { shown.value = null; target = 0; area = null; CarMirror.area = null; CarApps.drop(); unbind() }
+    fun drop(displayId: Int) { shown.value = null; target = 0; area = null; overlayBlocking = false; CarMirror.area = null; CarApps.drop(); unbind() }
     fun surface(s: Surface?, w: Int, h: Int, dpi: Int) { frame = Bundle().apply { putParcelable("s", s); putInt("w", w); putInt("h", h); putInt("dpi", dpi) }; sendFrame() }
     fun area(a: IntArray?) { area = a }
     private fun hit(a: IntArray?, ev: MotionEvent): Boolean = a != null && ev.x >= a[0] && ev.x < a[2] && ev.y >= a[1] && ev.y < a[3]
     fun route(root: View, ev: MotionEvent, displayId: Int): Boolean {
+        if (overlayBlocking) {
+            target = 0
+            return root.dispatchTouchEvent(ev)
+        }
         if (ev.actionMasked == MotionEvent.ACTION_DOWN) target = if (CarApps.pick(ev)) 3 else if (hit(CarMirror.area, ev)) 2 else if (hit(area, ev) && remote != null) 1 else 0
         if (target == 3) { CarApps.touch(ev); return true }
         val a = (if (target == 2) CarMirror.area else if (target == 1) area else null) ?: return root.dispatchTouchEvent(ev)

@@ -15,6 +15,7 @@ private val acc = ByteArrayOutputStream()
 private val running = AtomicBoolean(true)
 private val thread = Thread({
 val tmp = ByteArray(16_384)
+var rxCount = 0
 while (running.get()) {
 val n = try { fis.read(tmp) } catch (e: Exception) {
 log("BULK RX err ${e.message}")
@@ -29,7 +30,10 @@ synchronized(lock) {
 acc.write(tmp, 0, n)
 lock.notifyAll()
 }
-log("BULK RX $n head=${AaAapVersion.hexHead(tmp, n.coerceAtMost(24))}")
+if (rxCount < 4) {
+rxCount++
+log("BULK RX #$rxCount $n head=${AaAapVersion.hexHead(tmp, n.coerceAtMost(24))}")
+}
 }
 running.set(false)
 synchronized(lock) { lock.notifyAll() }

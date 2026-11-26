@@ -255,7 +255,11 @@ data class UiTheme(
     val cornerStyle: Int = 1,
     val widgets: List<DashWidget> = DashWidget.DEFAULTS,
     val widgetWidthMode: Int = 1, // 0 = slim, 1 = normal, 2 = wide
-    val widgetCompact: Boolean = true
+    val widgetCompact: Boolean = true,
+    val dockPosition: Int = 0, // 0 = left rail, 1 = bottom-center dock
+    val mapSplitRatio: Float = 0.54f,
+    val widgetRatio: Float = 0.24f,
+    val swapMapMedia: Boolean = false
 )
 
 class ThemeStore(private val context: Context) {
@@ -274,7 +278,11 @@ class ThemeStore(private val context: Context) {
             cornerStyle = (it[CORNER_STYLE] ?: 1).coerceIn(0, 2),
             widgets = DashWidget.parse(it[WIDGETS]),
             widgetWidthMode = (it[WIDGET_WIDTH] ?: 1).coerceIn(0, 2),
-            widgetCompact = it[WIDGET_COMPACT] ?: true
+            widgetCompact = it[WIDGET_COMPACT] ?: true,
+            dockPosition = (it[DOCK_POSITION] ?: 0).coerceIn(0, 1),
+            mapSplitRatio = (it[MAP_SPLIT_RATIO] ?: 0.54f).coerceIn(0.24f, 0.78f),
+            widgetRatio = (it[WIDGET_RATIO] ?: 0.24f).coerceIn(0.14f, 0.42f),
+            swapMapMedia = it[SWAP_MAP_MEDIA] ?: false
         )
     }
 
@@ -295,6 +303,10 @@ class ThemeStore(private val context: Context) {
     }
     suspend fun setWidgetWidthMode(mode: Int) = context.themeStore.edit { it[WIDGET_WIDTH] = mode.coerceIn(0, 2) }
     suspend fun setWidgetCompact(compact: Boolean) = context.themeStore.edit { it[WIDGET_COMPACT] = compact }
+    suspend fun setDockPosition(pos: Int) = context.themeStore.edit { it[DOCK_POSITION] = pos.coerceIn(0, 1) }
+    suspend fun setMapSplitRatio(ratio: Float) = context.themeStore.edit { it[MAP_SPLIT_RATIO] = ratio.coerceIn(0.24f, 0.78f) }
+    suspend fun setWidgetRatio(ratio: Float) = context.themeStore.edit { it[WIDGET_RATIO] = ratio.coerceIn(0.14f, 0.42f) }
+    suspend fun setSwapMapMedia(swap: Boolean) = context.themeStore.edit { it[SWAP_MAP_MEDIA] = swap }
 
     companion object {
         private val PRESET = stringPreferencesKey("preset")
@@ -311,6 +323,10 @@ class ThemeStore(private val context: Context) {
         private val WIDGETS = stringPreferencesKey("dash_widgets")
         private val WIDGET_WIDTH = intPreferencesKey("widget_width_mode")
         private val WIDGET_COMPACT = booleanPreferencesKey("widget_compact")
+        private val DOCK_POSITION = intPreferencesKey("dock_position")
+        private val MAP_SPLIT_RATIO = floatPreferencesKey("map_split_ratio")
+        private val WIDGET_RATIO = floatPreferencesKey("widget_ratio")
+        private val SWAP_MAP_MEDIA = booleanPreferencesKey("swap_map_media")
     }
 }
 

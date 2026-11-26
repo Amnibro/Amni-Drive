@@ -58,18 +58,31 @@ import kotlin.math.roundToInt
 @Composable
 fun AmniMapEmbedTile(
     modifier: Modifier,
+    compactOrb: Boolean = false,
+    isExpanded: Boolean = false,
+    onToggleExpand: (() -> Unit)? = null,
     onSwitchBuiltIn: () -> Unit
 ) {
     val p = LocalAmni.current
     val ctx = LocalContext.current
-    val dpi = (LocalDensity.current.density * 160f).roundToInt().coerceIn(160, 420)
+    val fallbackDpi = (LocalDensity.current.density * 160f).roundToInt().coerceIn(150, 220)
     val directReady by CarApps.ready.collectAsState()
     var surfaceInfo by remember { mutableStateOf<Triple<Surface, Int, Int>?>(null) }
 
+    fun adaptiveDpi(w: Int, h: Int): Int {
+        val m = minOf(w, h).coerceAtLeast(180)
+        return if (compactOrb) {
+            (m * 0.23f).roundToInt().coerceIn(135, 170)
+        } else {
+            (m * 0.28f).roundToInt().coerceIn(150, 215)
+        }
+    }
+
     LaunchedEffect(Unit) { CarApps.probe() }
 
-    LaunchedEffect(directReady, surfaceInfo) {
+    LaunchedEffect(directReady, surfaceInfo, compactOrb) {
         val info = surfaceInfo
+        val dpi = if (info != null) adaptiveDpi(info.second, info.third) else fallbackDpi
         if (directReady) {
             if (info != null) CarApps.surface(ctx, CarApps.MAP, info.first, info.second, info.third, dpi)
             CarApps.open(ctx, CarApps.MAP, CarEmbed.MAP_PKG)
@@ -86,11 +99,9 @@ fun AmniMapEmbedTile(
         }
     }
 
-    GlassCard(modifier) {
+    val mapSurfaceBox: @Composable (Modifier) -> Unit = { boxMod ->
         Box(
-            Modifier
-                .fillMaxSize()
-                .clip(RoundedCornerShape(14.dp))
+            boxMod
                 .background(Color.Black)
                 .onGloballyPositioned { coords ->
                     val pos = coords.positionInRoot()
@@ -123,8 +134,8 @@ fun AmniMapEmbedTile(
                             }
                             override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean {
                                 surfaceInfo = null
-                                CarApps.surface(context, CarApps.MAP, null, 0, 0, dpi)
-                                CarEmbed.surface(null, 0, 0, dpi)
+                                CarApps.surface(context, CarApps.MAP, null, 0, 0, fallbackDpi)
+                                CarEmbed.surface(null, 0, 0, fallbackDpi)
                                 surf?.release()
                                 surf = null
                                 return true
@@ -134,23 +145,69 @@ fun AmniMapEmbedTile(
                     }
                 }
             )
-            Box(
-                Modifier
-                    .align(Alignment.TopStart)
-                    .padding(6.dp)
-                    .clip(RoundedCornerShape(99.dp))
-                    .background(Color(0xD8080B10))
-                    .border(1.dp, p.acc.copy(alpha = 0.65f), RoundedCornerShape(99.dp))
-                    .clickable { onSwitchBuiltIn() }
-                    .padding(horizontal = 9.dp, vertical = 4.dp)
-            ) {
-                Text(
-                    "AMNI-MAP · SWITCH",
-                    color = p.acc,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 8.sp,
-                    fontWeight = FontWeight.Bold
-                )
+        }
+    }
+
+    if (compactOrb) {
+        mapSurfaceBox(modifier.fillMaxSize())
+    } else {
+        GlassCard(modifier) {
+            Column(Modifier.fillMaxSize()) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(26.dp)
+                        .background(p.panel)
+                        .padding(horizontal = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    Text(
+                        "🗺 AMNI-MAP",
+                        color = p.acc,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Box(
+                        Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(p.panel2)
+                            .border(1.dp, p.hairline, RoundedCornerShape(6.dp))
+                            .clickable { onSwitchBuiltIn() }
+                            .padding(horizontal = 7.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            "BUILT-IN",
+                            color = p.soft,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    if (onToggleExpand != null) {
+                        Box(
+                            Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(if (isExpanded) p.acc else p.panel2)
+                                .border(1.dp, if (isExpanded) p.acc else p.hairline, RoundedCornerShape(6.dp))
+                                .clickable { onToggleExpand() }
+                                .padding(horizontal = 7.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                if (isExpanded) "⤡ EXIT" else "⤢",
+                                color = if (isExpanded) (if (p.isLight) Color.White else Color(0xFF05070A)) else p.ink,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+                mapSurfaceBox(Modifier.weight(1f).fillMaxWidth())
             }
         }
     }
@@ -165,12 +222,14 @@ fun AmniMapEmbedTile(
 fun EmbeddedAppMediaTile(
     app: AppEntry,
     modifier: Modifier,
+    isExpanded: Boolean = false,
+    onToggleExpand: (() -> Unit)? = null,
     onChangeApp: () -> Unit,
     onCloseToControls: () -> Unit
 ) {
     val p = LocalAmni.current
     val ctx = LocalContext.current
-    val dpi = (LocalDensity.current.density * 160f).roundToInt().coerceIn(160, 420)
+    val fallbackDpi = (LocalDensity.current.density * 160f).roundToInt().coerceIn(160, 240)
     val directReady by CarApps.ready.collectAsState()
     val mirrorLive by CarMirror.live.collectAsState()
     var optInMirror by remember(app.packageName) { mutableStateOf(false) }
@@ -180,6 +239,7 @@ fun EmbeddedAppMediaTile(
 
     LaunchedEffect(app.packageName, directReady, surfaceInfo, optInMirror) {
         val info = surfaceInfo
+        val dpi = if (info != null) (minOf(info.second, info.third) * 0.30f).roundToInt().coerceIn(160, 240) else fallbackDpi
         if (directReady) {
             if (info != null) CarApps.surface(ctx, CarApps.MEDIA, info.first, info.second, info.third, dpi)
             CarApps.open(ctx, CarApps.MEDIA, app.packageName)
@@ -234,6 +294,24 @@ fun EmbeddedAppMediaTile(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
+                if (onToggleExpand != null) {
+                    Box(
+                        Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(if (isExpanded) p.acc else p.panel2)
+                            .border(1.dp, if (isExpanded) p.acc else p.hairline, RoundedCornerShape(6.dp))
+                            .clickable { onToggleExpand() }
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            if (isExpanded) "⤡" else "⤢",
+                            color = if (isExpanded) (if (p.isLight) Color.White else Color(0xFF05070A)) else p.ink,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
                 Box(
                     Modifier
                         .clip(RoundedCornerShape(6.dp))
@@ -293,7 +371,7 @@ fun EmbeddedAppMediaTile(
                                 }
                                 override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean {
                                     surfaceInfo = null
-                                    CarApps.surface(context, CarApps.MEDIA, null, 0, 0, dpi)
+                                    CarApps.surface(context, CarApps.MEDIA, null, 0, 0, fallbackDpi)
                                     CarMirror.surface(null, 0, 0)
                                     surf?.release()
                                     surf = null
@@ -392,7 +470,16 @@ fun WidgetPickerSheet(
             .clickable { onClose() },
         contentAlignment = Alignment.Center
     ) {
-        SoftSurface(Modifier.fillMaxWidth(0.80f).padding(10.dp), radius = 18.dp) {
+        SoftSurface(
+            Modifier
+                .fillMaxWidth(0.80f)
+                .padding(10.dp)
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                ) {},
+            radius = 18.dp
+        ) {
             Column(
                 Modifier
                     .padding(14.dp)
@@ -660,6 +747,8 @@ private fun injectWebEnter(wv: android.webkit.WebView?) {
 fun EmbeddedWebMediaTile(
     app: WebAppEntry,
     modifier: Modifier,
+    isExpanded: Boolean = false,
+    onToggleExpand: (() -> Unit)? = null,
     onChangeApp: () -> Unit,
     onCloseToControls: () -> Unit
 ) {
@@ -669,6 +758,14 @@ fun EmbeddedWebMediaTile(
     var pageTitle by remember(app.id) { mutableStateOf(app.label) }
     var showKb by remember { mutableStateOf(false) }
     var symMode by remember { mutableStateOf(false) }
+    var loginBanner by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(loginBanner) {
+        if (loginBanner != null) {
+            kotlinx.coroutines.delay(4000)
+            loginBanner = null
+        }
+    }
 
     DisposableEffect(Unit) {
         onDispose {
@@ -738,9 +835,34 @@ fun EmbeddedWebMediaTile(
                         .clip(RoundedCornerShape(6.dp))
                         .background(p.panel2)
                         .border(1.dp, p.hairline, RoundedCornerShape(6.dp))
-                        .clickable { WebLoginActivity.open(ctx, webRef?.url ?: app.url, app.label) }
+                        .clickable {
+                            val ok = WebLoginActivity.open(ctx, webRef?.url ?: app.url, app.label)
+                            loginBanner = if (ok) {
+                                "🔑 Opened ${app.label} sign-in on phone · tap SAVE & SYNC, then ↻"
+                            } else {
+                                "🔑 Unlock phone → Amni-Drive → Settings → WIRE → Sign-Ins"
+                            }
+                        }
                         .padding(horizontal = 5.dp, vertical = 2.dp)
                 ) { Text("🔑", fontSize = 9.sp) }
+                if (onToggleExpand != null) {
+                    Box(
+                        Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(if (isExpanded) p.acc else p.panel2)
+                            .border(1.dp, if (isExpanded) p.acc else p.hairline, RoundedCornerShape(6.dp))
+                            .clickable { onToggleExpand() }
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            if (isExpanded) "⤡" else "⤢",
+                            color = if (isExpanded) (if (p.isLight) Color.White else Color(0xFF05070A)) else p.ink,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
                 Box(
                     Modifier
                         .clip(RoundedCornerShape(6.dp))
@@ -757,6 +879,24 @@ fun EmbeddedWebMediaTile(
                         .clickable { onCloseToControls() }
                         .padding(horizontal = 6.dp, vertical = 2.dp)
                 ) { Text("♪", color = p.ink, fontSize = 10.sp, fontWeight = FontWeight.Bold) }
+            }
+
+            loginBanner?.let { banner ->
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(p.accDim)
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        banner,
+                        color = p.acc,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 8.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 2
+                    )
+                }
             }
 
             AndroidView(

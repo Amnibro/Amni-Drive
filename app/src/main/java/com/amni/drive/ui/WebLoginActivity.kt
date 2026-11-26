@@ -54,13 +54,25 @@ class WebLoginActivity : ComponentActivity() {
         fun cleanChromeUserAgent(raw: String): String =
             raw.replace("; wv", "").replace(Regex("Version/\\d+\\.\\d+\\s*"), "")
 
-        fun open(ctx: Context, url: String, label: String) {
-            ctx.startActivity(
-                Intent(ctx, WebLoginActivity::class.java)
-                    .putExtra(EXTRA_URL, url)
-                    .putExtra(EXTRA_LABEL, label)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            )
+        fun open(ctx: Context, url: String, label: String): Boolean {
+            val appCtx = ctx.applicationContext
+            val intent = Intent(appCtx, WebLoginActivity::class.java)
+                .putExtra(EXTRA_URL, url)
+                .putExtra(EXTRA_LABEL, label)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            return runCatching {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    val opts = android.app.ActivityOptions.makeBasic()
+                        .setLaunchDisplayId(android.view.Display.DEFAULT_DISPLAY)
+                        .toBundle()
+                    appCtx.startActivity(intent, opts)
+                } else {
+                    appCtx.startActivity(intent)
+                }
+                true
+            }.onFailure { err ->
+                android.util.Log.w("Amni.WebLogin", "open on phone failed: ${err.message}")
+            }.getOrDefault(false)
         }
     }
 

@@ -549,6 +549,7 @@ object AaPostTls {
         val unacked = AtomicInteger(0)
         val maxUnacked = AtomicInteger(2)
         val ackSeen = java.util.concurrent.atomic.AtomicBoolean(false)
+        val lastAckMs = java.util.concurrent.atomic.AtomicLong(0L)
         var touchDownTime = 0L
 
         val txLock = Any()
@@ -611,7 +612,15 @@ object AaPostTls {
                 return
             }
             if (!videoStarted) return
-            if (ackSeen.get() && !isKeyFrame && unacked.get() >= maxUnacked.get() * 2) return
+            val cap = maxOf(maxUnacked.get() * 3, 6)
+            if (ackSeen.get() && !isKeyFrame && unacked.get() >= cap) {
+                val nowMs = SystemClock.uptimeMillis()
+                if (nowMs - lastAckMs.get() > 450L) {
+                    unacked.set(0)
+                } else {
+                    return
+                }
+            }
             val plain = ByteArray(2 + 8 + nalu.size)
             plain[0] = (MEDIA_DATA ushr 8).toByte()
             plain[1] = (MEDIA_DATA and 0xFF).toByte()
@@ -673,7 +682,7 @@ object AaPostTls {
 
         fun handleMsg(channel: Int, msgId: Int, body: ByteArray, via: String) {
             rxFrames++
-            if (msgId != MSG_PING_REQUEST && msgId != MEDIA_ACK) {
+            if (msgId != MSG_PING_REQUEST && msgId != MEDIA_ACK && !(channel == inputCh && msgId == INPUT_REPORT)) {
                 log("POST-TLS RX $via ch=$channel msg=0x${msgId.toString(16)} body=${body.size} hex=${AaAapVersion.hexHead(body, 20)}")
             }
             if (channel == CH_CONTROL) {
@@ -802,6 +811,7 @@ object AaPostTls {
                     }
                     MEDIA_ACK -> {
                         ackSeen.set(true)
+                        lastAckMs.set(SystemClock.uptimeMillis())
                         unacked.updateAndGet { maxOf(0, it - 1) }
                     }
                     MEDIA_VIDEO_FOCUS_REQUEST -> {

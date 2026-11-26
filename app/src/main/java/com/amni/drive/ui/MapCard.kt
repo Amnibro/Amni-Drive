@@ -82,7 +82,10 @@ fun MapCard(
     onEndRoute: () -> Unit,
     dense: Boolean = false,
     hostKeyboard: (() -> Unit)? = null,
-    onVoice: (() -> Unit)? = null
+    onVoice: (() -> Unit)? = null,
+    circular: Boolean = false,
+    isExpanded: Boolean = false,
+    onToggleExpand: (() -> Unit)? = null
 ) {
     val p = LocalAmni.current
     var searchOpen by remember { mutableStateOf(false) }
@@ -102,7 +105,38 @@ fun MapCard(
     GlassCard(modifier) {
         Box(Modifier.fillMaxSize().clip(RoundedCornerShape(corner))) {
             AmniMap(camera, tiles, route, reports, stops, stops.lastOrNull(), location, p.acc, p.panel2, onLongPress, Modifier.fillMaxSize())
-            if (dense) {
+            if (circular) {
+                Row(
+                    Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 18.dp)
+                        .clip(RoundedCornerShape(99.dp))
+                        .background(chromeBg)
+                        .border(1.dp, chromeLine, RoundedCornerShape(99.dp))
+                        .padding(horizontal = 6.dp, vertical = 3.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    MapBtn(Icons.Rounded.Search, "", searchOpen, p.acc, true) { searchOpen = !searchOpen; onShowLayers(false); onShowReport(false) }
+                    onVoice?.let { v -> MapBtn(Icons.Rounded.Mic, "", false, p.acc, true) { searchOpen = false; v() } }
+                    MapBtn(Icons.Rounded.MyLocation, "", camera.follow, p.acc, true) { camera.follow = true }
+                    MapBtn(Icons.Rounded.Layers, "", showLayers, p.acc, true) { onShowLayers(!showLayers); onShowReport(false); searchOpen = false }
+                }
+                Row(
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 18.dp)
+                        .clip(RoundedCornerShape(99.dp))
+                        .background(chromeBg)
+                        .border(1.dp, chromeLine, RoundedCornerShape(99.dp))
+                        .padding(horizontal = 6.dp, vertical = 3.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    MapBtn(Icons.Rounded.Remove, "", false, p.acc, true) { camera.zoom = (camera.zoom - 1).coerceAtLeast(11) }
+                    MapBtn(Icons.Rounded.Add, "", false, p.acc, true) { camera.zoom = (camera.zoom + 1).coerceAtMost(17) }
+                }
+            } else if (dense) {
                 Row(
                     Modifier.align(Alignment.TopEnd).padding(btnPad),
                     horizontalArrangement = Arrangement.spacedBy(btnGap),
@@ -112,6 +146,26 @@ fun MapCard(
                     onVoice?.let { v -> MapBtn(Icons.Rounded.Mic, "", false, p.acc, true) { searchOpen = false; v() } }
                     MapBtn(Icons.Rounded.MyLocation, "", camera.follow, p.acc, true) { camera.follow = true }
                     MapBtn(Icons.Rounded.Layers, "", showLayers, p.acc, true) { onShowLayers(!showLayers); onShowReport(false); searchOpen = false }
+                    if (onToggleExpand != null) {
+                        Box(
+                            Modifier
+                                .height(40.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(if (isExpanded) p.acc else chromeBg)
+                                .border(1.dp, if (isExpanded) p.acc else p.hairline, RoundedCornerShape(12.dp))
+                                .clickable { onToggleExpand() }
+                                .padding(horizontal = 10.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                if (isExpanded) "⤡" else "⤢",
+                                color = if (isExpanded) (if (p.isLight) Color.White else Color(0xFF05070A)) else p.ink,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
                 }
                 Column(
                     Modifier.align(Alignment.CenterEnd).padding(end = btnPad),
@@ -123,6 +177,25 @@ fun MapCard(
                 }
             } else {
                 Column(Modifier.align(Alignment.TopEnd).padding(btnPad), verticalArrangement = Arrangement.spacedBy(btnGap), horizontalAlignment = Alignment.CenterHorizontally) {
+                    if (onToggleExpand != null) {
+                        Box(
+                            Modifier
+                                .size(58.dp, 38.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(if (isExpanded) p.acc else chromeBg)
+                                .border(1.dp, if (isExpanded) p.acc else p.hairline, RoundedCornerShape(14.dp))
+                                .clickable { onToggleExpand() },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                if (isExpanded) "⤡ EXIT" else "⤢ FULL",
+                                color = if (isExpanded) (if (p.isLight) Color.White else Color(0xFF05070A)) else p.ink,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
                     MapBtn(Icons.Rounded.Search, "FIND", searchOpen, p.acc, false) { searchOpen = !searchOpen; onShowLayers(false); onShowReport(false) }
                     onVoice?.let { v -> MapBtn(Icons.Rounded.Mic, "VOICE", false, p.acc, false) { searchOpen = false; v() } }
                     MapBtn(Icons.Rounded.Warning, "REPORT", showReport, p.err, false) { onShowReport(!showReport); onShowLayers(false); searchOpen = false }

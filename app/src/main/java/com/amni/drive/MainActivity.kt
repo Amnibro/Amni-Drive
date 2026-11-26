@@ -74,7 +74,11 @@ initialPage = startPage,
 onSetTileLayout = { v -> lifecycleScope.launch { app.themeStore.setTileLayout(v) } },
 onSetWidgets = { v -> lifecycleScope.launch { app.themeStore.setWidgets(v) } },
 onSetWidgetWidthMode = { v -> lifecycleScope.launch { app.themeStore.setWidgetWidthMode(v) } },
-onSetWidgetCompact = { v -> lifecycleScope.launch { app.themeStore.setWidgetCompact(v) } }
+onSetWidgetCompact = { v -> lifecycleScope.launch { app.themeStore.setWidgetCompact(v) } },
+onSetDockPosition = { v -> lifecycleScope.launch { app.themeStore.setDockPosition(v) } },
+onSetMapSplitRatio = { v -> lifecycleScope.launch { app.themeStore.setMapSplitRatio(v) } },
+onSetWidgetRatio = { v -> lifecycleScope.launch { app.themeStore.setWidgetRatio(v) } },
+onSetSwapMapMedia = { v -> lifecycleScope.launch { app.themeStore.setSwapMapMedia(v) } }
 )
 }
 }

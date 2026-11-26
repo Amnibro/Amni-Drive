@@ -79,6 +79,10 @@ onSetTileLayout = { v -> scope.launch { app.themeStore.setTileLayout(v) } },
 onSetWidgets = { v -> scope.launch { app.themeStore.setWidgets(v) } },
 onSetWidgetWidthMode = { v -> scope.launch { app.themeStore.setWidgetWidthMode(v) } },
 onSetWidgetCompact = { v -> scope.launch { app.themeStore.setWidgetCompact(v) } },
+onSetDockPosition = { v -> scope.launch { app.themeStore.setDockPosition(v) } },
+onSetMapSplitRatio = { v -> scope.launch { app.themeStore.setMapSplitRatio(v) } },
+onSetWidgetRatio = { v -> scope.launch { app.themeStore.setWidgetRatio(v) } },
+onSetSwapMapMedia = { v -> scope.launch { app.themeStore.setSwapMapMedia(v) } },
 onCycleTheme = {
 android.util.Log.i("Amni.Theme", "cycle from ${theme.preset}")
 scope.launch {

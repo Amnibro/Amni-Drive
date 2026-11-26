@@ -42,11 +42,10 @@ class AmniProjectionEngine(
     private val heightMargin: Int = 0,
     private val directSurface: android.view.Surface? = null
 ) {
-    private val encoder = H264Encoder(width, height, fps, 5_000_000)
+    private val encoder = H264Encoder(width, height, fps, 3_800_000)
     private var virtualDisplay: VirtualDisplay? = null
     private var presentation: RearPresentation? = null
-    private var worker: HandlerThread? = null
-    private var handler: Handler? = null
+    private var drainThread: Thread? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private val running = AtomicBoolean(false)
     private val sink = AtomicReference<((ByteArray, Boolean) -> Unit)?>(null)
@@ -74,7 +73,7 @@ class AmniProjectionEngine(
             runCatching {
                 if (displayId >= 0) com.amni.drive.launcher.CarEmbed.route(root, ev, displayId)
                 else root.dispatchTouchEvent(ev)
-            }
+            }.onFailure { onLog("touch err: ${it.message}") }
             ev.recycle()
         }
     }
@@ -108,7 +107,7 @@ class AmniProjectionEngine(
             runCatching {
                 if (displayId >= 0 && com.amni.drive.launcher.CarEmbed.key(ev, displayId)) return@runCatching
                 root.dispatchKeyEvent(ev)
-            }
+            }.onFailure { onLog("key err: ${it.message}") }
         }
     }
 
@@ -242,17 +241,18 @@ class AmniProjectionEngine(
             latch.await(4, TimeUnit.SECONDS)
             uiErr?.let { throw it }
 
-            val th = HandlerThread("amni-proj-drain").also { it.start() }
-            worker = th
-            handler = Handler(th.looper)
-            handler?.post(object : Runnable {
-                override fun run() {
-                    if (!running.get()) return
-                    encoder.drain(8_000L)
-                    handler?.postDelayed(this, (1000L / fps).coerceAtLeast(16L))
+            if (directSurface == null) {
+                drainThread = Thread({
+                    runCatching { android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_DISPLAY) }
+                    while (running.get()) {
+                        encoder.drain(15_000L)
+                    }
+                }, "amni-proj-drain").also {
+                    it.isDaemon = true
+                    it.start()
                 }
-            })
-            encoder.requestKeyFrame()
+                encoder.requestKeyFrame()
+            }
             onLog("projection started — full Amni UI on Presentation")
             true
         } catch (e: Exception) {
@@ -264,10 +264,8 @@ class AmniProjectionEngine(
 
     fun stop() {
         running.set(false)
-        handler?.removeCallbacksAndMessages(null)
-        worker?.quitSafely()
-        worker = null
-        handler = null
+        drainThread?.interrupt()
+        drainThread = null
         val droppedId = virtualDisplay?.display?.displayId ?: -1
         mainHandler.post {
             if (droppedId >= 0) runCatching { com.amni.drive.launcher.CarEmbed.drop(droppedId) }

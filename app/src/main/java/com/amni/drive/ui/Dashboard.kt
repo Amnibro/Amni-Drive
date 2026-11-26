@@ -18,10 +18,16 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -65,6 +71,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -75,6 +82,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -83,6 +91,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -144,6 +153,10 @@ onSetTileLayout: (TileLayout) -> Unit = {},
 onSetWidgets: (List<DashWidget>) -> Unit = {},
 onSetWidgetWidthMode: (Int) -> Unit = {},
 onSetWidgetCompact: (Boolean) -> Unit = {},
+onSetDockPosition: (Int) -> Unit = {},
+onSetMapSplitRatio: (Float) -> Unit = {},
+onSetWidgetRatio: (Float) -> Unit = {},
+onSetSwapMapMedia: (Boolean) -> Unit = {},
 onCycleTheme: () -> Unit = {}
 ) {
 val p = rememberPalette(theme)
@@ -151,6 +164,8 @@ val ctxRoot = LocalContext.current
 CompositionLocalProvider(LocalAmni provides p) {
 var page by remember { mutableStateOf(initialPage) }
 LaunchedEffect(initialPage) { page = initialPage }
+var expandedTile by remember { mutableStateOf<String?>(null) }
+LaunchedEffect(page) { if (page != DrivePage.HOME) expandedTile = null }
 var menuOpen by remember { mutableStateOf(false) }
 var layoutPicker by remember { mutableStateOf(false) }
 var widgetPicker by remember { mutableStateOf(false) }
@@ -310,11 +325,15 @@ val netOk by produceState(true) {
 val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 while (true) { value = cm.activeNetwork != null; delay(3000) }
 }
+val anyOverlayOpen = menuOpen || layoutPicker || widgetPicker || mediaPicker || blocked != null || showLayers || showReport
+SideEffect { com.amni.drive.launcher.CarEmbed.overlayBlocking = anyOverlayOpen }
+DisposableEffect(Unit) { onDispose { com.amni.drive.launcher.CarEmbed.overlayBlocking = false } }
 BoxWithConstraints(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(p.bg, if (p.isLight) Color(0xFFE8ECF0) else Color(0xFF05070A))))) {
 val aspect = maxWidth / maxHeight
 val micro = maxWidth < 520.dp || maxHeight < 220.dp
 val dense = carSurface || maxHeight < 560.dp || aspect > 1.5f || maxWidth < 960.dp
-val railW = when {
+val bottomDock = theme.dockPosition == 1
+val railW = if (bottomDock) 0.dp else when {
 micro -> 48.dp
 maxWidth < 720.dp -> 54.dp
 dense -> 60.dp
@@ -340,7 +359,9 @@ LaunchedEffect(mediaPulse) { if (mediaPulse > 0L) { mediaFlash = true; page = Dr
 val layout = resolveTileLayout(theme.tileLayout, micro, dense, contentW, maxHeight, carSurface)
 if (theme.weatherBg && !micro && !carSurface) WeatherLayer(weather?.wx ?: Wx.NONE, moving, Modifier.fillMaxSize())
 Row(Modifier.fillMaxSize()) {
-Rail(page, cfg.driverGateEnabled && cfg.masterGateEnabled, { menuOpen = true }, { page = it }, onToggleGate, railW, dense || micro)
+if (!bottomDock) {
+Rail(page, cfg.driverGateEnabled && cfg.masterGateEnabled, { menuOpen = true }, { page = it; expandedTile = null }, onToggleGate, railW, dense || micro)
+}
 Column(Modifier.weight(1f).fillMaxHeight()) {
 if (showTopBar) TopBar(driveState, speedMph, weather, passenger)
 else if (carSurface || (dense && !micro)) CarStatusStrip(driveState, speedMph, weather, passenger, 0.dp, onOpenLayout = { layoutPicker = true }, onOpenMedia = { mediaPicker = true }, onOpenWidgets = { widgetPicker = true })
@@ -361,9 +382,9 @@ openInMediaBox(app)
 }
 DrivePage.NAV -> Box(Modifier.fillMaxSize().padding(pad)) {
 if (useAmniMap && carSurface && hasAmniMap) {
-AmniMapEmbedTile(Modifier.fillMaxSize()) { useAmniMap = false }
+AmniMapEmbedTile(Modifier.fillMaxSize(), isExpanded = true, onToggleExpand = { page = DrivePage.HOME }) { useAmniMap = false }
 } else {
-MapCard(Modifier.fillMaxSize(), camera, tiles, route, reports, stops, location, routing, true, netOk, showLayers, showReport, { showLayers = it }, { showReport = it }, reportStore, addPoint, onGo, onAddStop, onEnd, dense || micro, if (carSurface) ({ AaNavState.openHostSearch() }) else null, onVoice)
+MapCard(Modifier.fillMaxSize(), camera, tiles, route, reports, stops, location, routing, true, netOk, showLayers, showReport, { showLayers = it }, { showReport = it }, reportStore, addPoint, onGo, onAddStop, onEnd, dense || micro, if (carSurface) ({ AaNavState.openHostSearch() }) else null, onVoice, isExpanded = true, onToggleExpand = { page = DrivePage.HOME })
 }
 }
 DrivePage.HOME -> HomeTiles(
@@ -385,10 +406,19 @@ embeddedMediaApp = embeddedMediaApp,
 embeddedWebApp = embeddedWebApp,
 onClearMediaApp = { embeddedMediaApp = null; embeddedWebApp = null },
 widgetsList = theme.widgets,
+onSetWidgets = onSetWidgets,
 onEditWidgets = { widgetPicker = true },
 onToggleGate = onToggleGate,
 allApps = apps,
 onQuickLaunch = openInMediaBox,
+expandedTile = expandedTile,
+onToggleExpand = { id -> expandedTile = if (expandedTile == id) null else id },
+mapSplitRatio = theme.mapSplitRatio,
+widgetRatio = theme.widgetRatio,
+swapMapMedia = theme.swapMapMedia,
+onSetMapSplitRatio = onSetMapSplitRatio,
+onSetWidgetRatio = onSetWidgetRatio,
+onToggleSwapMapMedia = { onSetSwapMapMedia(!theme.swapMapMedia) },
 camera = camera,
 tiles = tiles,
 route = route,
@@ -425,13 +455,54 @@ Text(h, color = p.ink, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLi
 }
 }
 }
+if (bottomDock) {
+BottomCenterDock(
+page = page,
+gateOn = cfg.driverGateEnabled && cfg.masterGateEnabled,
+compact = dense || micro,
+onMenu = { menuOpen = true },
+onPage = { page = it; expandedTile = null },
+onMedia = { mediaPicker = true },
+onLayout = { layoutPicker = true },
+onWidgets = { widgetPicker = true },
+onToggleGate = onToggleGate
+)
 }
 }
-if (menuOpen) MenuDrawer(page, rearAvailable, cfg.driverGateEnabled && cfg.masterGateEnabled, theme.weatherBg, carSurface, theme.tileLayout,
-onPage = { page = it; menuOpen = false }, onToggleGate = onToggleGate, onToggleWeather = onToggleWeather,
-onSettings = { menuOpen = false; onOpenSettings() }, onClose = { menuOpen = false }, onMedia = { menuOpen = false; mediaPicker = true },
-onTileLayout = { menuOpen = false; layoutPicker = true }, onWidgets = { menuOpen = false; widgetPicker = true }, themeLabel = theme.preset.label, onTheme = onCycleTheme)
-if (layoutPicker) TileLayoutPicker(theme.tileLayout, layout, { onSetTileLayout(it); layoutPicker = false }, { layoutPicker = false }, carSurface)
+}
+if (menuOpen) MenuDrawer(
+page = page,
+rearAvailable = rearAvailable,
+gateOn = cfg.driverGateEnabled && cfg.masterGateEnabled,
+weatherOn = theme.weatherBg,
+carSurface = carSurface,
+tileLayout = theme.tileLayout,
+dockPosition = theme.dockPosition,
+swapMapMedia = theme.swapMapMedia,
+onPage = { page = it; expandedTile = null; menuOpen = false },
+onToggleGate = onToggleGate,
+onToggleWeather = onToggleWeather,
+onSettings = { menuOpen = false; onOpenSettings() },
+onClose = { menuOpen = false },
+onMedia = { menuOpen = false; mediaPicker = true },
+onTileLayout = { menuOpen = false; layoutPicker = true },
+onWidgets = { menuOpen = false; widgetPicker = true },
+onToggleDock = { onSetDockPosition(if (theme.dockPosition == 0) 1 else 0) },
+onToggleSwap = { onSetSwapMapMedia(!theme.swapMapMedia) },
+themeLabel = theme.preset.label,
+onTheme = onCycleTheme
+)
+if (layoutPicker) TileLayoutPicker(
+selected = theme.tileLayout,
+effective = layout,
+dockPosition = theme.dockPosition,
+swapMapMedia = theme.swapMapMedia,
+onPick = { onSetTileLayout(it); layoutPicker = false },
+onSetDock = onSetDockPosition,
+onToggleSwap = { onSetSwapMapMedia(!theme.swapMapMedia) },
+onClose = { layoutPicker = false },
+compact = carSurface
+)
 if (widgetPicker) WidgetPickerSheet(theme.widgets, theme.widgetWidthMode, theme.widgetCompact, onSetWidgets, onSetWidgetWidthMode, onSetWidgetCompact) { widgetPicker = false }
 if (mediaPicker) MediaSourceSheet(mediaAppsList, apps, { mediaPicker = false }, { openInMediaBox(it); mediaPicker = false }, { openWebInMediaBox(it); mediaPicker = false })
 blocked?.let { app ->
@@ -459,6 +530,44 @@ dense -> minOf(user, 1)
 else -> user
 }
 @Composable
+private fun DraggableDivider(
+totalPx: Float,
+onDragFraction: (Float) -> Unit,
+onCommit: () -> Unit,
+onReset: () -> Unit
+) {
+val p = LocalAmni.current
+var dragging by remember { mutableStateOf(false) }
+Box(
+Modifier
+.width(12.dp)
+.fillMaxHeight()
+.pointerInput(totalPx) {
+detectHorizontalDragGestures(
+onDragStart = { dragging = true },
+onDragEnd = { dragging = false; onCommit() },
+onDragCancel = { dragging = false; onCommit() }
+) { change, dragAmount ->
+change.consume()
+if (totalPx > 40f) onDragFraction(dragAmount / totalPx)
+}
+}
+.pointerInput(Unit) {
+detectTapGestures(onDoubleTap = { onReset() })
+},
+contentAlignment = Alignment.Center
+) {
+Box(
+Modifier
+.width(if (dragging) 5.dp else 3.dp)
+.height(if (dragging) 56.dp else 36.dp)
+.clip(RoundedCornerShape(99.dp))
+.background(if (dragging) p.acc else p.hairline.copy(alpha = 0.85f))
+)
+}
+}
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
 private fun HomeTiles(
 layout: TileLayout,
 pad: androidx.compose.ui.unit.Dp,
@@ -478,10 +587,19 @@ embeddedMediaApp: AppEntry? = null,
 embeddedWebApp: WebAppEntry? = null,
 onClearMediaApp: () -> Unit = {},
 widgetsList: List<DashWidget> = DashWidget.DEFAULTS,
+onSetWidgets: (List<DashWidget>) -> Unit = {},
 onEditWidgets: () -> Unit = {},
 onToggleGate: () -> Unit = {},
 allApps: List<AppEntry> = emptyList(),
 onQuickLaunch: (AppEntry) -> Unit = {},
+expandedTile: String? = null,
+onToggleExpand: (String) -> Unit = {},
+mapSplitRatio: Float = 0.54f,
+widgetRatio: Float = 0.24f,
+swapMapMedia: Boolean = false,
+onSetMapSplitRatio: (Float) -> Unit = {},
+onSetWidgetRatio: (Float) -> Unit = {},
+onToggleSwapMapMedia: () -> Unit = {},
 camera: com.amni.drive.map.MapCamera,
 tiles: TileStore,
 route: RouteResult?,
@@ -508,14 +626,52 @@ hostKeyboard: (() -> Unit)? = null,
 onVoice: (() -> Unit)? = null
 ) {
 val p = LocalAmni.current
+val dens = LocalDensity.current
 val wDense = dense || widgetCompact
-val map: @Composable (Modifier) -> Unit = { mod ->
+var liveMapRatio by remember(mapSplitRatio) { mutableStateOf(mapSplitRatio) }
+var liveWidgetRatio by remember(widgetRatio) { mutableStateOf(widgetRatio) }
+var editingWidgets by remember { mutableStateOf(false) }
+
+val map: @Composable (Modifier, Boolean) -> Unit = { mod, orb ->
+val mapFull = expandedTile == "MAP"
 if (useAmniMap && carSurface) {
-AmniMapEmbedTile(mod, onSwitchBuiltIn = onToggleAmniMap)
+AmniMapEmbedTile(
+modifier = mod,
+compactOrb = orb,
+isExpanded = mapFull,
+onToggleExpand = if (orb) null else ({ onToggleExpand("MAP") }),
+onSwitchBuiltIn = onToggleAmniMap
+)
 } else {
 Box(mod) {
-MapCard(Modifier.fillMaxSize(), camera, tiles, route, reports, stops, location, routing, false, netOk, showLayers, showReport, onShowLayers, onShowReport, reportStore, addPoint, onGo, onAddStop, onEnd, dense, hostKeyboard, onVoice)
-if (hasAmniMap && carSurface) {
+MapCard(
+modifier = Modifier.fillMaxSize(),
+camera = camera,
+tiles = tiles,
+route = route,
+reports = reports,
+stops = stops,
+location = location,
+routing = routing,
+fullNav = mapFull,
+netOk = netOk,
+showLayers = showLayers,
+showReport = showReport,
+onShowLayers = onShowLayers,
+onShowReport = onShowReport,
+reportStore = reportStore,
+onLongPress = addPoint,
+onGo = onGo,
+onAddStop = onAddStop,
+onEndRoute = onEnd,
+dense = dense,
+hostKeyboard = hostKeyboard,
+onVoice = onVoice,
+circular = orb,
+isExpanded = mapFull,
+onToggleExpand = if (orb) null else ({ onToggleExpand("MAP") })
+)
+if (hasAmniMap && carSurface && !orb) {
 Box(
 Modifier.align(Alignment.TopStart).padding(6.dp).clip(RoundedCornerShape(99.dp))
 .background(Color(0xD8080B10)).border(1.dp, p.acc.copy(alpha = 0.65f), RoundedCornerShape(99.dp))
@@ -529,44 +685,223 @@ Text("USE AMNI-MAP", color = p.acc, fontFamily = FontFamily.Monospace, fontSize 
 }
 val mediaMod = Modifier.then(if (mediaFlash) Modifier.border(2.dp, p.acc, RoundedCornerShape(18.dp)) else Modifier)
 val widgets: @Composable (Modifier) -> Unit = { mod ->
-Column(mod.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(gap)) {
-widgetsList.forEach { w ->
+val widgetsFull = expandedTile == "WIDGETS"
+Column(mod) {
+Row(
+Modifier.fillMaxWidth().padding(bottom = 4.dp),
+verticalAlignment = Alignment.CenterVertically,
+horizontalArrangement = Arrangement.spacedBy(4.dp)
+) {
+Text(
+if (editingWidgets) "DRAG · ✕ REMOVE" else "WIDGETS",
+color = if (editingWidgets) p.acc else p.soft,
+fontFamily = FontFamily.Monospace,
+fontSize = 8.5.sp,
+fontWeight = FontWeight.Bold,
+letterSpacing = 0.8.sp,
+modifier = Modifier.weight(1f),
+maxLines = 1,
+overflow = TextOverflow.Ellipsis
+)
+Box(
+Modifier.clip(RoundedCornerShape(6.dp))
+.background(if (editingWidgets) p.acc else p.panel2)
+.border(1.dp, if (editingWidgets) p.acc else p.hairline, RoundedCornerShape(6.dp))
+.clickable { editingWidgets = !editingWidgets }
+.padding(horizontal = 6.dp, vertical = 2.dp)
+) {
+Text(
+if (editingWidgets) "DONE ✓" else "✎",
+color = if (editingWidgets) (if (p.isLight) Color.White else Color(0xFF05070A)) else p.ink,
+fontFamily = FontFamily.Monospace,
+fontSize = 8.5.sp,
+fontWeight = FontWeight.Bold
+)
+}
+Box(
+Modifier.clip(RoundedCornerShape(6.dp))
+.background(if (widgetsFull) p.acc else p.panel2)
+.border(1.dp, if (widgetsFull) p.acc else p.hairline, RoundedCornerShape(6.dp))
+.clickable { onToggleExpand("WIDGETS") }
+.padding(horizontal = 6.dp, vertical = 2.dp)
+) {
+Text(
+if (widgetsFull) "⤡" else "⤢",
+color = if (widgetsFull) (if (p.isLight) Color.White else Color(0xFF05070A)) else p.ink,
+fontFamily = FontFamily.Monospace,
+fontSize = 9.sp,
+fontWeight = FontWeight.Bold
+)
+}
+}
+Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(gap)) {
+widgetsList.forEachIndexed { idx, w ->
+var dragAccumY by remember(w, widgetsList) { mutableStateOf(0f) }
+var dragAccumX by remember(w, widgetsList) { mutableStateOf(0f) }
+Box(
+Modifier
+.fillMaxWidth()
+.then(if (editingWidgets) Modifier.border(1.5.dp, p.acc.copy(alpha = 0.8f), RoundedCornerShape(16.dp)) else Modifier)
+.combinedClickable(
+onClick = { if (!editingWidgets && w == DashWidget.GATE) onToggleGate() },
+onLongClick = { editingWidgets = !editingWidgets }
+)
+.then(
+if (editingWidgets) {
+Modifier
+.pointerInput(w, widgetsList) {
+detectVerticalDragGestures(
+onDragEnd = { dragAccumY = 0f },
+onDragCancel = { dragAccumY = 0f }
+) { change, dy ->
+change.consume()
+dragAccumY += dy
+if (dragAccumY > 44f && idx < widgetsList.lastIndex) {
+val m = widgetsList.toMutableList()
+m[idx] = m[idx + 1].also { m[idx + 1] = m[idx] }
+dragAccumY = 0f
+onSetWidgets(m)
+} else if (dragAccumY < -44f && idx > 0) {
+val m = widgetsList.toMutableList()
+m[idx] = m[idx - 1].also { m[idx - 1] = m[idx] }
+dragAccumY = 0f
+onSetWidgets(m)
+}
+}
+}
+.pointerInput(w, widgetsList) {
+detectHorizontalDragGestures(
+onDragEnd = { dragAccumX = 0f },
+onDragCancel = { dragAccumX = 0f }
+) { change, dx ->
+change.consume()
+dragAccumX += dx
+if (kotlin.math.abs(dragAccumX) > 75f && widgetsList.size > 1) {
+dragAccumX = 0f
+onSetWidgets(widgetsList - w)
+}
+}
+}
+} else Modifier
+)
+) {
 when (w) {
 DashWidget.WEATHER -> WeatherCard(weather, wDense)
 DashWidget.TRIP -> TripCard(speedMph, route, wDense)
-DashWidget.GATE -> Box(Modifier.clickable { onToggleGate() }) { GateHintCard(cfg, wDense) }
+DashWidget.GATE -> GateHintCard(cfg, wDense)
 DashWidget.CLOCK -> ClockWidgetCard(wDense)
 DashWidget.MEDIA_MINI -> QuickMediaWidgetCard(wDense, onOpenMediaPicker)
 DashWidget.SHORTCUTS -> ShortcutsWidgetCard(allApps, wDense, onQuickLaunch)
 DashWidget.VEHICLE -> VehicleWidgetCard(speedMph, location != null, netOk, wDense)
 DashWidget.COMPASS -> CompassWidgetCard(location, wDense)
 }
+if (editingWidgets) {
+Row(
+Modifier
+.align(Alignment.TopEnd)
+.padding(4.dp)
+.clip(RoundedCornerShape(99.dp))
+.background(Color(0xE80A0D12))
+.border(1.dp, p.acc.copy(alpha = 0.7f), RoundedCornerShape(99.dp))
+.padding(horizontal = 4.dp, vertical = 2.dp),
+horizontalArrangement = Arrangement.spacedBy(3.dp),
+verticalAlignment = Alignment.CenterVertically
+) {
+Text("≡", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+if (idx > 0) {
+Text("▲", color = p.ink, fontSize = 9.sp, modifier = Modifier.clickable {
+val m = widgetsList.toMutableList()
+m[idx] = m[idx - 1].also { m[idx - 1] = m[idx] }
+onSetWidgets(m)
+}.padding(horizontal = 2.dp))
 }
+if (idx < widgetsList.lastIndex) {
+Text("▼", color = p.ink, fontSize = 9.sp, modifier = Modifier.clickable {
+val m = widgetsList.toMutableList()
+m[idx] = m[idx + 1].also { m[idx + 1] = m[idx] }
+onSetWidgets(m)
+}.padding(horizontal = 2.dp))
+}
+if (widgetsList.size > 1) {
+Text("✕", color = p.err, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { onSetWidgets(widgetsList - w) }.padding(horizontal = 3.dp))
+}
+}
+}
+}
+}
+Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
 Box(
-Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(p.panel2.copy(alpha = 0.78f))
+Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).background(p.panel2.copy(alpha = 0.82f))
 .border(1.dp, p.acc.copy(alpha = 0.45f), RoundedCornerShape(10.dp)).clickable { onEditWidgets() }.padding(vertical = 6.dp),
 contentAlignment = Alignment.Center
 ) {
-Text("✎ EDIT WIDGETS", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)
+Text("+ WIDGETS", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
+}
+Box(
+Modifier.clip(RoundedCornerShape(10.dp)).background(p.panel2.copy(alpha = 0.82f))
+.border(1.dp, p.hairline, RoundedCornerShape(10.dp)).clickable { onToggleSwapMapMedia() }.padding(horizontal = 8.dp, vertical = 6.dp),
+contentAlignment = Alignment.Center
+) {
+Text("⇄", color = p.ink, fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+}
+}
 }
 }
 }
 val media: @Composable (Modifier, Boolean) -> Unit = { mod, d ->
+val mediaFull = expandedTile == "MEDIA"
+val onToggleMediaFull: () -> Unit = { onToggleExpand("MEDIA") }
 when {
-embeddedWebApp != null -> EmbeddedWebMediaTile(embeddedWebApp, mod.then(mediaMod), onChangeApp = onOpenMediaPicker, onCloseToControls = onClearMediaApp)
-embeddedMediaApp != null && carSurface -> EmbeddedAppMediaTile(embeddedMediaApp, mod.then(mediaMod), onChangeApp = onOpenMediaPicker, onCloseToControls = onClearMediaApp)
-else -> MediaCard(mod.then(mediaMod), d, mediaHint, surfaceDisplayId, mediaApps, onOpenMediaPicker)
+embeddedWebApp != null -> EmbeddedWebMediaTile(embeddedWebApp, mod.then(mediaMod), isExpanded = mediaFull, onToggleExpand = onToggleMediaFull, onChangeApp = onOpenMediaPicker, onCloseToControls = onClearMediaApp)
+embeddedMediaApp != null && carSurface -> EmbeddedAppMediaTile(embeddedMediaApp, mod.then(mediaMod), isExpanded = mediaFull, onToggleExpand = onToggleMediaFull, onChangeApp = onOpenMediaPicker, onCloseToControls = onClearMediaApp)
+else -> MediaCard(mod.then(mediaMod), d, mediaHint, surfaceDisplayId, mediaApps, onOpenMediaPicker, isExpanded = mediaFull, onToggleExpand = onToggleMediaFull)
 }
 }
+
+if (expandedTile != null) {
+Box(Modifier.fillMaxSize().padding(pad)) {
+when (expandedTile) {
+"MAP" -> map(Modifier.fillMaxSize(), false)
+"MEDIA" -> media(Modifier.fillMaxSize(), false)
+"WIDGETS" -> widgets(Modifier.fillMaxSize())
+else -> map(Modifier.fillMaxSize(), false)
+}
+}
+return
+}
+
 when (layout) {
-TileLayout.SPLIT_50 -> Row(Modifier.fillMaxSize().padding(pad), horizontalArrangement = Arrangement.spacedBy(gap)) {
-map(Modifier.weight(1f).fillMaxHeight())
-media(Modifier.weight(1f).fillMaxHeight(), dense)
+TileLayout.SPLIT_50 -> BoxWithConstraints(Modifier.fillMaxSize().padding(pad)) {
+val totalPx = with(dens) { maxWidth.toPx() }
+val leftFrac = liveMapRatio.coerceIn(0.25f, 0.75f)
+Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+if (!swapMapMedia) {
+map(Modifier.weight(leftFrac).fillMaxHeight(), false)
+DraggableDivider(totalPx, { d -> liveMapRatio = (liveMapRatio + d).coerceIn(0.25f, 0.75f) }, { onSetMapSplitRatio(liveMapRatio) }, { liveMapRatio = 0.50f; onSetMapSplitRatio(0.50f) })
+media(Modifier.weight(1f - leftFrac).fillMaxHeight(), dense)
+} else {
+media(Modifier.weight(leftFrac).fillMaxHeight(), dense)
+DraggableDivider(totalPx, { d -> liveMapRatio = (liveMapRatio + d).coerceIn(0.25f, 0.75f) }, { onSetMapSplitRatio(liveMapRatio) }, { liveMapRatio = 0.50f; onSetMapSplitRatio(0.50f) })
+map(Modifier.weight(1f - leftFrac).fillMaxHeight(), false)
 }
-TileLayout.ORB_CENTER -> Row(Modifier.fillMaxSize().padding(pad), horizontalArrangement = Arrangement.spacedBy(gap), verticalAlignment = Alignment.CenterVertically) {
-widgets(Modifier.width(widgetW).fillMaxHeight())
-BoxWithConstraints(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
-val orbSize = (minOf(maxWidth, maxHeight) - 4.dp).coerceAtLeast(140.dp)
+}
+}
+TileLayout.ORB_CENTER -> BoxWithConstraints(Modifier.fillMaxSize().padding(pad)) {
+val totalPx = with(dens) { maxWidth.toPx() }
+val wFrac = liveWidgetRatio.coerceIn(0.16f, 0.30f)
+val rem = (1f - wFrac).coerceAtLeast(0.50f)
+val orbFrac = (rem * liveMapRatio.coerceIn(0.42f, 0.70f)).coerceAtLeast(0.32f)
+val mediaFrac = (rem - orbFrac).coerceAtLeast(0.18f)
+Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+widgets(Modifier.weight(wFrac).fillMaxHeight())
+DraggableDivider(totalPx, { d -> liveWidgetRatio = (liveWidgetRatio + d).coerceIn(0.16f, 0.30f) }, { onSetWidgetRatio(liveWidgetRatio) }, { liveWidgetRatio = 0.22f; onSetWidgetRatio(0.22f) })
+Column(
+Modifier.weight(orbFrac).fillMaxHeight().padding(horizontal = 2.dp),
+horizontalAlignment = Alignment.CenterHorizontally,
+verticalArrangement = Arrangement.Center
+) {
+BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+val orbSize = (minOf(maxWidth, maxHeight) - 4.dp).coerceAtLeast(150.dp)
 Box(
 Modifier.size(orbSize).clip(CircleShape)
 .background(p.bg)
@@ -575,24 +910,47 @@ Modifier.size(orbSize).clip(CircleShape)
 contentAlignment = Alignment.Center
 ) {
 Box(Modifier.fillMaxSize().clip(CircleShape).border(1.dp, p.hairline, CircleShape)) {
-map(Modifier.fillMaxSize())
-}
-Box(
-Modifier.align(Alignment.TopCenter).padding(top = 4.dp).clip(RoundedCornerShape(99.dp))
-.background(Color(0xD805070A)).border(1.dp, p.acc.copy(alpha = 0.7f), RoundedCornerShape(99.dp))
-.padding(horizontal = 7.dp, vertical = 1.dp)
-) { Text("N", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 8.sp, fontWeight = FontWeight.Bold) }
-Box(
-Modifier.align(Alignment.BottomCenter).padding(bottom = 5.dp).clip(RoundedCornerShape(99.dp))
-.background(Color(0xE005070A)).border(1.dp, p.acc.copy(alpha = 0.7f), RoundedCornerShape(99.dp))
-.padding(horizontal = 10.dp, vertical = 2.dp)
-) { Text("$speedMph MPH", color = p.ink, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold) }
+map(Modifier.fillMaxSize(), true)
 }
 }
-media(Modifier.weight(1.05f).fillMaxHeight(), dense)
+}
+Spacer(Modifier.height(4.dp))
+Row(
+Modifier
+.clip(RoundedCornerShape(99.dp))
+.background(p.panel.copy(alpha = 0.96f))
+.border(1.dp, p.acc.copy(alpha = 0.55f), RoundedCornerShape(99.dp))
+.padding(horizontal = 8.dp, vertical = 4.dp),
+horizontalArrangement = Arrangement.spacedBy(8.dp),
+verticalAlignment = Alignment.CenterVertically
+) {
+if (hasAmniMap && carSurface) {
+Text(
+if (useAmniMap) "BUILT-IN" else "AMNI-MAP",
+color = p.acc,
+fontFamily = FontFamily.Monospace,
+fontSize = 8.5.sp,
+fontWeight = FontWeight.Bold,
+modifier = Modifier.clickable { onToggleAmniMap() }
+)
+}
+Text("N · $speedMph MPH", color = p.ink, fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+Text(
+"⤢ FULL",
+color = p.acc,
+fontFamily = FontFamily.Monospace,
+fontSize = 8.5.sp,
+fontWeight = FontWeight.Bold,
+modifier = Modifier.clickable { onToggleExpand("MAP") }
+)
+}
+}
+DraggableDivider(totalPx, { d -> liveMapRatio = (liveMapRatio + d).coerceIn(0.42f, 0.70f) }, { onSetMapSplitRatio(liveMapRatio) }, { liveMapRatio = 0.56f; onSetMapSplitRatio(0.56f) })
+media(Modifier.weight(mediaFrac).fillMaxHeight(), dense)
+}
 }
 TileLayout.MAP_ONLY -> Box(Modifier.fillMaxSize().padding(pad)) {
-map(Modifier.fillMaxSize())
+map(Modifier.fillMaxSize(), false)
 Row(
 Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(6.dp).clip(RoundedCornerShape(14.dp))
 .background(p.panel.copy(alpha = 0.95f)).border(1.dp, p.hairline, RoundedCornerShape(14.dp)).padding(horizontal = 10.dp, vertical = 7.dp),
@@ -606,15 +964,19 @@ Text(if (cfg.masterGateEnabled && cfg.driverGateEnabled) "GATE" else "OPEN", col
 }
 }
 TileLayout.STACKED -> Column(Modifier.fillMaxSize().padding(pad), verticalArrangement = Arrangement.spacedBy(gap)) {
-map(Modifier.weight(1.45f).fillMaxWidth())
+map(Modifier.weight(1.45f).fillMaxWidth(), false)
 Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(gap)) {
 media(Modifier.weight(1.1f).fillMaxHeight(), true)
 widgets(Modifier.weight(0.9f).fillMaxHeight())
 }
 }
-TileLayout.MAP_FOCUS -> Row(Modifier.fillMaxSize().padding(pad), horizontalArrangement = Arrangement.spacedBy(gap)) {
-map(Modifier.weight(2.1f).fillMaxHeight())
-Column(Modifier.width(widgetW.coerceAtLeast(160.dp)).fillMaxHeight().padding(top = carTopPad), verticalArrangement = Arrangement.spacedBy(gap)) {
+TileLayout.MAP_FOCUS -> BoxWithConstraints(Modifier.fillMaxSize().padding(pad)) {
+val totalPx = with(dens) { maxWidth.toPx() }
+val mapFrac = liveMapRatio.coerceIn(0.45f, 0.78f)
+Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+map(Modifier.weight(mapFrac).fillMaxHeight(), false)
+DraggableDivider(totalPx, { d -> liveMapRatio = (liveMapRatio + d).coerceIn(0.45f, 0.78f) }, { onSetMapSplitRatio(liveMapRatio) }, { liveMapRatio = 0.66f; onSetMapSplitRatio(0.66f) })
+Column(Modifier.weight(1f - mapFrac).fillMaxHeight().padding(top = carTopPad), verticalArrangement = Arrangement.spacedBy(gap)) {
 if (dense) {
 media(Modifier.weight(1f).fillMaxWidth(), true)
 Row(
@@ -633,31 +995,165 @@ media(Modifier.weight(1f).fillMaxWidth(), true)
 }
 }
 }
-TileLayout.MEDIA_FOCUS -> Row(Modifier.fillMaxSize().padding(pad), horizontalArrangement = Arrangement.spacedBy(gap)) {
-map(Modifier.weight(1.0f).fillMaxHeight())
-media(Modifier.weight(1.45f).fillMaxHeight().then(if (widgetW < 130.dp) Modifier.padding(top = carTopPad) else Modifier), dense)
-if (widgetW >= 130.dp) widgets(Modifier.width(widgetW).fillMaxHeight().padding(top = carTopPad))
 }
-TileLayout.BALANCED, TileLayout.AUTO -> Row(Modifier.fillMaxSize().padding(pad), horizontalArrangement = Arrangement.spacedBy(gap)) {
-map(Modifier.weight(if (dense) 1.5f else 1.5f).fillMaxHeight())
-media(Modifier.weight(if (dense) 1.0f else 1f).fillMaxHeight(), dense)
-widgets(Modifier.width(widgetW).fillMaxHeight().padding(top = carTopPad))
+TileLayout.MEDIA_FOCUS -> BoxWithConstraints(Modifier.fillMaxSize().padding(pad)) {
+val totalPx = with(dens) { maxWidth.toPx() }
+val wFrac = if (widgetW >= 130.dp) liveWidgetRatio.coerceIn(0.16f, 0.34f) else 0f
+val mainRem = (1f - wFrac).coerceAtLeast(0.55f)
+val firstFrac = (mainRem * (1f - liveMapRatio.coerceIn(0.32f, 0.72f))).coerceAtLeast(0.18f)
+val secondFrac = (mainRem - firstFrac).coerceAtLeast(0.22f)
+Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+if (!swapMapMedia) {
+map(Modifier.weight(firstFrac).fillMaxHeight(), false)
+DraggableDivider(totalPx, { d -> liveMapRatio = (liveMapRatio - d).coerceIn(0.32f, 0.72f) }, { onSetMapSplitRatio(liveMapRatio) }, { liveMapRatio = 0.58f; onSetMapSplitRatio(0.58f) })
+media(Modifier.weight(secondFrac).fillMaxHeight(), dense)
+} else {
+media(Modifier.weight(secondFrac).fillMaxHeight(), dense)
+DraggableDivider(totalPx, { d -> liveMapRatio = (liveMapRatio + d).coerceIn(0.32f, 0.72f) }, { onSetMapSplitRatio(liveMapRatio) }, { liveMapRatio = 0.58f; onSetMapSplitRatio(0.58f) })
+map(Modifier.weight(firstFrac).fillMaxHeight(), false)
+}
+if (wFrac > 0f) {
+DraggableDivider(totalPx, { d -> liveWidgetRatio = (liveWidgetRatio - d).coerceIn(0.16f, 0.34f) }, { onSetWidgetRatio(liveWidgetRatio) }, { liveWidgetRatio = 0.22f; onSetWidgetRatio(0.22f) })
+widgets(Modifier.weight(wFrac).fillMaxHeight().padding(top = carTopPad))
+}
+}
+}
+TileLayout.BALANCED, TileLayout.AUTO -> BoxWithConstraints(Modifier.fillMaxSize().padding(pad)) {
+val totalPx = with(dens) { maxWidth.toPx() }
+val wFrac = liveWidgetRatio.coerceIn(0.16f, 0.36f)
+val mainRem = (1f - wFrac).coerceAtLeast(0.55f)
+val leftFrac = (mainRem * liveMapRatio.coerceIn(0.28f, 0.75f)).coerceAtLeast(0.20f)
+val midFrac = (mainRem - leftFrac).coerceAtLeast(0.20f)
+Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+if (!swapMapMedia) {
+map(Modifier.weight(leftFrac).fillMaxHeight(), false)
+DraggableDivider(totalPx, { d -> liveMapRatio = (liveMapRatio + d).coerceIn(0.28f, 0.75f) }, { onSetMapSplitRatio(liveMapRatio) }, { liveMapRatio = 0.56f; onSetMapSplitRatio(0.56f) })
+media(Modifier.weight(midFrac).fillMaxHeight(), dense)
+} else {
+media(Modifier.weight(leftFrac).fillMaxHeight(), dense)
+DraggableDivider(totalPx, { d -> liveMapRatio = (liveMapRatio + d).coerceIn(0.28f, 0.75f) }, { onSetMapSplitRatio(liveMapRatio) }, { liveMapRatio = 0.56f; onSetMapSplitRatio(0.56f) })
+map(Modifier.weight(midFrac).fillMaxHeight(), false)
+}
+DraggableDivider(totalPx, { d -> liveWidgetRatio = (liveWidgetRatio - d).coerceIn(0.16f, 0.36f) }, { onSetWidgetRatio(liveWidgetRatio) }, { liveWidgetRatio = 0.24f; onSetWidgetRatio(0.24f) })
+widgets(Modifier.weight(wFrac).fillMaxHeight().padding(top = carTopPad))
+}
 }
 }
 }
 @Composable
-private fun TileLayoutPicker(selected: TileLayout, effective: TileLayout, onPick: (TileLayout) -> Unit, onClose: () -> Unit, compact: Boolean = false) {
+private fun BottomCenterDock(
+page: DrivePage,
+gateOn: Boolean,
+compact: Boolean,
+onMenu: () -> Unit,
+onPage: (DrivePage) -> Unit,
+onMedia: () -> Unit,
+onLayout: () -> Unit,
+onWidgets: () -> Unit,
+onToggleGate: () -> Unit
+) {
+val p = LocalAmni.current
+Box(
+Modifier.fillMaxWidth().padding(bottom = if (compact) 4.dp else 8.dp, top = 2.dp),
+contentAlignment = Alignment.Center
+) {
+Row(
+Modifier
+.clip(RoundedCornerShape(99.dp))
+.background(p.panel.copy(alpha = 0.96f))
+.border(1.dp, p.hairline, RoundedCornerShape(99.dp))
+.padding(horizontal = 8.dp, vertical = 4.dp),
+horizontalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 8.dp),
+verticalAlignment = Alignment.CenterVertically
+) {
+DockPillBtn(Icons.Rounded.Menu, "MENU", false, false, onMenu)
+DockPillBtn(Icons.Rounded.Home, "HOME", page == DrivePage.HOME, false) { onPage(DrivePage.HOME) }
+DockPillBtn(Icons.Rounded.Apps, "APPS", page == DrivePage.APPS, false) { onPage(DrivePage.APPS) }
+DockPillBtn(Icons.Rounded.Map, "NAV", page == DrivePage.NAV, false) { onPage(DrivePage.NAV) }
+Box(Modifier.width(1.dp).height(20.dp).background(p.hairline))
+DockPillBtn(Icons.Rounded.MusicNote, "MEDIA", false, false, onMedia)
+DockPillBtn(Icons.Rounded.ViewModule, "LAYOUT", false, false, onLayout)
+DockPillBtn(Icons.Rounded.Security, if (gateOn) "GATE" else "OPEN", gateOn, !gateOn, onToggleGate)
+}
+}
+}
+@Composable
+private fun DockPillBtn(icon: ImageVector, label: String, sel: Boolean, err: Boolean, onClick: () -> Unit) {
+val p = LocalAmni.current
+val tint = if (err) p.err else if (sel) p.acc else p.ink
+Row(
+Modifier
+.clip(RoundedCornerShape(99.dp))
+.background(if (sel || err) tint.copy(alpha = 0.20f) else p.panel2.copy(alpha = 0.65f))
+.border(1.dp, if (sel || err) tint.copy(alpha = 0.65f) else Color.Transparent, RoundedCornerShape(99.dp))
+.clickable { onClick() }
+.padding(horizontal = 10.dp, vertical = 6.dp),
+verticalAlignment = Alignment.CenterVertically,
+horizontalArrangement = Arrangement.spacedBy(4.dp)
+) {
+Icon(icon, label, Modifier.size(16.dp), tint = tint)
+Text(label, color = tint, fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+}
+}
+@Composable
+private fun TileLayoutPicker(
+selected: TileLayout,
+effective: TileLayout,
+dockPosition: Int = 0,
+swapMapMedia: Boolean = false,
+onPick: (TileLayout) -> Unit,
+onSetDock: (Int) -> Unit = {},
+onToggleSwap: () -> Unit = {},
+onClose: () -> Unit,
+compact: Boolean = false
+) {
 val p = LocalAmni.current
 val rowH = if (compact) 42.dp else 52.dp
 Box(Modifier.fillMaxSize().background(p.scrim).clickable { onClose() }, contentAlignment = Alignment.Center) {
-SoftSurface(Modifier.fillMaxWidth(if (compact) 0.72f else 0.74f).padding(if (compact) 6.dp else 12.dp), radius = 20.dp) {
+SoftSurface(
+Modifier
+.fillMaxWidth(if (compact) 0.78f else 0.74f)
+.padding(if (compact) 6.dp else 12.dp)
+.clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) {},
+radius = 20.dp
+) {
 Column(Modifier.padding(if (compact) 10.dp else 16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(if (compact) 5.dp else 8.dp)) {
 Row(verticalAlignment = Alignment.CenterVertically) {
 Text("COCKPIT LAYOUT", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = if (compact) 12.sp else 14.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
 Spacer(Modifier.weight(1f))
-Text("✕", color = p.ink, fontSize = 15.sp, modifier = Modifier.clickable { onClose() }.padding(4.dp))
+Box(
+Modifier.clip(RoundedCornerShape(99.dp)).background(p.panel2).border(1.dp, p.hairline, RoundedCornerShape(99.dp))
+.clickable { onClose() }.padding(horizontal = 10.dp, vertical = 4.dp)
+) {
+Text("CLOSE ✕", color = p.ink, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)
 }
-Text("Active: ${effective.label}" + if (selected == TileLayout.AUTO && effective != TileLayout.AUTO) " (auto→${effective.label})" else "", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 10.sp)
+}
+Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+Text("CONTROLS:", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+listOf("LEFT RAIL" to 0, "BOTTOM CENTER" to 1).forEach { (lbl, pos) ->
+val on = dockPosition == pos
+Box(
+Modifier.clip(RoundedCornerShape(8.dp))
+.background(if (on) p.acc else p.panel2)
+.border(1.dp, if (on) p.acc else p.hairline, RoundedCornerShape(8.dp))
+.clickable { onSetDock(pos) }
+.padding(horizontal = 9.dp, vertical = 5.dp)
+) {
+Text(lbl, color = if (on) (if (p.isLight) Color.White else Color(0xFF05070A)) else p.ink, fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+}
+}
+Spacer(Modifier.weight(1f))
+Box(
+Modifier.clip(RoundedCornerShape(8.dp))
+.background(if (swapMapMedia) p.accDim else p.panel2)
+.border(1.dp, if (swapMapMedia) p.acc else p.hairline, RoundedCornerShape(8.dp))
+.clickable { onToggleSwap() }
+.padding(horizontal = 9.dp, vertical = 5.dp)
+) {
+Text("⇄ SWAP MAP/MEDIA", color = if (swapMapMedia) p.acc else p.ink, fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+}
+}
+Text("Drag any divider bar to resize tiles · double-tap divider to reset · tap ⤢ on any tile for full screen", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 9.sp)
 TileLayout.entries.forEach { mode ->
 val sel = selected == mode
 Row(
@@ -817,21 +1313,58 @@ Text(clock, color = p.ink, fontFamily = FontFamily.Monospace, fontSize = 13.sp, 
 }
 }
 @Composable
-private fun MenuDrawer(page: DrivePage, rearAvailable: Boolean, gateOn: Boolean, weatherOn: Boolean, carSurface: Boolean, tileLayout: TileLayout, onPage: (DrivePage) -> Unit, onToggleGate: () -> Unit, onToggleWeather: (Boolean) -> Unit, onSettings: () -> Unit, onClose: () -> Unit, onMedia: () -> Unit, onTileLayout: () -> Unit, onWidgets: () -> Unit = {}, themeLabel: String = "", onTheme: () -> Unit = {}) {
+private fun MenuDrawer(
+page: DrivePage,
+rearAvailable: Boolean,
+gateOn: Boolean,
+weatherOn: Boolean,
+carSurface: Boolean,
+tileLayout: TileLayout,
+dockPosition: Int = 0,
+swapMapMedia: Boolean = false,
+onPage: (DrivePage) -> Unit,
+onToggleGate: () -> Unit,
+onToggleWeather: (Boolean) -> Unit,
+onSettings: () -> Unit,
+onClose: () -> Unit,
+onMedia: () -> Unit,
+onTileLayout: () -> Unit,
+onWidgets: () -> Unit = {},
+onToggleDock: () -> Unit = {},
+onToggleSwap: () -> Unit = {},
+themeLabel: String = "",
+onTheme: () -> Unit = {}
+) {
 val p = LocalAmni.current
 val ctx = LocalContext.current
 Row(Modifier.fillMaxSize().background(p.scrim)) {
-SoftSurface(Modifier.width(320.dp).fillMaxHeight().padding(10.dp), radius = 24.dp) {
-Column(Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+SoftSurface(
+Modifier
+.width(340.dp)
+.fillMaxHeight()
+.padding(10.dp)
+.clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) {},
+radius = 24.dp
+) {
+Column(Modifier.fillMaxSize().padding(14.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
 Box(Modifier.size(8.dp).clip(CircleShape).background(p.acc))
-Text("AMNI DRIVE", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 15.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
+Text("AMNI DRIVE", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 14.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.8.sp)
 Spacer(Modifier.weight(1f))
-Box(Modifier.size(36.dp).clip(CircleShape).background(p.panel2).clickable { onClose() }, contentAlignment = Alignment.Center) {
-Text("✕", color = p.ink, fontSize = 14.sp)
+Box(
+Modifier
+.height(36.dp)
+.clip(RoundedCornerShape(99.dp))
+.background(p.panel2)
+.border(1.dp, p.acc.copy(alpha = 0.65f), RoundedCornerShape(99.dp))
+.clickable { onClose() }
+.padding(horizontal = 12.dp),
+contentAlignment = Alignment.Center
+) {
+Text("CLOSE ✕", color = p.ink, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
 }
 }
-Spacer(Modifier.height(8.dp))
+Spacer(Modifier.height(6.dp))
 if (!carSurface) {
 MenuRow(Icons.Rounded.Home, "Home", "Dashboard & map", page == DrivePage.HOME) { onPage(DrivePage.HOME) }
 MenuRow(Icons.Rounded.Apps, "All Apps", "Everything installed", page == DrivePage.APPS) { onPage(DrivePage.APPS) }
@@ -840,7 +1373,9 @@ MenuRow(Icons.Rounded.Map, "Navigation", "Full-screen map", page == DrivePage.NA
 MenuRow(Icons.Rounded.MusicNote, "Media & Apps", "Spotify, YouTube, Netflix, any app", false) { onMedia() }
 MenuRow(Icons.Rounded.Palette, "Theme", "$themeLabel · tap to cycle", false) { onTheme() }
 MenuRow(Icons.Rounded.ViewModule, "Tile layout", tileLayout.label + " · fit glass", false) { onTileLayout() }
-MenuRow(Icons.Rounded.Apps, "Widgets", "Customize third-row cards", false) { onWidgets() }
+MenuRow(Icons.Rounded.Apps, "Widgets", "Customize & drag-edit cards", false) { onWidgets() }
+MenuRow(Icons.Rounded.ViewModule, "Controls dock", if (dockPosition == 1) "Bottom center · tap for left rail" else "Left rail · tap for bottom center", dockPosition == 1) { onToggleDock() }
+MenuRow(Icons.Rounded.ViewModule, "Swap Map ↔ Media", if (swapMapMedia) "Swapped · tap to restore" else "Standard · tap to flip sides", swapMapMedia) { onToggleSwap() }
 if (!carSurface) {
 MenuRow(Icons.Rounded.Phone, "Phone", "Dialer", false) {
 runCatching { ctx.startActivity(Intent(Intent.ACTION_DIAL).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
@@ -848,7 +1383,8 @@ onClose()
 }
 MenuRow(Icons.Rounded.Tv, "Rear Screen", if (rearAvailable) "Detected — auto-routes gated apps" else "No rear display detected", false) {}
 MenuRow(Icons.Rounded.Cast, "Amni Link", "Phone host · head-unit receiver", false) {
-ctx.startActivity(Intent(ctx, LinkActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); onClose()
+runCatching { ctx.startActivity(Intent(ctx, LinkActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+onClose()
 }
 }
 Box(Modifier.fillMaxWidth().height(1.dp).background(p.hairline).padding(vertical = 6.dp))
@@ -998,7 +1534,16 @@ delay(1500)
 return label to playing
 }
 @Composable
-private fun MediaCard(modifier: Modifier, dense: Boolean = false, preferred: String? = null, surfaceDisplayId: Int? = null, mediaApps: List<AppEntry> = emptyList(), onOpenPicker: () -> Unit = {}) {
+private fun MediaCard(
+modifier: Modifier,
+dense: Boolean = false,
+preferred: String? = null,
+surfaceDisplayId: Int? = null,
+mediaApps: List<AppEntry> = emptyList(),
+onOpenPicker: () -> Unit = {},
+isExpanded: Boolean = false,
+onToggleExpand: (() -> Unit)? = null
+) {
 val p = LocalAmni.current
 val ctx = LocalContext.current
 val np by MediaSessionBridge.nowPlaying.collectAsState()
@@ -1012,13 +1557,29 @@ val pad = if (dense) 8.dp else 16.dp
 Box(modifier) {
 GlassCard(Modifier.fillMaxSize()) {
 Column(Modifier.fillMaxSize().padding(pad), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.SpaceBetween) {
-Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
 AccentBar(Modifier.width(if (dense) 14.dp else 28.dp).height(3.dp))
-Spacer(Modifier.width(6.dp))
 Text("MEDIA", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = if (dense) 9.sp else 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
 Spacer(Modifier.weight(1f))
 Box(Modifier.clip(RoundedCornerShape(99.dp)).background(p.accDim).border(1.dp, p.acc.copy(alpha = 0.5f), RoundedCornerShape(99.dp)).clickable { onOpenPicker() }.padding(horizontal = 8.dp, vertical = 2.dp)) {
 Text("SOURCE", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+}
+if (onToggleExpand != null) {
+Box(
+Modifier.clip(RoundedCornerShape(99.dp))
+.background(if (isExpanded) p.acc else p.panel2)
+.border(1.dp, if (isExpanded) p.acc else p.hairline, RoundedCornerShape(99.dp))
+.clickable { onToggleExpand() }
+.padding(horizontal = 7.dp, vertical = 2.dp)
+) {
+Text(
+if (isExpanded) "⤡" else "⤢",
+color = if (isExpanded) (if (p.isLight) Color.White else Color(0xFF05070A)) else p.ink,
+fontFamily = FontFamily.Monospace,
+fontSize = 9.sp,
+fontWeight = FontWeight.Bold
+)
+}
 }
 }
 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable { onOpenPicker() }) {
@@ -1084,7 +1645,13 @@ val p = LocalAmni.current
 val ctx = LocalContext.current
 var tab by remember { mutableStateOf(0) } // 0 = Car Web Apps, 1 = Media & Video, 2 = All Apps
 Box(Modifier.fillMaxSize().background(p.scrim).clickable { onClose() }, contentAlignment = Alignment.Center) {
-SoftSurface(Modifier.fillMaxWidth(0.82f).padding(10.dp), radius = 18.dp) {
+SoftSurface(
+Modifier
+.fillMaxWidth(0.82f)
+.padding(10.dp)
+.clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) {},
+radius = 18.dp
+) {
 Column(Modifier.padding(14.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
 Text("MEDIA BOX", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
@@ -1095,7 +1662,12 @@ Text(label, color = if (on) (if (p.isLight) Color.White else Color(0xFF05070A)) 
 }
 }
 Spacer(Modifier.weight(1f))
-Text("✕", color = p.ink, fontSize = 15.sp, modifier = Modifier.clickable { onClose() }.padding(4.dp))
+Box(
+Modifier.clip(RoundedCornerShape(99.dp)).background(p.panel2).border(1.dp, p.hairline, RoundedCornerShape(99.dp))
+.clickable { onClose() }.padding(horizontal = 9.dp, vertical = 4.dp)
+) {
+Text("CLOSE ✕", color = p.ink, fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+}
 }
 Row(
 Modifier.fillMaxWidth().height(38.dp).clip(RoundedCornerShape(12.dp)).background(p.accDim).border(1.dp, p.acc.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
@@ -1384,7 +1956,11 @@ color = p.soft, fontSize = 12.sp, lineHeight = 16.sp, modifier = Modifier.paddin
 private fun GateSheet(app: AppEntry, rear: Boolean, onRear: () -> Unit, onPassenger: () -> Unit, onDismiss: () -> Unit) {
 val p = LocalAmni.current
 Box(Modifier.fillMaxSize().background(p.scrim).clickable { onDismiss() }, contentAlignment = Alignment.Center) {
-GlassCard(Modifier.width(500.dp)) {
+GlassCard(
+Modifier
+.width(500.dp)
+.clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) {}
+) {
 Column(Modifier.padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
 Box(Modifier.size(64.dp).clip(CircleShape).background(p.err.copy(alpha = 0.12f)).border(1.dp, p.err.copy(alpha = 0.45f), CircleShape), contentAlignment = Alignment.Center) {
 Icon(Icons.Rounded.Lock, null, Modifier.size(28.dp), tint = p.err)
