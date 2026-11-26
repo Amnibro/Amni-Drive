@@ -55,7 +55,7 @@ class DriveController(context: Context, private val store: ConfigStore) {
                 else -> null
             }
             val embedded = surfaceDisplayId != null && CarEmbed.supports(app, entry.packageName) && CarEmbed.open(app, entry, surfaceDisplayId)
-            val ok = embedded || launcher.launch(entry, target)
+            val ok = embedded || (surfaceDisplayId != null && CarEmbed.mirror(app, entry, surfaceDisplayId)) || launcher.launch(entry, target)
             if (!ok && surfaceDisplayId != null) launcher.launch(entry, null)
         }
         return decision

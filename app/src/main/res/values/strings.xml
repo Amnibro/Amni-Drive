@@ -2,4 +2,6 @@
     <string name="app_name">Amni-Drive</string>
     <string name="media_label">Amni (media stub)</string>
     <string name="settings_title">Amni-Drive Settings</string>
+    <string name="mirror_touch_desc">Lets touches on your car screen control the app Amni-Drive is showing there. Amni-Drive reads nothing from your screen.</string>
+    <string name="mirror_touch_label">Amni-Drive car touch</string>
 </resources>

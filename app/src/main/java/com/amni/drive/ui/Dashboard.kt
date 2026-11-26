@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -102,6 +103,7 @@ import com.amni.drive.gate.DriveState
 import com.amni.drive.gate.GateDecision
 import com.amni.drive.launcher.AppEntry
 import com.amni.drive.launcher.CarEmbed
+import com.amni.drive.launcher.CarMirror
 import com.amni.drive.map.OsrmRouting
 import com.amni.drive.map.Place
 import com.amni.drive.map.ReportStore
@@ -167,7 +169,7 @@ LaunchedEffect(toast) { if (toast != null) { delay(4000); toast = null } }
 val mediaAppsList = remember(apps) { apps.filter { isMediaApp(it) } }
 val pickMedia: (AppEntry) -> Unit = { app ->
 if (carSurface) {
-playViaBrowser(ctxRoot, app.packageName) { startMediaOnPhone(ctxRoot, app.packageName) }
+if (CarMirror.locked(ctxRoot)) { playViaBrowser(ctxRoot, app.packageName) { startMediaOnPhone(ctxRoot, app.packageName) }; toast = "Unlock your phone to see ${app.label} on the car screen." } else CarMirror.open(ctxRoot, app.packageName)
 mediaHint = app.label
 page = DrivePage.HOME
 } else {
@@ -270,6 +272,7 @@ while (true) { value = cm.activeNetwork != null; delay(3000) }
 val chromeTop = if (carSurface && reserveAaChrome) 34.dp else 0.dp
 val chromeEnd = if (carSurface && reserveAaChrome) 84.dp else 0.dp
 val mapApp = remember(apps) { apps.firstOrNull { it.packageName == CarEmbed.MAP_PKG }?.takeIf { !carSurface || CarEmbed.supports(ctxRoot, it.packageName) } }
+LaunchedEffect(mapApp) { if (carSurface) mapApp?.let { CarEmbed.attach(ctxRoot, it.packageName) } }
 BoxWithConstraints(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(p.bg, if (p.isLight) Color(0xFFE8ECF0) else Color(0xFF05070A))))) {
 val aspect = maxWidth / maxHeight
 val micro = if (carSurface) maxHeight < 260.dp || maxWidth < 520.dp else maxHeight < 380.dp || maxWidth < 600.dp
@@ -319,7 +322,7 @@ AaNavState.openMedia()
 } else {
 val d = onLaunch(app)
 if (!d.allow) blocked = app
-else if (carSurface && CarEmbed.on(surfaceDisplayId)?.pkg != app.packageName) toast = "${app.label} opened on your phone. Only apps made for Amni-Drive can show on the car screen."
+else if (carSurface && CarEmbed.on(surfaceDisplayId)?.pkg != app.packageName) toast = "Unlock your phone to open ${app.label} on the car screen."
 }
 }
 DrivePage.NAV -> Box(Modifier.fillMaxSize().padding(pad)) {
@@ -334,6 +337,7 @@ dense = dense || micro,
 carTopPad = chromeTop,
 mediaFlash = mediaFlash,
 mediaHint = mediaHint,
+embedMap = carSurface && mapApp != null,
 surfaceDisplayId = surfaceDisplayId,
 camera = camera,
 tiles = tiles,
@@ -426,6 +430,7 @@ dense: Boolean,
 carTopPad: androidx.compose.ui.unit.Dp = 0.dp,
 mediaFlash: Boolean,
 mediaHint: String?,
+embedMap: Boolean = false,
 surfaceDisplayId: Int?,
 camera: com.amni.drive.map.MapCamera,
 tiles: TileStore,
@@ -454,7 +459,7 @@ onVoice: (() -> Unit)? = null
 ) {
 val p = LocalAmni.current
 val map: @Composable (Modifier) -> Unit = { mod ->
-MapCard(mod, camera, tiles, route, reports, stops, location, routing, false, netOk, showLayers, showReport, onShowLayers, onShowReport, reportStore, addPoint, onGo, onAddStop, onEnd, dense, hostKeyboard, onVoice)
+if (embedMap) MapSurface(mod) else MapCard(mod, camera, tiles, route, reports, stops, location, routing, false, netOk, showLayers, showReport, onShowLayers, onShowReport, reportStore, addPoint, onGo, onAddStop, onEnd, dense, hostKeyboard, onVoice)
 }
 val mediaMod = Modifier.then(if (mediaFlash) Modifier.border(2.dp, p.acc, RoundedCornerShape(18.dp)) else Modifier)
 val widgets: @Composable (Modifier) -> Unit = { mod ->
@@ -619,8 +624,22 @@ RailBtn(Icons.Rounded.Apps, "APPS", false, true, EMBED_RAIL, onClick = onApps)
 Spacer(Modifier.weight(1f))
 RailBtn(Icons.Rounded.MusicNote, "PLAY", false, true, EMBED_RAIL) { if (!MediaSessionBridge.playPause()) mediaKey(ctx, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) }
 }
-AndroidView({ c -> SurfaceView(c).apply { setZOrderMediaOverlay(true); holder.addCallback(object : SurfaceHolder.Callback { override fun surfaceCreated(h: SurfaceHolder) = Unit; override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, hh: Int) = CarEmbed.surface(h.surface, w, hh, resources.displayMetrics.densityDpi); override fun surfaceDestroyed(h: SurfaceHolder) = CarEmbed.surface(null, 0, 0, 0) }) } }, Modifier.weight(1f).fillMaxHeight().onGloballyPositioned { lc -> lc.boundsInWindow().let { b -> CarEmbed.area(b.left.toInt(), b.top.toInt(), b.right.toInt(), b.bottom.toInt()) } })
+if (CarEmbed.shown.collectAsState().value?.mirror == true) MirrorSurface(Modifier.weight(1f).fillMaxHeight()) else MapSurface(Modifier.weight(1f).fillMaxHeight())
 }
+}
+}
+@Composable
+fun MapSurface(modifier: Modifier) {
+AndroidView({ c -> SurfaceView(c).apply { setZOrderMediaOverlay(true); holder.addCallback(object : SurfaceHolder.Callback { override fun surfaceCreated(h: SurfaceHolder) = Unit; override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, hh: Int) = CarEmbed.surface(h.surface, w, hh, minOf(resources.displayMetrics.densityDpi, w * 160 / 560)); override fun surfaceDestroyed(h: SurfaceHolder) { CarEmbed.surface(null, 0, 0, 0); CarEmbed.area(null) } }) } }, modifier.onGloballyPositioned { lc -> lc.boundsInWindow().let { b -> CarEmbed.area(intArrayOf(b.left.toInt(), b.top.toInt(), b.right.toInt(), b.bottom.toInt())) } })
+}
+@Composable
+fun MirrorSurface(modifier: Modifier) {
+val ctx = LocalContext.current
+val ratio by CarMirror.aspect.collectAsState()
+val live by CarMirror.live.collectAsState()
+Box(modifier.background(Color.Black), contentAlignment = Alignment.Center) {
+AndroidView({ c -> SurfaceView(c).apply { setZOrderMediaOverlay(true); holder.addCallback(object : SurfaceHolder.Callback { override fun surfaceCreated(h: SurfaceHolder) = Unit; override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, hh: Int) = CarMirror.surface(h.surface, w, hh); override fun surfaceDestroyed(h: SurfaceHolder) { CarMirror.surface(null, 0, 0); CarMirror.area = null } }) } }, Modifier.aspectRatio(ratio).onGloballyPositioned { lc -> lc.boundsInWindow().let { b -> CarMirror.area = intArrayOf(b.left.toInt(), b.top.toInt(), b.right.toInt(), b.bottom.toInt()) } })
+if (!live || !CarMirror.touchReady()) Text(if (!live) "Tap Start on your phone to show this app here." else "Turn on \"Amni-Drive car touch\" in your phone's Accessibility settings to use touch here.", color = Color.White, fontSize = 13.sp, modifier = Modifier.align(Alignment.BottomCenter).padding(8.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xCC000000)).clickable { if (live) CarMirror.askTouch(ctx) }.padding(horizontal = 12.dp, vertical = 7.dp))
 }
 }
 @Composable
@@ -856,6 +875,18 @@ return label to playing
 private fun MediaCard(modifier: Modifier, dense: Boolean = false, preferred: String? = null, surfaceDisplayId: Int? = null, mediaApps: List<AppEntry> = emptyList(), onOpenPicker: () -> Unit = {}) {
 val p = LocalAmni.current
 val ctx = LocalContext.current
+val shownPkg by CarMirror.pkg.collectAsState()
+shownPkg?.takeIf { surfaceDisplayId != null }?.let { mp ->
+Column(modifier.clip(RoundedCornerShape(18.dp)).background(Color.Black)) {
+Row(Modifier.fillMaxWidth().background(p.panel).padding(horizontal = 12.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+Text(preferred ?: "APP", color = p.ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+Text("FULL", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { CarEmbed.full(mp, surfaceDisplayId!!, true) }.padding(7.dp))
+Text("CLOSE", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { CarMirror.pkg.value = null }.padding(7.dp))
+}
+MirrorSurface(Modifier.weight(1f).fillMaxWidth())
+}
+return
+}
 val np by MediaSessionBridge.nowPlaying.collectAsState()
 LaunchedEffect(Unit) { MediaSessionBridge.start(ctx) }
 val (src, fallbackPlaying) = rememberMediaSource(ctx)
