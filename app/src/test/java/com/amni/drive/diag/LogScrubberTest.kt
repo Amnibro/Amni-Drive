@@ -1,6 +1,9 @@
 package com.amni.drive.diag
 import com.amni.drive.map.MapCamera
 import com.amni.drive.ui.AmniMapPrefs
+import com.amni.drive.ui.AppLauncherShape
+import com.amni.drive.ui.TileLayout
+import com.amni.drive.update.OtaUpdater
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -9,7 +12,7 @@ class LogScrubberTest {
     @Test
     fun scrubsPersonalDataWhilePreservingSupportEmailAndVersions() {
         val raw = listOf(
-            "Amni-Drive v1.13.0 crash send to anthony@amni-scient.com from john.doe@gmail.com",
+            "Amni-Drive v1.14.0 crash send to anthony@amni-scient.com from john.doe@gmail.com",
             "GPS fix lat=30.2672, lon=-97.7431 pair 30.267200, -97.743100 latE7=302672000",
             "Voice Searching “123 Main St Austin” and Routing to 456 Oak Ave",
             "Notif Message from Alice: meet me at home",
@@ -18,7 +21,7 @@ class LogScrubberTest {
         ).joinToString("\n")
         val out = LogScrubber.scrub(raw)
         assertTrue(out.contains("anthony@amni-scient.com"))
-        assertTrue(out.contains("v1.13.0"))
+        assertTrue(out.contains("v1.14.0"))
         assertFalse(out.contains("john.doe@gmail.com"))
         assertTrue(out.contains("<EMAIL>"))
         assertFalse(out.contains("30.2672"))
@@ -49,5 +52,24 @@ class LogScrubberTest {
         assertEquals("light", prefs.effectiveTheme(true))
         assertEquals("dark", prefs.effectiveTheme(false))
         assertEquals("sunset", prefs.copy(themeMode = "sunset").effectiveTheme(true))
+    }
+    @Test
+    fun mapsBespokeCockpitShapesAndBundledAmniMapUpdateBanner() {
+        assertEquals("circle", TileLayout.TWIN_CHRONO.mapShape)
+        assertEquals("circle", TileLayout.SOLAR_ORBIT.mapShape)
+        assertEquals("circle", TileLayout.ORB_CENTER.mapShape)
+        assertEquals("hex", TileLayout.HEX_COCKPIT.mapShape)
+        assertEquals("capsule", TileLayout.CAPSULE_DECK.mapShape)
+        assertEquals(AppLauncherShape.ORBITAL, AppLauncherShape.AUTO.resolve(TileLayout.TWIN_CHRONO))
+        assertEquals(AppLauncherShape.HONEYCOMB, AppLauncherShape.AUTO.resolve(TileLayout.HEX_COCKPIT))
+        assertEquals(AppLauncherShape.CAPSULE, AppLauncherShape.AUTO.resolve(TileLayout.CAPSULE_DECK))
+        val bundled = OtaUpdater.BundledApkInfo("com.amniscient.map", 37L, "2.14.0", 42770000L, "abc")
+        val mapApp = OtaUpdater.FALLBACK_CATALOG.first { it.id == "amni-map" }
+        val missingState = OtaUpdater.OtaState(
+            bundledMap = bundled,
+            apps = listOf(OtaUpdater.CompanionAppStatus(mapApp, installed = false, installedVersionCode = 0L, installedVersionName = null, prebundled = true))
+        )
+        assertTrue(missingState.bundledMapMissing)
+        assertTrue(missingState.hasActionableBanner)
     }
 }

@@ -253,13 +253,17 @@ private fun LooksPane(themes: ThemeStore, theme: UiTheme) {
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         listOf("COMPACT", "COZY", "BIG").forEachIndexed { i, label -> Seg(label, theme.tileScale == i) { scope.launch { themes.setScale(i) } } }
     }
-    Text("TILE LAYOUT — DASH ARRANGEMENT", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 9.sp, letterSpacing = 1.5.sp)
-    Text("Tiles resize to window · Auto re-picks for phone / DHU / car glass", color = p.soft, fontSize = 11.sp)
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    Text("TILE LAYOUT — BESPOKE & CLASSIC COCKPITS", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 9.sp, letterSpacing = 1.5.sp)
+    Text("Circular chronos, Solar Orbit, Aero Hex HUD, Capsule Deck, Golden Triptych & splits", color = p.soft, fontSize = 11.sp)
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
         TileLayout.entries.forEach { mode -> Seg(mode.label.uppercase(), theme.tileLayout == mode) { scope.launch { themes.setTileLayout(mode) } } }
     }
+    Text("APP LAUNCHER SHAPE", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 9.sp, letterSpacing = 1.5.sp)
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+        AppLauncherShape.entries.forEach { sh -> Seg("${sh.glyph} ${sh.label.uppercase()}", theme.appShape == sh) { scope.launch { themes.setAppShape(sh) } } }
+    }
     Text("MAP STYLE", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 9.sp, letterSpacing = 1.5.sp)
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
         listOf("AUTO — MATCH THEME" to -1, "DARK" to 0, "LIGHT" to 1, "SATELLITE" to 2).forEach { (label, v) -> Seg(label, theme.basemap == v) { scope.launch { themes.setBasemap(v) } } }
     }
 }
@@ -885,9 +889,22 @@ private fun UpdatesAndAppsPane() {
         ) {
             Text(app.emoji, fontSize = 22.sp)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                     Text(app.name, color = p.ink, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                    if (app.carDashNative) {
+                    if (st.prebundled) {
+                        Text(
+                            "⚡ PREBUILT IN APK",
+                            color = p.acc,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(99.dp))
+                                .background(p.bg.copy(alpha = 0.78f))
+                                .border(1.dp, p.acc.copy(alpha = 0.7f), RoundedCornerShape(99.dp))
+                                .padding(horizontal = 7.dp, vertical = 2.dp)
+                        )
+                    } else if (app.carDashNative) {
                         Text(
                             "CAR DASH NATIVE",
                             color = p.acc,
@@ -898,29 +915,33 @@ private fun UpdatesAndAppsPane() {
                                 .clip(RoundedCornerShape(99.dp))
                                 .background(p.bg.copy(alpha = 0.75f))
                                 .border(1.dp, p.acc.copy(alpha = 0.6f), RoundedCornerShape(99.dp))
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                .padding(horizontal = 7.dp, vertical = 2.dp)
                         )
                     }
                 }
                 Text(app.blurb, color = p.soft, fontSize = 10.sp, lineHeight = 13.sp)
                 val verLine = when {
+                    st.updateAvailable && st.prebundled -> "Installed v${st.installedVersionName ?: st.installedVersionCode} → Built-in v${app.versionName} ready (instant offline)"
                     st.updateAvailable -> "Installed v${st.installedVersionName ?: st.installedVersionCode} → OTA v${app.versionName} available"
                     st.installed -> "Installed v${st.installedVersionName ?: st.installedVersionCode} ✓"
+                    st.prebundled -> "Prebuilt inside Amni-Drive: v${app.versionName} · instant offline install"
                     app.versionName.isNotBlank() -> "Available: v${app.versionName}" + if (app.size > 0L) " · ${app.size / 1_048_576} MB" else ""
                     else -> "Direct signed APK from amni-scient.com"
                 }
                 Text(
                     verLine,
-                    color = if (st.updateAvailable) p.acc else p.dim,
+                    color = if (st.updateAvailable || (!st.installed && st.prebundled)) p.acc else p.dim,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 9.sp,
-                    fontWeight = if (st.updateAvailable) FontWeight.Bold else FontWeight.Normal
+                    fontWeight = if (st.updateAvailable || (!st.installed && st.prebundled)) FontWeight.Bold else FontWeight.Normal
                 )
             }
             val btnLabel = when {
                 busy -> "${(ota.downloadProgress * 100f).toInt()}%"
+                st.updateAvailable && st.prebundled -> "⚡ UPDATE"
                 st.updateAvailable -> "UPDATE"
                 st.installed -> "OPEN"
+                st.prebundled -> "⚡ INSTALL"
                 else -> "INSTALL"
             }
             val isPrimary = !st.installed || st.updateAvailable

@@ -214,22 +214,54 @@ fun OnboardingWizard(
                                 WizardChip("Bottom Center Dock", theme.dockPosition == 1) { scope.launch { themeStore.setDockPosition(1) } }
                                 WizardChip("Left Driver Rail", theme.dockPosition == 0) { scope.launch { themeStore.setDockPosition(0) } }
                             }
+                            Text("BESPOKE COCKPIT GEOMETRY", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+                            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                                listOf(
+                                    TileLayout.AUTO to "✦ Auto",
+                                    TileLayout.TWIN_CHRONO to "◯ Twin Chrono",
+                                    TileLayout.SOLAR_ORBIT to "◎ Solar Orbit",
+                                    TileLayout.HEX_COCKPIT to "⬡ Aero Hex",
+                                    TileLayout.CAPSULE_DECK to "⬭ Capsule Deck",
+                                    TileLayout.BALANCED to "⊞ Tri-Cockpit"
+                                ).forEach { (ly, lbl) ->
+                                    WizardChip(lbl, theme.tileLayout == ly) { scope.launch { themeStore.setTileLayout(ly) } }
+                                }
+                            }
                         }
                         1 -> {
-                            Text("Amni-Map embeds natively inside Amni-Drive's map tile with 3D buildings, 3D trees, raised highway bridges, 3D vehicles, live traffic, and perspective top-dead-center orientation.", color = p.soft, fontSize = 12.5.sp, lineHeight = 18.sp)
-                            val mapCompanion = ota.apps.firstOrNull { it.app.packageName == CarEmbed.MAP_PKG }?.app
-                                ?: OtaUpdater.FALLBACK_CATALOG.firstOrNull { it.packageName == CarEmbed.MAP_PKG }
+                            val mapSt = ota.apps.firstOrNull { it.app.packageName == CarEmbed.MAP_PKG }
+                            val mapCompanion = mapSt?.app ?: OtaUpdater.FALLBACK_CATALOG.firstOrNull { it.packageName == CarEmbed.MAP_PKG }
+                            val bundled = ota.bundledMap != null
+                            val mapNeedsUpdate = mapSt?.updateAvailable == true
+                            Text(
+                                if (bundled) "Amni-Map 3D is prebuilt directly inside this Amni-Drive APK — tap below to install or update it instantly with zero internet download!"
+                                else "Amni-Map embeds natively inside Amni-Drive's map tile with 3D buildings, 3D trees, raised highway bridges, 3D vehicles, live traffic, and perspective top-dead-center orientation.",
+                                color = p.soft,
+                                fontSize = 12.5.sp,
+                                lineHeight = 18.sp
+                            )
                             WizardActionCard(
-                                title = if (amniMapInstalled) "✓ Amni-Map Installed & Linked" else "Install Amni-Map Companion",
-                                subtitle = if (amniMapInstalled) "3D buildings, trees, bridges & vehicle studio ready on car dash." else "Downloads signed APK directly from amni-scient.com and installs in 1 tap.",
-                                ok = amniMapInstalled,
+                                title = when {
+                                    amniMapInstalled && !mapNeedsUpdate -> "✓ Amni-Map Installed & Up to Date"
+                                    amniMapInstalled && mapNeedsUpdate -> "⚡ Update Amni-Map to v${mapCompanion?.versionName ?: "Latest"}"
+                                    bundled -> "⚡ Install Built-In Amni-Map v${ota.bundledMap?.versionName ?: "2.14.0"}"
+                                    else -> "Install Amni-Map Companion"
+                                },
+                                subtitle = when {
+                                    amniMapInstalled && !mapNeedsUpdate -> "3D buildings, trees, bridges & vehicle studio ready on car dash."
+                                    bundled -> "Included inside Amni-Drive APK · instant offline install (no download needed)."
+                                    else -> "Downloads signed APK directly from amni-scient.com and installs in 1 tap."
+                                },
+                                ok = amniMapInstalled && !mapNeedsUpdate,
                                 buttonLabel = when {
                                     ota.downloadingId == "amni-map" -> "${(ota.downloadProgress * 100f).toInt()}%"
-                                    amniMapInstalled -> "INSTALLED ✓"
+                                    amniMapInstalled && !mapNeedsUpdate -> "INSTALLED ✓"
+                                    amniMapInstalled && mapNeedsUpdate -> "⚡ UPDATE"
+                                    bundled -> "⚡ INSTALL BUILT-IN"
                                     else -> "⬇ INSTALL AMNI-MAP"
                                 }
                             ) {
-                                if (!amniMapInstalled && mapCompanion != null && ota.downloadingId == null) {
+                                if ((!amniMapInstalled || mapNeedsUpdate) && mapCompanion != null && ota.downloadingId == null) {
                                     scope.launch {
                                         OtaUpdater.downloadAndInstall(ctx, mapCompanion.id, mapCompanion.name, mapCompanion.downloadUrl, mapCompanion.sha256)
                                     }

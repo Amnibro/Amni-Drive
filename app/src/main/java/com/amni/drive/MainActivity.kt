@@ -98,6 +98,7 @@ onOpenSettings = { startActivity(Intent(this@MainActivity, SettingsActivity::cla
 onOpenTutorial = { forceTutorial = true },
 initialPage = startPage,
 onSetTileLayout = { v -> lifecycleScope.launch { app.themeStore.setTileLayout(v) } },
+onSetAppShape = { v -> lifecycleScope.launch { app.themeStore.setAppShape(v) } },
 onSetWidgets = { v -> lifecycleScope.launch { app.themeStore.setWidgets(v) } },
 onSetWidgetWidthMode = { v -> lifecycleScope.launch { app.themeStore.setWidgetWidthMode(v) } },
 onSetWidgetCompact = { v -> lifecycleScope.launch { app.themeStore.setWidgetCompact(v) } },
@@ -153,44 +154,21 @@ unsentCrash = null
 }.padding(horizontal = 4.dp)
 )
 }
-} else if (ota.totalUpdatesCount > 0 && !dismissOtaBanner) {
-val p = com.amni.drive.ui.LocalAmni.current
-val bannerMsg = if (ota.selfUpdateAvailable && ota.selfRelease != null) {
-"⬆ Amni-Drive v${ota.selfRelease!!.versionName} OTA ready — tap to update"
-} else {
-"⬆ ${ota.totalUpdatesCount} Amni companion app update${if (ota.totalUpdatesCount > 1) "s" else ""} ready — tap to install"
-}
-androidx.compose.foundation.layout.Row(
-modifier = androidx.compose.ui.Modifier
-.align(androidx.compose.ui.Alignment.TopCenter)
-.padding(top = 10.dp)
-.clip(androidx.compose.foundation.shape.RoundedCornerShape(99.dp))
-.background(p.panel)
-.border(1.5.dp, p.acc, androidx.compose.foundation.shape.RoundedCornerShape(99.dp))
-.clickable {
+} else if (ota.hasActionableBanner && !dismissOtaBanner) {
+com.amni.drive.ui.InAppUpdateBanner(
+ota = ota,
+onInstallNow = { lifecycleScope.launch { com.amni.drive.update.OtaUpdater.installPrimaryAction(this@MainActivity) } },
+onOpenDetails = {
 startActivity(
 Intent(this@MainActivity, SettingsActivity::class.java)
 .putExtra(SettingsActivity.EXTRA_TAB, "UPDATES")
 )
-}
-.padding(horizontal = 14.dp, vertical = 7.dp),
-verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp)
-) {
-androidx.compose.material3.Text(
-bannerMsg,
-color = p.acc,
-fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-fontSize = 11.sp,
-fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+},
+onDismiss = { dismissOtaBanner = true },
+modifier = androidx.compose.ui.Modifier
+.align(androidx.compose.ui.Alignment.TopCenter)
+.padding(top = 10.dp, start = 10.dp, end = 10.dp)
 )
-androidx.compose.material3.Text(
-"✕",
-color = p.soft,
-fontSize = 12.sp,
-modifier = androidx.compose.ui.Modifier.clickable { dismissOtaBanner = true }.padding(horizontal = 4.dp)
-)
-}
 }
 }
 }
@@ -202,9 +180,24 @@ super.onNewIntent(intent)
 setIntent(intent)
 applyDriveIntent(intent)
 }
-override fun onStart() { super.onStart(); (application as AmniDriveApp).tracker.start() }
+override fun onStart() {
+super.onStart()
+(application as AmniDriveApp).tracker.start()
+lifecycleScope.launch { com.amni.drive.update.OtaUpdater.checkOnForeground(this@MainActivity) }
+}
+override fun onResume() {
+super.onResume()
+com.amni.drive.update.OtaUpdater.refreshInstalled(this)
+if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || packageManager.canRequestPackageInstalls()) {
+com.amni.drive.update.OtaUpdater.resumePendingInstall(this)
+}
+}
 override fun onStop() { super.onStop() }
 private fun applyDriveIntent(intent: Intent?) {
+if (intent?.getBooleanExtra(EXTRA_OPEN_OTA, false) == true) {
+intent.removeExtra(EXTRA_OPEN_OTA)
+startActivity(Intent(this, SettingsActivity::class.java).putExtra(SettingsActivity.EXTRA_TAB, "UPDATES"))
+}
 if (intent?.getBooleanExtra(EXTRA_TUTORIAL, false) == true) {
 forceTutorial = true
 }
@@ -270,6 +263,7 @@ const val EXTRA_DRIVE_MODE = "amni_drive_mode"
 const val EXTRA_START_PROJECTION = "amni_start_projection"
 const val EXTRA_START_AOA = "amni_start_aoa"
 const val EXTRA_TUTORIAL = "amni_open_tutorial"
+const val EXTRA_OPEN_OTA = "amni_open_ota"
 const val ACTION_OPEN_NAV = "com.amni.drive.action.OPEN_NAV"
 const val ACTION_OWN_STACK = "com.amni.drive.action.OWN_STACK"
 fun openNavIntent(from: android.content.Context): Intent =

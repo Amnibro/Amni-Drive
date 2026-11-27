@@ -58,7 +58,8 @@ data class AmniMapPrefs(
         "sunset" -> "sunset"
         else -> if (hostIsLight) "light" else "dark"
     }
-    fun toBundle(hostIsLight: Boolean): Bundle = Bundle().apply {
+    fun toBundle(hostIsLight: Boolean, shape: String = "rect"): Bundle = Bundle().apply {
+        putString("shape", shape)
         putString("theme", effectiveTheme(hostIsLight))
         putString("look", look)
         putString("vehicle", vehicle)
@@ -169,11 +170,13 @@ object AmniMapStudio {
             .putBoolean("avoidTolls", next.avoidTolls)
             .putString("voiceMode", next.voiceMode)
             .apply()
-        CarEmbed.sendConfig(next.toBundle(hostIsLight))
+        CarEmbed.sendConfig(next.toBundle(hostIsLight, lastShape))
     }
-    fun syncHostTheme(ctx: Context, hostIsLight: Boolean) {
+    @Volatile private var lastShape: String = "rect"
+    fun syncHostTheme(ctx: Context, hostIsLight: Boolean, shape: String = lastShape) {
+        lastShape = shape
         val cur = ensureLoaded(ctx)
-        CarEmbed.sendConfig(cur.toBundle(hostIsLight))
+        CarEmbed.sendConfig(cur.toBundle(hostIsLight, shape))
     }
 }
 @Composable

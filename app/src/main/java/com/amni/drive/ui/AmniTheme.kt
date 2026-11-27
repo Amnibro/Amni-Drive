@@ -210,17 +210,37 @@ fun paletteFor(
     }
 }
 
-enum class TileLayout(val label: String, val blurb: String) {
-    AUTO("Auto", "Smart fit for current screen"),
-    SPLIT_50("50 / 50 Split", "Half Map · Half Media (2 tiles)"),
-    ORB_CENTER("Center Orb", "Circular center map · side panels"),
-    BALANCED("Tri-Cockpit", "Map · Media · Widget rail"),
-    MAP_FOCUS("Map Hero", "Wide map · compact media & strip"),
-    MEDIA_FOCUS("Theater", "Big Media · companion map"),
-    STACKED("Horizon", "Panoramic map top · deck below"),
-    MAP_ONLY("Full Map", "Edge-to-edge map + HUD pill")
+enum class TileLayout(val label: String, val blurb: String, val group: Int = 2, val mapShape: String = "rect") {
+    AUTO("Auto", "Smart fit for current screen", 2, "rect"),
+    TWIN_CHRONO("Twin Chrono", "Dual circular gauges · compass map + vinyl turntable + center dial", 0, "circle"),
+    SOLAR_ORBIT("Solar Orbit", "Center map sphere · 4 orbital speed, media, wx & app dials", 0, "circle"),
+    ORB_CENTER("Orb & Wings", "Circular compass map · sculpted capsule media & gauge wings", 0, "circle"),
+    HORIZON_DIALS("Horizon Dials", "Full-bleed panoramic map · floating circular chronograph orbs", 0, "rect"),
+    HEX_COCKPIT("Aero Hex HUD", "Chamfered octagonal cockpit pods · vector telemetry brackets", 1, "hex"),
+    CAPSULE_DECK("Capsule Deck", "Bauhaus stadium pills · circular end-cap turntable & gauges", 1, "capsule"),
+    ASYM_TRIPTYCH("Golden Triptych", "1.618 sculpted curved bento · circular complication stack", 1, "rect"),
+    BALANCED("Tri-Cockpit", "Map · Media · Widget rail", 2, "rect"),
+    SPLIT_50("50 / 50 Split", "Half Map · Half Media (2 tiles)", 2, "rect"),
+    MAP_FOCUS("Map Hero", "Wide map · compact media & strip", 2, "rect"),
+    MEDIA_FOCUS("Theater", "Big Media · companion map", 2, "rect"),
+    STACKED("Horizon", "Panoramic map top · deck below", 2, "rect"),
+    MAP_ONLY("Full Map", "Edge-to-edge map + HUD pill", 2, "rect")
 }
-
+enum class AppLauncherShape(val label: String, val glyph: String) {
+    AUTO("Match Layout", "✦"),
+    ORBITAL("Rotary Wheel", "◎"),
+    MEDALLION("Circular Orbs", "◯"),
+    HONEYCOMB("Hex Honeycomb", "⬡"),
+    CAPSULE("Stadium Pills", "⬭"),
+    CLASSIC("Rounded Grid", "⊞");
+    fun resolve(layout: TileLayout): AppLauncherShape = if (this != AUTO) this else when (layout) {
+        TileLayout.TWIN_CHRONO, TileLayout.SOLAR_ORBIT -> ORBITAL
+        TileLayout.ORB_CENTER, TileLayout.HORIZON_DIALS, TileLayout.ASYM_TRIPTYCH -> MEDALLION
+        TileLayout.HEX_COCKPIT -> HONEYCOMB
+        TileLayout.CAPSULE_DECK -> CAPSULE
+        else -> MEDALLION
+    }
+}
 enum class DashWidget(val label: String, val emoji: String, val blurb: String) {
     WEATHER("Weather", "🌤️", "Live temp & conditions"),
     TRIP("Trip & Speed", "🧭", "Speed MPH or route ETA"),
@@ -230,7 +250,6 @@ enum class DashWidget(val label: String, val emoji: String, val blurb: String) {
     SHORTCUTS("Quick Apps", "⚡", "1-tap Spotify / YT / Map"),
     VEHICLE("Car & Link", "🚗", "GPS, net & app status"),
     COMPASS("Compass", "🧿", "Heading direction & bearing");
-
     companion object {
         val DEFAULTS = listOf(WEATHER, TRIP, GATE)
         fun parse(raw: String?): List<DashWidget> {
@@ -240,7 +259,6 @@ enum class DashWidget(val label: String, val emoji: String, val blurb: String) {
         }
     }
 }
-
 data class UiTheme(
     val preset: AmniPreset = AmniPreset.AMNI_DARK,
     val accent: Long? = null,
@@ -248,21 +266,21 @@ data class UiTheme(
     val tileScale: Int = 1,
     val basemap: Int = -1,
     val tileLayout: TileLayout = TileLayout.AUTO,
+    val appShape: AppLauncherShape = AppLauncherShape.AUTO,
     val fontScale: Float = 1.0f,
     val highContrast: Boolean = false,
     val largeTargets: Boolean = false,
     val reduceMotion: Boolean = false,
     val cornerStyle: Int = 1,
     val widgets: List<DashWidget> = DashWidget.DEFAULTS,
-    val widgetWidthMode: Int = 1, // 0 = slim, 1 = normal, 2 = wide
+    val widgetWidthMode: Int = 1,
     val widgetCompact: Boolean = true,
-    val dockPosition: Int = 0, // 0 = left rail, 1 = bottom-center dock
+    val dockPosition: Int = 0,
     val mapSplitRatio: Float = 0.54f,
     val widgetRatio: Float = 0.24f,
     val swapMapMedia: Boolean = false,
     val carUiScale: Float = 1.0f
 )
-
 class ThemeStore(private val context: Context) {
     val theme: Flow<UiTheme> = context.themeStore.data.map {
         UiTheme(
@@ -272,6 +290,7 @@ class ThemeStore(private val context: Context) {
             tileScale = it[SCALE] ?: 1,
             basemap = it[BASEMAP] ?: -1,
             tileLayout = runCatching { TileLayout.valueOf(it[LAYOUT] ?: "AUTO") }.getOrDefault(TileLayout.AUTO),
+            appShape = runCatching { AppLauncherShape.valueOf(it[APP_SHAPE] ?: "AUTO") }.getOrDefault(AppLauncherShape.AUTO),
             fontScale = (it[FONT_SCALE] ?: 1.0f).coerceIn(0.85f, 1.4f),
             highContrast = it[HIGH_CONTRAST] ?: false,
             largeTargets = it[LARGE_TARGETS] ?: false,
@@ -287,13 +306,13 @@ class ThemeStore(private val context: Context) {
             carUiScale = (it[CAR_UI_SCALE] ?: 1.0f).coerceIn(0.80f, 1.40f)
         )
     }
-
     suspend fun setPreset(p: AmniPreset) = context.themeStore.edit { it[PRESET] = p.name; it.remove(ACCENT) }
     suspend fun setAccent(a: Long?) = context.themeStore.edit { if (a == null) it.remove(ACCENT) else it[ACCENT] = a.toString() }
     suspend fun setWeather(v: Boolean) = context.themeStore.edit { it[WEATHER] = v }
     suspend fun setScale(v: Int) = context.themeStore.edit { it[SCALE] = v }
     suspend fun setBasemap(v: Int) = context.themeStore.edit { it[BASEMAP] = v }
     suspend fun setTileLayout(v: TileLayout) = context.themeStore.edit { it[LAYOUT] = v.name }
+    suspend fun setAppShape(v: AppLauncherShape) = context.themeStore.edit { it[APP_SHAPE] = v.name }
     suspend fun setFontScale(v: Float) = context.themeStore.edit { it[FONT_SCALE] = v.coerceIn(0.85f, 1.4f) }
     suspend fun setHighContrast(v: Boolean) = context.themeStore.edit { it[HIGH_CONTRAST] = v }
     suspend fun setLargeTargets(v: Boolean) = context.themeStore.edit { it[LARGE_TARGETS] = v }
@@ -310,7 +329,6 @@ class ThemeStore(private val context: Context) {
     suspend fun setWidgetRatio(ratio: Float) = context.themeStore.edit { it[WIDGET_RATIO] = ratio.coerceIn(0.14f, 0.42f) }
     suspend fun setSwapMapMedia(swap: Boolean) = context.themeStore.edit { it[SWAP_MAP_MEDIA] = swap }
     suspend fun setCarUiScale(scale: Float) = context.themeStore.edit { it[CAR_UI_SCALE] = scale.coerceIn(0.80f, 1.40f) }
-
     companion object {
         private val PRESET = stringPreferencesKey("preset")
         private val ACCENT = stringPreferencesKey("accent")
@@ -318,6 +336,7 @@ class ThemeStore(private val context: Context) {
         private val SCALE = intPreferencesKey("tile_scale")
         private val BASEMAP = intPreferencesKey("basemap")
         private val LAYOUT = stringPreferencesKey("tile_layout")
+        private val APP_SHAPE = stringPreferencesKey("app_shape_mode")
         private val FONT_SCALE = floatPreferencesKey("font_scale")
         private val HIGH_CONTRAST = booleanPreferencesKey("high_contrast")
         private val LARGE_TARGETS = booleanPreferencesKey("large_targets")

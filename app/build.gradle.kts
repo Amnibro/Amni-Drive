@@ -1,3 +1,4 @@
+import java.security.MessageDigest
 import java.util.Properties
 
 plugins {
@@ -19,10 +20,13 @@ android {
         applicationId = "com.amni.drive"
         minSdk = 26
         targetSdk = 34
-        versionCode = 91
-        versionName = "1.13.0"
+        versionCode = 92
+        versionName = "1.14.0"
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+    androidResources {
+        noCompress += "apk"
     }
     signingConfigs {
         create("release") {
@@ -63,6 +67,34 @@ android {
         }
     }
 }
+val syncBundledAmniMap by tasks.registering {
+    doLast {
+        val mapApk = rootProject.file("../amni-map/joyride/build/outputs/apk/release/joyride-release.apk")
+        val mapGradle = rootProject.file("../amni-map/joyride/build.gradle.kts")
+        if (mapApk.exists()) {
+            val bundledDir = project.file("src/main/assets/bundled").apply { mkdirs() }
+            val dstApk = File(bundledDir, "amni-map.apk")
+            mapApk.copyTo(dstApk, overwrite = true)
+            val md = MessageDigest.getInstance("SHA-256")
+            dstApk.inputStream().use { ins ->
+                val buf = ByteArray(32768)
+                while (true) {
+                    val n = ins.read(buf)
+                    if (n <= 0) break
+                    md.update(buf, 0, n)
+                }
+            }
+            val sha = md.digest().joinToString("") { b -> "%02x".format(b) }
+            val gText = if (mapGradle.exists()) mapGradle.readText() else ""
+            val vCode = Regex("versionCode\\s*=\\s*(\\d+)").find(gText)?.groupValues?.get(1)?.toLongOrNull() ?: 37L
+            val vName = Regex("versionName\\s*=\\s*\"([^\"]+)\"").find(gText)?.groupValues?.get(1) ?: "2.14.0"
+            File(bundledDir, "amni-map.json").writeText(
+                "{\"packageName\":\"com.amniscient.map\",\"versionCode\":$vCode,\"versionName\":\"$vName\",\"size\":${dstApk.length()},\"sha256\":\"$sha\"}\n"
+            )
+        }
+    }
+}
+tasks.named("preBuild") { dependsOn(syncBundledAmniMap) }
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.06.00")
     implementation(composeBom)
