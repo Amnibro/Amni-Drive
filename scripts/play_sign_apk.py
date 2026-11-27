@@ -89,23 +89,37 @@ def upload_and_fetch_universal(pkg: str, aab_path: str, track: str, out_apk: str
             raise
     download_id = None
     cert_sha = None
+    picked_kind = ""
     for attempt in range(1, 37):
         try:
             gen = api_json("GET", f"{base}/generatedApks/{vc}", token)
             for item in gen.get("generatedApks", []):
+                unprot = [u for u in item.get("unprotectedGeneratedSplitApks", []) if u.get("moduleName") == "base" and not u.get("splitId")]
+                splits_for_base = [u for u in item.get("unprotectedGeneratedSplitApks", []) if u.get("splitId")]
+                if unprot and not splits_for_base:
+                    unprot.sort(key=lambda x: int(x.get("variantId", 0)), reverse=True)
+                    download_id = unprot[0]["downloadId"]
+                    cert_sha = item.get("certificateSha256Hash")
+                    picked_kind = f"unprotected_base(variant={unprot[0].get('variantId')})"
+                    break
                 uni = item.get("generatedUniversalApk")
-                if uni and uni.get("downloadId"):
+                if uni and uni.get("downloadId") and not splits_for_base:
                     download_id = uni["downloadId"]
                     cert_sha = item.get("certificateSha256Hash")
+                    picked_kind = "universal"
                     break
+                if uni and uni.get("downloadId") and not download_id:
+                    download_id = uni["downloadId"]
+                    cert_sha = item.get("certificateSha256Hash")
+                    picked_kind = "universal_fallback"
             if download_id:
                 break
         except RuntimeError as e:
             print(f"[play] poll {attempt}: waiting for generatedApks ({str(e)[:120]})", flush=True)
         time.sleep(5)
     if not download_id:
-        raise RuntimeError(f"Timed out waiting for Play generatedUniversalApk for {pkg} versionCode={vc}")
-    print(f"[play] universal APK ready! cert={cert_sha}", flush=True)
+        raise RuntimeError(f"Timed out waiting for Play generated APK for {pkg} versionCode={vc}")
+    print(f"[play] APK ready ({picked_kind})! cert={cert_sha}", flush=True)
     dl_url = f"{base}/generatedApks/{vc}/downloads/{urllib.parse.quote(download_id, safe='')}:download?alt=media"
     req = urllib.request.Request(dl_url, headers={"Authorization": f"Bearer {token}"})
     os.makedirs(os.path.dirname(os.path.abspath(out_apk)), exist_ok=True)
@@ -115,8 +129,16 @@ def upload_and_fetch_universal(pkg: str, aab_path: str, track: str, out_apk: str
             if not chunk:
                 break
             out.write(chunk)
+    import zipfile
+    with zipfile.ZipFile(out_apk, "r") as zf:
+        pairip_dex = [n for n in zf.namelist() if n.endswith(".dex") and b"pairip" in zf.read(n).lower()]
+        arm64_libs = [n for n in zf.namelist() if n.startswith("lib/arm64-v8a/") and n.endswith(".so")]
+    if pairip_dex:
+        raise RuntimeError(f"REFUSING Pairip-injected APK ({picked_kind}): found pairip in {pairip_dex}! Disable splits in build.gradle.kts or turn off Play Automatic Protection.")
+    if not arm64_libs:
+        raise RuntimeError(f"REFUSING APK without arm64-v8a native libraries ({picked_kind})!")
     size = os.path.getsize(out_apk)
-    print(f"[play] saved Play-signed universal APK -> {out_apk} ({size} bytes)", flush=True)
+    print(f"[play] VERIFIED zero-Pairip Play-signed APK -> {out_apk} ({size} bytes, {len(arm64_libs)} arm64 .so libs)", flush=True)
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--package", required=True)

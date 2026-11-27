@@ -15,7 +15,7 @@ build_abi() {
     local cc="$2"
     local outdir="$ROOT/app/src/main/jniLibs/$abi"
     mkdir -p "$outdir"
-    "$BIN/$cc" -shared -fPIC -O2 -fwrapv -w -Dmain=amni_he_stub_main -I"$STAGE" \
+    "$BIN/$cc" -shared -fPIC -O2 -fwrapv -w -Dmain=amni_he_stub_main -Wl,-z,max-page-size=16384 -I"$STAGE" \
         "$STAGE/drive_abi.c" "$STAGE/amni_drive_jni.c" \
         -llog -lm -ldl -o "$outdir/libamni_drive_he.so"
     "$BIN/llvm-strip" "$outdir/libamni_drive_he.so"

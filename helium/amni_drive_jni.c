@@ -2,6 +2,11 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+extern int amni_he_stub_main(int argc, char **argv);
+__attribute__((constructor)) static void amni_drive_he_ctor(void) {
+    char *av[2] = { "amni_drive_he", NULL };
+    amni_he_stub_main(1, av);
+}
 extern int32_t he_drive_gate(int32_t drive_state, int32_t gate_on, int32_t passenger, int32_t category);
 extern double he_drive_haversine(double lat1, double lon1, double lat2, double lon2);
 extern float he_drive_bearing(double lat1, double lon1, double lat2, double lon2);

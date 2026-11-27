@@ -1,0 +1,231 @@
+import math;
+import os;
+struct Img { w i32, h i32, px byte[>..] }
+fn clampf(v f32, lo f32, hi f32) f32 {
+	if v < lo { lo } else if v > hi { hi } else { v }
+}
+fn lerpf(a f32, b f32, t f32) f32 {
+	a + (b - a) * clampf(t, 0.0, 1.0)
+}
+fn mix_rgb(a u32, b u32, t f32) u32 {
+	let r = floor(lerpf(((a >> 16) & 255) as f32, ((b >> 16) & 255) as f32, t) + 0.5) as u32;
+	let g = floor(lerpf(((a >> 8) & 255) as f32, ((b >> 8) & 255) as f32, t) + 0.5) as u32;
+	let bl = floor(lerpf((a & 255) as f32, (b & 255) as f32, t) + 0.5) as u32;
+	let opaque u32 = 0xFF000000;
+	opaque | (r << 16) | (g << 8) | bl
+}
+fn to_byte(v f32) byte {
+	let n = floor(clampf(v, 0.0, 255.0) + 0.5) as int;
+	n as byte
+}
+fn blend(im Img&, x i32, y i32, col u32, cov f32) {
+	if x < 0 || y < 0 || x >= im.w || y >= im.h { return; }
+	let sa f32 = (((col >> 24) & 255) as f32) / 255.0 * clampf(cov, 0.0, 1.0);
+	if sa <= 0.0 { return; }
+	let i = ((y as int) * (im.w as int) + (x as int)) * 4;
+	let da f32 = (im.px[i + 3] as f32) / 255.0;
+	let keep f32 = da * (1.0 - sa);
+	let oa f32 = sa + keep;
+	let sr f32 = ((col >> 16) & 255) as f32;
+	let sg f32 = ((col >> 8) & 255) as f32;
+	let sb f32 = (col & 255) as f32;
+	im.px[i] = to_byte((sr * sa + (im.px[i] as f32) * keep) / oa);
+	im.px[i + 1] = to_byte((sg * sa + (im.px[i + 1] as f32) * keep) / oa);
+	im.px[i + 2] = to_byte((sb * sa + (im.px[i + 2] as f32) * keep) / oa);
+	im.px[i + 3] = to_byte(oa * 255.0);
+}
+fn point_in_tri(px f32, py f32, ax f32, ay f32, bx f32, by f32, cx f32, cy f32) bool {
+	let d1 = (px - bx) * (ay - by) - (ax - bx) * (py - by);
+	let d2 = (px - cx) * (by - cy) - (bx - cx) * (py - cy);
+	let d3 = (px - ax) * (cy - ay) - (cx - ax) * (py - ay);
+	let has_neg = d1 < 0.0 || d2 < 0.0 || d3 < 0.0;
+	let has_pos = d1 > 0.0 || d2 > 0.0 || d3 > 0.0;
+	!(has_neg && has_pos)
+}
+fn dist_seg(px f32, py f32, ax f32, ay f32, bx f32, by f32) f32 {
+	let vx = bx - ax;
+	let vy = by - ay;
+	let len2 = vx * vx + vy * vy;
+	var t f32 = 0.0;
+	if len2 > 0.0 { t = clampf(((px - ax) * vx + (py - ay) * vy) / len2, 0.0, 1.0); }
+	let dx = px - (ax + vx * t);
+	let dy = py - (ay + vy * t);
+	sqrt(dx * dx + dy * dy) as f32
+}
+fn sdf_tri(px f32, py f32, ax f32, ay f32, bx f32, by f32, cx f32, cy f32) f32 {
+	let e1 = dist_seg(px, py, ax, ay, bx, by);
+	let e2 = dist_seg(px, py, bx, by, cx, cy);
+	let e3 = dist_seg(px, py, cx, cy, ax, ay);
+	let d = min(e1, min(e2, e3));
+	if point_in_tri(px, py, ax, ay, bx, by, cx, cy) { -d } else { d }
+}
+fn sdf_squircle(nx f32, ny f32, half f32, rad f32) f32 {
+	let zero f32 = 0.0;
+	let qx f32 = abs(nx) - (half - rad);
+	let qy f32 = abs(ny) - (half - rad);
+	let ox = max(qx, zero);
+	let oy = max(qy, zero);
+	let outer = sqrt(ox * ox + oy * oy) as f32;
+	let inner = min(max(qx, qy), zero);
+	outer + inner - rad
+}
+fn edge_cov(d f32, aa f32) f32 {
+	clampf(0.5 - d / aa, 0.0, 1.0)
+}
+fn dial_angle(x f32, y f32) f32 {
+	let dx f32 = x - 54.0;
+	let up f32 = 54.0 - y;
+	(atan2(dx, up) * 180.0 / PI) as f32
+}
+fn arc_dist(x f32, y f32, a0 f32, a1 f32) f32 {
+	let radius f32 = 26.8;
+	let cx f32 = 54.0;
+	let cy f32 = 54.0;
+	let dx = x - cx;
+	let dy = y - cy;
+	var ang = dial_angle(x, y);
+	if ang < a0 { ang += 360.0; }
+	if ang <= a1 {
+		let r = sqrt(dx * dx + dy * dy) as f32;
+		let off f32 = r - radius;
+		return abs(off);
+	}
+	let t0 f32 = (a0 * PI / 180.0) as f32;
+	let t1 f32 = (a1 * PI / 180.0) as f32;
+	let x0 f32 = cx + radius * (sin(t0) as f32);
+	let y0 f32 = cy - radius * (cos(t0) as f32);
+	let x1 f32 = cx + radius * (sin(t1) as f32);
+	let y1 f32 = cy - radius * (cos(t1) as f32);
+	let d0 = sqrt((x - x0) * (x - x0) + (y - y0) * (y - y0)) as f32;
+	let d1 = sqrt((x - x1) * (x - x1) + (y - y1) * (y - y1)) as f32;
+	min(d0, d1)
+}
+fn point_dist(x f32, y f32, cx f32, cy f32) f32 {
+	sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy)) as f32
+}
+fn chevron_sdf(x f32, y f32) f32 {
+	let e1 = dist_seg(x, y, 54.0, 32.5, 37.5, 68.0);
+	let e2 = dist_seg(x, y, 37.5, 68.0, 54.0, 59.5);
+	let e3 = dist_seg(x, y, 54.0, 59.5, 70.5, 68.0);
+	let e4 = dist_seg(x, y, 70.5, 68.0, 54.0, 32.5);
+	let d = min(min(e1, e2), min(e3, e4));
+	let in_left = point_in_tri(x, y, 54.0, 32.5, 37.5, 68.0, 54.0, 59.5);
+	let in_right = point_in_tri(x, y, 54.0, 32.5, 54.0, 59.5, 70.5, 68.0);
+	if in_left || in_right { -d } else { d }
+}
+fn shade_sample(s Img&, x f32, y f32, aa f32, fg_only bool) {
+	let white u32 = 0xFFFFFFFF;
+	let black u32 = 0xFF000000;
+	if !fg_only {
+		blend(s, 0, 0, mix_rgb(0xFF060A14, 0xFF0F1F36, (x + y) / 216.0), 1.0);
+		let sapphire = clampf(1.0 - point_dist(x, y, 28.0, 22.0) / 64.0, 0.0, 1.0);
+		blend(s, 0, 0, 0x3878C8FF, sapphire * sapphire);
+		let amber = clampf(1.0 - point_dist(x, y, 86.0, 88.0) / 54.0, 0.0, 1.0);
+		blend(s, 0, 0, 0x24F5B041, amber * amber);
+	}
+	let r = point_dist(x, y, 54.0, 54.0);
+	let shadow_d f32 = point_dist(x, y, 54.0, 56.4) - 31.0;
+	blend(s, 0, 0, black, 0.55 * clampf((3.0 - shadow_d) / 6.0, 0.0, 1.0));
+	blend(s, 0, 0, mix_rgb(0xFF0D1729, 0xFF050912, r / 31.0), edge_cov(r - 31.0, aa));
+	let track f32 = r - 29.2;
+	blend(s, 0, 0, 0xFF223650, edge_cov(abs(track) - 0.85, aa));
+	let bezel = arc_dist(x, y, -122.0, 122.0);
+	blend(s, 0, 0, mix_rgb(0xFFFFE5A3, 0xFFC9892C, (y - 25.0) / 45.0), edge_cov(bezel - 2.8, aa));
+	let active = arc_dist(x, y, 8.0, 102.0);
+	let halo = clampf((6.2 - active) / 3.6, 0.0, 1.0);
+	blend(s, 0, 0, 0xFF22D3EE, 0.30 * halo);
+	let sweep f32 = (dial_angle(x, y) - 8.0) / 94.0;
+	blend(s, 0, 0, mix_rgb(0xFF22D3EE, 0xFF24F5B2, sweep), edge_cov(active - 2.6, aa));
+	if r > 19.0 - aa && r < 24.5 + aa {
+		for i in 13 {
+			let deg f32 = -120.0 + 20.0 * (i as f32);
+			let th f32 = (deg * PI / 180.0) as f32;
+			let ux = sin(th) as f32;
+			let uy = cos(th) as f32;
+			let td = dist_seg(x, y, 54.0 + 20.5 * ux, 54.0 - 20.5 * uy, 54.0 + 23.0 * ux, 54.0 - 23.0 * uy);
+			if i % 3 == 0 {
+				blend(s, 0, 0, 0xFFE8C882, edge_cov(td - 0.65, aa));
+			} else {
+				blend(s, 0, 0, 0xFF6B85A6, edge_cov(td - 0.425, aa));
+			}
+		}
+	}
+	let sy f32 = y - 2.2;
+	let drop_d = chevron_sdf(x, sy);
+	blend(s, 0, 0, black, 0.55 * clampf((1.8 - drop_d) / 3.6, 0.0, 1.0));
+	let chev = edge_cov(chevron_sdf(x, y), aa);
+	if chev > 0.0 {
+		let t f32 = (y - 32.5) / 35.5;
+		let face = if x < 54.0 { mix_rgb(0xFFFFFFFF, 0xFFEAE4D6, t) } else { mix_rgb(0xFFF6D38B, 0xFFC88B2E, t) };
+		blend(s, 0, 0, face, chev);
+		let tip = clampf(1.0 - point_dist(x, y, 54.0, 32.5) / 10.0, 0.0, 1.0);
+		let left = clampf(1.0 - point_dist(x, y, 37.5, 68.0) / 7.0, 0.0, 1.0);
+		let right = clampf(1.0 - point_dist(x, y, 70.5, 68.0) / 7.0, 0.0, 1.0);
+		blend(s, 0, 0, white, chev * (0.45 * tip * tip + 0.25 * left * left + 0.18 * right * right));
+	}
+	let horizon = arc_dist(x, y, 142.0, 218.0);
+	blend(s, 0, 0, 0xFF2C425E, edge_cov(horizon - 0.6, aa));
+}
+fn render_drive_icon(size i32, mask_mode i32) Img {
+	var im = Img { w: size, h: size, px: [] };
+	let n = size as int;
+	im.px.resize(n * n * 4, 0);
+	var s = Img { w: 1, h: 1, px: [] };
+	s.px.resize(4, 0);
+	let unit f32 = 108.0 / (size as f32);
+	let aa f32 = unit * 0.5;
+	for y in n {
+		for x in n {
+			var acc_r f32 = 0.0;
+			var acc_g f32 = 0.0;
+			var acc_b f32 = 0.0;
+			var acc_a f32 = 0.0;
+			for q in 4 {
+				let ox f32 = if q % 2 == 0 { 0.25 } else { 0.75 };
+				let oy f32 = if q < 2 { 0.25 } else { 0.75 };
+				let ux f32 = ((x as f32) + ox) * unit;
+				let uy f32 = ((y as f32) + oy) * unit;
+				var m f32 = 1.0;
+				if mask_mode == 1 {
+					m = edge_cov(sdf_squircle(ux - 54.0, uy - 54.0, 49.5, 22.5), aa);
+				} else if mask_mode == 2 {
+					m = edge_cov(point_dist(ux, uy, 54.0, 54.0) - 50.0, aa);
+				}
+				if m > 0.0 {
+					for k in 4 { s.px[k] = 0; }
+					shade_sample(s, ux, uy, aa, mask_mode == 3);
+					let a f32 = (s.px[3] as f32) / 255.0 * m;
+					acc_r += (s.px[0] as f32) * a;
+					acc_g += (s.px[1] as f32) * a;
+					acc_b += (s.px[2] as f32) * a;
+					acc_a += a;
+				}
+			}
+			if acc_a > 0.0 {
+				let i = (y * n + x) * 4;
+				im.px[i] = to_byte(acc_r / acc_a);
+				im.px[i + 1] = to_byte(acc_g / acc_a);
+				im.px[i + 2] = to_byte(acc_b / acc_a);
+				im.px[i + 3] = to_byte(acc_a * 0.25 * 255.0);
+			}
+		}
+	}
+	im
+}
+fn write_ppm_rgba(path const byte[:], im Img&) {
+	var data byte[>..] = [];
+	format(data, "P7\nWIDTH ", im.w, "\nHEIGHT ", im.h, "\nDEPTH 4\nMAXVAL 255\nTUPLTYPE RGB_ALPHA\nENDHDR\n");
+	data.append(im.px[..]);
+	write_file(path, data[..]);
+}
+fn main() {
+	let squircle = render_drive_icon(512, 1);
+	write_ppm_rgba("/tmp/amni_drive_icon/icon_512_squircle.pam", squircle);
+	let round_icon = render_drive_icon(512, 2);
+	write_ppm_rgba("/tmp/amni_drive_icon/icon_512_round.pam", round_icon);
+	let full = render_drive_icon(512, 0);
+	write_ppm_rgba("/tmp/amni_drive_icon/icon_512_full.pam", full);
+	let fg = render_drive_icon(432, 3);
+	write_ppm_rgba("/tmp/amni_drive_icon/icon_432_fg.pam", fg);
+	print("rendered amni-drive gold+helium icons ok");
+}
