@@ -1,0 +1,149 @@
+let FLAG_FIRST byte = 1;
+let FLAG_LAST byte = 2;
+let FLAG_SINGLE byte = 3;
+let FLAG_ENCRYPTED byte = 8;
+let FLAG_CONTROL byte = 4;
+let MAX_FRAME_PAYLOAD = 16384;
+struct FrameHeader {
+	channel byte,
+	flags byte,
+	length u16,
+	total_length u32,
+	header_size i32
+}
+struct Reassembler {
+	active bool,
+	channel byte,
+	flags byte,
+	expected_total u32,
+	buf byte[>..]
+}
+struct PbField {
+	field_num u32,
+	wire_type u32,
+	varint_value uint,
+	bytes_off i32,
+	bytes_len i32,
+	next_off i32
+}
+fn encode_frame_header(channel byte, flags byte, payload_len u16, total_len u32, out byte[>..]&) {
+	out.push(channel);
+	out.push(flags);
+	out.push((payload_len >> 8) as! byte);
+	out.push(payload_len as! byte);
+	if (flags & FLAG_FIRST) != 0 && (flags & FLAG_LAST) == 0 {
+		out.push((total_len >> 24) as! byte);
+		out.push((total_len >> 16) as! byte);
+		out.push((total_len >> 8) as! byte);
+		out.push(total_len as! byte);
+	}
+}
+fn decode_frame_header(data const byte[:]) FrameHeader {
+	let empty = FrameHeader { channel: 0, flags: 0, length: 0, total_length: 0, header_size: 0 };
+	if data.len < 4 { return empty; }
+	let channel = data[0];
+	let flags = data[1];
+	let length = ((data[2] as u16) << 8) | (data[3] as u16);
+	var total_length = length as u32;
+	var header_size i32 = 4;
+	if (flags & FLAG_FIRST) != 0 && (flags & FLAG_LAST) == 0 {
+		if data.len < 8 { return empty; }
+		total_length = ((data[4] as u32) << 24) | ((data[5] as u32) << 16) | ((data[6] as u32) << 8) | (data[7] as u32);
+		header_size = 8;
+	}
+	FrameHeader { channel: channel, flags: flags, length: length, total_length: total_length, header_size: header_size }
+}
+fn reassemble_push(r Reassembler&, hdr FrameHeader, payload const byte[:], completed byte[>..]&) bool {
+	completed.clear();
+	let first = (hdr.flags & FLAG_FIRST) != 0;
+	let last = (hdr.flags & FLAG_LAST) != 0;
+	if first && last {
+		completed.append(payload);
+		r.active = false;
+		return true;
+	}
+	if first {
+		r.buf.clear();
+		r.buf.append(payload);
+		r.active = true;
+		r.channel = hdr.channel;
+		r.flags = hdr.flags;
+		r.expected_total = hdr.total_length;
+		return false;
+	}
+	if r.active && r.channel == hdr.channel {
+		r.buf.append(payload);
+		if last || r.buf.len >= (r.expected_total as int) {
+			completed.append(r.buf);
+			r.buf.clear();
+			r.active = false;
+			return true;
+		}
+	}
+	false
+}
+fn pb_put_varint(val uint, out byte[>..]&) {
+	var v = val;
+	while v >= 128 {
+		out.push(((v & 127) | 128) as! byte);
+		v = v >> 7;
+	}
+	out.push(v as! byte);
+}
+fn pb_put_tag(field_num u32, wire_type u32, out byte[>..]&) {
+	pb_put_varint(((field_num as uint) << 3) | ((wire_type & 7) as uint), out);
+}
+fn pb_put_bytes(field_num u32, bytes const byte[:], out byte[>..]&) {
+	pb_put_tag(field_num, 2, out);
+	pb_put_varint(bytes.len as uint, out);
+	out.append(bytes);
+}
+fn pb_get_varint(data const byte[:], at int) uint, int, bool {
+	var v uint = 0;
+	var shift uint = 0;
+	var pos = at;
+	while pos < data.len && pos - at < 10 {
+		let b = data[pos];
+		pos++;
+		v = v | (((b & 127) as uint) << shift);
+		if b < 128 { return v, pos, true; }
+		shift += 7;
+	}
+	return 0, 0, false;
+}
+fn pb_bad_field() PbField {
+	PbField { field_num: 0, wire_type: 0, varint_value: 0, bytes_off: 0, bytes_len: 0, next_off: -1 }
+}
+fn pb_next_field(data const byte[:], offset i32) PbField {
+	if offset < 0 || (offset as int) >= data.len { return pb_bad_field(); }
+	let tag, after_tag, tag_ok = pb_get_varint(data, offset as int);
+	if !tag_ok { return pb_bad_field(); }
+	var f = pb_bad_field();
+	f.field_num = (tag >> 3) as! u32;
+	f.wire_type = (tag & 7) as! u32;
+	var pos = after_tag;
+	if f.wire_type == 0 {
+		let value, after_value, value_ok = pb_get_varint(data, pos);
+		if !value_ok { return pb_bad_field(); }
+		f.varint_value = value;
+		pos = after_value;
+	} else if f.wire_type == 1 || f.wire_type == 5 {
+		let width = if f.wire_type == 1 { 8 } else { 4 };
+		if width > data.len - pos { return pb_bad_field(); }
+		var value uint = 0;
+		for i in width { value = value | ((data[pos + i] as uint) << ((i * 8) as uint)); }
+		f.varint_value = value;
+		pos += width;
+	} else if f.wire_type == 2 {
+		let size, after_size, size_ok = pb_get_varint(data, pos);
+		if !size_ok { return pb_bad_field(); }
+		if size > ((data.len - after_size) as uint) { return pb_bad_field(); }
+		f.bytes_off = after_size as i32;
+		f.bytes_len = size as i32;
+		pos = after_size + (size as int);
+	} else {
+		return pb_bad_field();
+	}
+	f.next_off = pos as i32;
+	f
+}

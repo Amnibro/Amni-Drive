@@ -1,0 +1,14 @@
+use std
+into gate.amni
+lang amni
+Amni-Drive's GPS motion classifier, driver safety gate, and geodesic math engine. All floating-point coordinates and speeds use 64-bit floats unless noted.
+Constants: `STATE_UNKNOWN` is 0, `STATE_PARKED` is 1, `STATE_MOVING` is 2. `DECISION_ALLOW` is 0, `DECISION_PASSENGER_CONFIRM` is 1, `DECISION_BLOCK` is 2.
+Struct `MotionState` holds `drive_state` as a 32-bit integer, `smooth_mph` as a 32-bit float, `last_moving_ms` and `last_sample_ms` as 64-bit integers, `lat` and `lon` as 64-bit floats, `has_fix` as a boolean, and `heading_deg` as a 32-bit float.
+Function `haversine_meters` takes `lat1`, `lon1`, `lat2`, and `lon2` as 64-bit floats in degrees and returns great-circle distance in meters using Earth radius 6371000.0 meters.
+Function `bearing_deg` takes `lat1`, `lon1`, `lat2`, and `lon2` as 64-bit floats in degrees and returns initial compass bearing normalized to 0 through 360 as a 32-bit float.
+Function `update_motion` takes a mutable `MotionState` `st`, `lat` and `lon` as 64-bit floats, `speed_mps` and `accuracy_m` as 32-bit floats, `now_ms` as a 64-bit integer, `move_thresh_mph` and `park_hold_ms` as 32-bit float and 64-bit integer.
+Compute raw `mph = max(0.0, speed_mps * 2.2369363)`. If `accuracy_m` exceeds 45.0 and `mph` is below 4.0, treat `mph` as 0.0 (suppresses indoor/parked GPS jitter). If `st.has_fix` is true and `mph` is below 2.5 and `haversine_meters(st.lat, st.lon, lat, lon)` is below 4.5, clamp `mph` to 0.0 (parked drift lock).
+Update `st.smooth_mph` using exponential smoothing `0.35 * mph + 0.65 * st.smooth_mph` (or `mph` directly on the first fix). If `st.has_fix` is true and `haversine_meters(st.lat, st.lon, lat, lon)` is at least 3.0, update `st.heading_deg` to `bearing_deg(st.lat, st.lon, lat, lon)`. Store `st.lat = lat`, `st.lon = lon`, `st.has_fix = true`, `st.last_sample_ms = now_ms`.
+Update `st.drive_state`: if `st.smooth_mph >= move_thresh_mph`, set `st.drive_state = STATE_MOVING` and `st.last_moving_ms = now_ms`. Else if `st.drive_state` is `STATE_MOVING` and `now_ms - st.last_moving_ms < park_hold_ms`, keep `STATE_MOVING`. Otherwise set `st.drive_state = STATE_PARKED`.
+Function `resolve_gate` takes `drive_state` as a 32-bit integer, `gate_enabled` as a boolean, `passenger_confirmed` as a boolean, and `app_category` as a 32-bit integer (0 nav, 1 media, 2 comm, 3 video, 4 browser, 5 other), returning a decision integer (`DECISION_ALLOW`, `DECISION_PASSENGER_CONFIRM`, or `DECISION_BLOCK`).
+If `gate_enabled` is false or `drive_state` is not `STATE_MOVING`, return `DECISION_ALLOW`. When moving with gate enabled: category 0 (nav), 1 (media), and 2 (comm) return `DECISION_ALLOW`. Categories 3, 4, and 5 return `DECISION_ALLOW` if `passenger_confirmed` is true, else `DECISION_PASSENGER_CONFIRM`.

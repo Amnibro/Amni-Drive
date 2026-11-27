@@ -1,0 +1,15 @@
+use std
+use ffi
+use amni-drive
+into drive_abi.amni
+lang amni
+C-ABI shared library exports for Amni-Drive's Helium + Gold native core (`libamni_drive_he.so` on Android NDK). Imports `look`, `layout`, `aap`, `gate`, `scrub`, and `cockpit_render`.
+Exported function `he_drive_gate` takes `drive_state`, `gate_on`, `passenger`, and `category` as 32-bit integers and returns `gate::resolve_gate` with `gate_on` nonzero and `passenger` nonzero as a 32-bit integer.
+Exported function `he_drive_haversine` takes `lat1`, `lon1`, `lat2`, and `lon2` as 64-bit floats and returns `gate::haversine_meters(lat1, lon1, lat2, lon2)` as a 64-bit float.
+Exported function `he_drive_bearing` takes `lat1`, `lon1`, `lat2`, and `lon2` as 64-bit floats and returns `gate::bearing_deg(lat1, lon1, lat2, lon2)` as a 32-bit float.
+Exported function `he_drive_palette_color` takes `preset_idx` and `slot` as 32-bit integers, `custom_acc` as an unsigned 32-bit integer, and `high_contrast` as a 32-bit integer, returning an unsigned 32-bit ARGB color. Look up `all = look::presets()`; clamp `preset_idx` between 0 and `all.len - 1`, build `pal = look::build_palette` with `all[idx].key`, `custom_acc`, and `high_contrast` nonzero, and return `pal.bg` for slot 0, `pal.panel` for 1, `pal.panel2` for 2, `pal.line` for 3, `pal.line2` for 4, `pal.acc` for 5, `pal.ink` for 6, `pal.soft` for 7, `pal.dim` for 8, `pal.gold` for 9, `pal.err` for 10, `pal.ok` for 11, or 1 if `pal.light` else 0 for slot 12.
+Exported function `he_drive_type_metric` takes `screen_w`, `screen_h`, and `user_scale` as 32-bit floats and `slot` as a 32-bit integer, returning a 32-bit float from `look::car_type_scale(screen_w, screen_h, user_scale)`: slot 0 `telemetry_px`, 1 `title_px`, 2 `button_px`, 3 `body_px`, 4 `meta_px`, 5 `min_hit_px`, 6 `gutter_px`, 7 `pad_px`.
+Exported function `he_drive_cockpit_valid` takes `screen_w`, `screen_h`, and `user_scale` as 32-bit floats and `layout_id`, `dock_mode`, and `swap` as 32-bit integers, returning `layout::validate_cockpit` of `layout::compute_cockpit` with the computed `car_type_scale` metrics.
+Exported function `he_drive_scrub_buf` takes `in_ptr` as an unsigned integer address, `in_len` as a 32-bit integer, `out_ptr` as an unsigned integer address, and `out_cap` as a 32-bit integer, returning the number of bytes written as a 32-bit integer. Read `in_len` bytes from `in_ptr` via `ffi::bytes`, run `scrub::scrub_text`, truncate to `out_cap` if larger, write the scrubbed bytes to `out_ptr` via `ffi::write`, and return the written length.
+Exported function `he_drive_render_rgba` takes `out_ptr` as an unsigned integer address and `w`, `h`, `preset_idx`, `layout_id`, `dock_mode`, `speed_mph`, `temp_f`, and `active_btn` as 32-bit integers, returning the byte count written as a 32-bit integer. Look up `all = look::presets()` at clamped `preset_idx`, call `cockpit_render::draw_cockpit(w, h, all[idx].key, layout_id, dock_mode, speed_mph, temp_f, active_btn)`, write `canvas.px` to `out_ptr` via `ffi::write`, and return its length.
+Function `main` does nothing (library entry stub).

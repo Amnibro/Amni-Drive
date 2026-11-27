@@ -15,6 +15,7 @@ object GeoMath {
     fun tileXToLon(x: Double, z: Int): Double = x / 2.0.pow(z) * 360.0 - 180.0
     fun tileYToLat(y: Double, z: Int): Double = atan(sinh(PI * (1.0 - 2.0 * y / 2.0.pow(z)))) * 180.0 / PI
     fun haversineM(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+        com.amni.drive.helium.HeliumCore.haversineMeters(lat1, lon1, lat2, lon2)?.let { return it }
         val dLat = Math.toRadians(lat2 - lat1)
         val dLon = Math.toRadians(lon2 - lon1)
         val a = kotlin.math.sin(dLat / 2).let { it * it } +

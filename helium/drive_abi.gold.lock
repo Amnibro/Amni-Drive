@@ -1,0 +1,90 @@
+=== -5f26819f3e08f11c
+import look;
+import layout;
+import aap;
+import gate;
+import scrub;
+import cockpit_render;
+import ffi;
+export fn he_drive_gate(drive_state i32, gate_on i32, passenger i32, category i32) i32 {
+	resolve_gate(drive_state, gate_on != 0, passenger != 0, category)
+}
+export fn he_drive_haversine(lat1 real, lon1 real, lat2 real, lon2 real) real {
+	haversine_meters(lat1, lon1, lat2, lon2)
+}
+export fn he_drive_bearing(lat1 real, lon1 real, lat2 real, lon2 real) f32 {
+	bearing_deg(lat1, lon1, lat2, lon2)
+}
+export fn he_drive_palette_color(preset_idx i32, slot i32, custom_acc u32, high_contrast i32) u32 {
+	let all = presets();
+	let idx = clamp(preset_idx as int, 0, all.len - 1);
+	var i = 0;
+	for p in all {
+		if i == idx {
+			let pal = build_palette(p.key, custom_acc, high_contrast != 0);
+			let light u32 = if pal.light { 1 } else { 0 };
+			let color u32 = match slot {
+				0 => pal.bg,
+				1 => pal.panel,
+				2 => pal.panel2,
+				3 => pal.line,
+				4 => pal.line2,
+				5 => pal.acc,
+				6 => pal.ink,
+				7 => pal.soft,
+				8 => pal.dim,
+				9 => pal.gold,
+				10 => pal.err,
+				11 => pal.ok,
+				12 => light,
+				_ => 0,
+			};
+			return color;
+		}
+		i++;
+	}
+	return 0;
+}
+export fn he_drive_type_metric(screen_w f32, screen_h f32, user_scale f32, slot i32) f32 {
+	let ts = car_type_scale(screen_w, screen_h, user_scale);
+	let metric f32 = match slot {
+		0 => ts.telemetry_px,
+		1 => ts.title_px,
+		2 => ts.button_px,
+		3 => ts.body_px,
+		4 => ts.meta_px,
+		5 => ts.min_hit_px,
+		6 => ts.gutter_px,
+		7 => ts.pad_px,
+		_ => 0.0,
+	};
+	metric
+}
+export fn he_drive_cockpit_valid(screen_w f32, screen_h f32, user_scale f32, layout_id i32, dock_mode i32, swap_flag i32) int {
+	let ts = car_type_scale(screen_w, screen_h, user_scale);
+	let plan = compute_cockpit(screen_w, screen_h, ts.min_hit_px, ts.gutter_px, ts.pad_px, layout_id, dock_mode, swap_flag != 0);
+	validate_cockpit(plan)
+}
+export fn he_drive_scrub_buf(in_ptr uint, in_len i32, out_ptr uint, out_cap i32) i32 {
+	let input = ffi::bytes(in_ptr, in_len);
+	let clean = scrub_text(input[..]);
+	let n = min(clean.len, max(out_cap as int, 0));
+	ffi::write(out_ptr, clean[..n]);
+	n as i32
+}
+export fn he_drive_render_rgba(out_ptr uint, w i32, h i32, preset_idx i32, layout_id i32, dock_mode i32, speed_mph i32, temp_f i32, active_btn i32) i32 {
+	let all = presets();
+	let idx = clamp(preset_idx as int, 0, all.len - 1);
+	var i = 0;
+	for p in all {
+		if i == idx {
+			let canvas = draw_cockpit(w, h, p.key, layout_id, dock_mode, speed_mph, temp_f, active_btn);
+			ffi::write(out_ptr, canvas.px[..]);
+			return canvas.px.len as i32;
+		}
+		i++;
+	}
+	return 0;
+}
+fn main() {
+}

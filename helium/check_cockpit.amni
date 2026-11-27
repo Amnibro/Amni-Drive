@@ -1,0 +1,130 @@
+import look;
+import layout;
+import aap;
+import gate;
+fn check_themes() bool {
+	let all = presets();
+	var count = 0;
+	for p in all {
+		let normal = build_palette(p.key, 0, false);
+		let high = build_palette(p.key, 0, true);
+		guard contrast(normal.ink, normal.panel) >= 7.0 && contrast(normal.soft, normal.panel) >= 6.5 && contrast(normal.acc, normal.panel) >= 4.5 && contrast(high.ink, high.panel) >= 7.0 && contrast(high.soft, high.panel) >= 6.5 && contrast(high.acc, high.panel) >= 7.0 else {
+			print("FAIL  themes: ", p.key);
+			return false;
+		}
+		count++;
+	}
+	print("ok    themes: ", count, " presets AAA-checked");
+	true
+}
+fn check_typography(ws f32[:], hs f32[:]) bool {
+	for i in ws.len {
+		let t = car_type_scale(ws[i], hs[i], 1.0);
+		guard t.telemetry_px >= 34.0 && t.button_px >= 16.0 && t.meta_px >= 13.5 && t.min_hit_px >= 56.0 else {
+			print("FAIL  typography: display ", ws[i], "x", hs[i]);
+			return false;
+		}
+	}
+	print("ok    typography: ", ws.len, " displays verified");
+	true
+}
+fn check_layouts(ws f32[:], hs f32[:]) bool {
+	var passed = 0;
+	var total = 0;
+	var bad_layout = -1;
+	var bad_display = 0;
+	var bad_dock = 0;
+	var bad_swap = false;
+	var bad_code = 0;
+	var bad_buttons = 0;
+	var bad_pods = 0;
+	for lay in 10 {
+		for d in ws.len {
+			let t = car_type_scale(ws[d], hs[d], 1.0);
+			for dock in 3 {
+				for s in 2 {
+					let plan = compute_cockpit(ws[d], hs[d], t.min_hit_px, t.gutter_px, t.pad_px, lay as i32, dock as i32, s == 1);
+					let code = validate_cockpit(plan);
+					total++;
+					if code == 0 && plan.buttons.len == 6 && plan.pods.len >= 1 {
+						passed++;
+					} else if bad_layout < 0 {
+						bad_layout = lay;
+						bad_display = d;
+						bad_dock = dock;
+						bad_swap = s == 1;
+						bad_code = code;
+						bad_buttons = plan.buttons.len;
+						bad_pods = plan.pods.len;
+					}
+				}
+			}
+		}
+	}
+	if passed == 300 && total == 300 {
+		print("ok    layouts: ", passed, "/300 configurations valid");
+		return true;
+	}
+	print("FAIL  layouts: ", passed, "/300 valid, first failure layout ", bad_layout, " display ", ws[bad_display], "x", hs[bad_display], " dock ", bad_dock, " swap ", bad_swap, " error ", bad_code, " buttons ", bad_buttons, " pods ", bad_pods);
+	false
+}
+fn check_aap() bool {
+	var first_wire byte[>..] = [];
+	encode_frame_header(3, FLAG_FIRST, 4, 7, first_wire);
+	let first = decode_frame_header(first_wire);
+	var last_wire byte[>..] = [];
+	encode_frame_header(3, FLAG_LAST, 3, 0, last_wire);
+	let last = decode_frame_header(last_wire);
+	var r = Reassembler { .. };
+	var completed byte[>..] = [];
+	let early = reassemble_push(r, first, "abcd", completed);
+	let done = reassemble_push(r, last, "efg", completed);
+	let framing_ok = first.header_size == 8 && first.total_length == 7 && !early && done && completed == "abcdefg";
+	var pb byte[>..] = [];
+	pb_put_tag(1, 0, pb);
+	pb_put_varint(300, pb);
+	pb_put_bytes(2, "amni", pb);
+	let a = pb_next_field(pb, 0);
+	let b = pb_next_field(pb, a.next_off);
+	let varint_ok = a.field_num == 1 && a.wire_type == 0 && a.varint_value == 300;
+	let off = b.bytes_off as int;
+	let end = off + 4;
+	let bytes_ok = b.field_num == 2 && b.wire_type == 2 && b.bytes_len == 4 && off >= 0 && end <= pb.len && pb[off..end] == "amni" && (b.next_off as int) == pb.len;
+	guard framing_ok && varint_ok && bytes_ok else {
+		print("FAIL  aap: framing ", framing_ok, " varint ", varint_ok, " bytes ", bytes_ok);
+		return false;
+	}
+	print("ok    aap: framing, reassembly & protobuf verified");
+	true
+}
+fn check_gate() bool {
+	var st = MotionState { .. };
+	update_motion(st, 40.0, -74.0, 0.0, 5.0, 1000, 5.0, 3000);
+	let parked = st.drive_state == STATE_PARKED;
+	update_motion(st, 40.0, -74.0, 15.0, 5.0, 2000, 5.0, 3000);
+	update_motion(st, 40.0, -74.0, 15.0, 5.0, 3000, 5.0, 3000);
+	let moving = st.drive_state == STATE_MOVING;
+	let policy = resolve_gate(STATE_MOVING, true, false, 0) == DECISION_ALLOW && resolve_gate(STATE_MOVING, true, false, 1) == DECISION_ALLOW && resolve_gate(STATE_MOVING, true, false, 3) == DECISION_PASSENGER_CONFIRM;
+	let zero = haversine_meters(40.0, -74.0, 40.0, -74.0) == 0.0;
+	guard parked && moving && policy && zero else {
+		print("FAIL  gate: parked ", parked, " moving ", moving, " policy ", policy, " haversine ", zero);
+		return false;
+	}
+	print("ok    gate: motion classifier & safety policy verified");
+	true
+}
+fn main() {
+	let ws f32[5] = [800.0, 1280.0, 1920.0, 720.0, 1080.0];
+	let hs f32[5] = [480.0, 720.0, 720.0, 1280.0, 2400.0];
+	let themes_ok = check_themes();
+	let type_ok = check_typography(ws, hs);
+	let layouts_ok = check_layouts(ws, hs);
+	let aap_ok = check_aap();
+	let gate_ok = check_gate();
+	if themes_ok && type_ok && layouts_ok && aap_ok && gate_ok {
+		print("amni-drive helium: ok");
+	} else {
+		print("amni-drive helium: FAILED");
+		exit(1);
+	}
+}

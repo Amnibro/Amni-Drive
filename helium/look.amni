@@ -1,0 +1,212 @@
+import math;
+struct Preset {
+	key byte[..32] = [],
+	label byte[..32] = [],
+	bg u32 = 0,
+	accent u32 = 0,
+	light bool = false,
+}
+struct Palette {
+	bg u32,
+	panel u32,
+	panel2 u32,
+	line u32,
+	line2 u32,
+	acc u32,
+	ink u32,
+	soft u32,
+	dim u32,
+	gold u32,
+	err u32,
+	ok u32,
+	light bool,
+}
+struct TypeScale {
+	telemetry_px f32,
+	title_px f32,
+	button_px f32,
+	body_px f32,
+	meta_px f32,
+	min_hit_px f32,
+	gutter_px f32,
+	pad_px f32,
+}
+var preset_cache Preset[>..];
+fn fill_preset_cache() {
+	if preset_cache.len == 0 {
+		let rows = preset_rows();
+		preset_cache.append(rows);
+	}
+}
+fn presets() Preset[>..] {
+	fill_preset_cache();
+	copy(preset_cache)
+}
+fn preset_rows() Preset[>..] {
+	var r Preset[>..] = [];
+	r.push(Preset{"amni_dark", "Amni", 0xFF0A0A0A, 0xFF00FF9D, false});
+	r.push(Preset{"amni_light", "Amni Light", 0xFFF4F4F4, 0xFF00875A, true});
+	r.push(Preset{"haven", "Haven", 0xFF191B28, 0xFF7C5CFC, false});
+	r.push(Preset{"amni_haven", "Amni Haven", 0xFF0A0A0A, 0xFF7C5CFC, false});
+	r.push(Preset{"amni_ai", "Amni AI", 0xFF0A0A0A, 0xFFFFB74D, false});
+	r.push(Preset{"amni_calc", "Amni Calc", 0xFF0A0A0A, 0xFFFF6B35, false});
+	r.push(Preset{"core", "Core", 0xFF0A0A0A, 0xFFEF5350, false});
+	r.push(Preset{"crypt", "Crypt", 0xFF0A0A0A, 0xFF2979FF, false});
+	r.push(Preset{"explore", "Explore", 0xFF0A0A0A, 0xFF00B4FF, false});
+	r.push(Preset{"high_contrast", "High Contrast", 0xFF000000, 0xFFFFFF00, false});
+	r.push(Preset{"oled", "OLED Black", 0xFF000000, 0xFF00E5FF, false});
+	r.push(Preset{"night_red", "Night Red", 0xFF0A0000, 0xFFFF3B30, false});
+	r.push(Preset{"night_amber", "Night Amber", 0xFF0A0700, 0xFFFFA000, false});
+	r.push(Preset{"abyss", "Abyss", 0xFF040810, 0xFF1A5AFF, false});
+	r.push(Preset{"bloodborne", "Bloodborne", 0xFF0A0000, 0xFFCC0020, false});
+	r.push(Preset{"braid", "Braid", 0xFF0B0D12, 0xFF00FF9D, false});
+	r.push(Preset{"braid_light", "Braid Light", 0xFFF7F7F8, 0xFF00875A, true});
+	r.push(Preset{"chapel", "Chapel", 0xFF0E0C18, 0xFF8A5CF0, false});
+	r.push(Preset{"crt", "CRT", 0xFF080808, 0xFFFFB000, false});
+	r.push(Preset{"cyberpunk", "Cyberpunk", 0xFF0A0A12, 0xFFFF2D6F, false});
+	r.push(Preset{"darksouls", "Dark Souls", 0xFF0C0A08, 0xFFC8A84E, false});
+	r.push(Preset{"discord", "Discord", 0xFF313338, 0xFF5865F2, false});
+	r.push(Preset{"dracula", "Dracula", 0xFF1A1B26, 0xFFBD93F9, false});
+	r.push(Preset{"eldenring", "Elden Ring", 0xFF08080E, 0xFFD4A832, false});
+	r.push(Preset{"fallout", "Fallout", 0xFF0A0E08, 0xFF14FE17, false});
+	r.push(Preset{"ffx", "FFX", 0xFF080E1A, 0xFF40A8E0, false});
+	r.push(Preset{"gospel", "Gospel", 0xFFF5F0E8, 0xFF8B2032, true});
+	r.push(Preset{"halo", "Halo", 0xFF0D1A0D, 0xFFD4A020, false});
+	r.push(Preset{"holo", "Holo", 0xFF000000, 0xFF33B5E5, false});
+	r.push(Preset{"ice", "Ice", 0xFF0A1520, 0xFF00D4FF, false});
+	r.push(Preset{"lotr", "LOTR", 0xFF1A1510, 0xFFD4A844, false});
+	r.push(Preset{"matrix", "Matrix", 0xFF0A0A0A, 0xFF00FF41, false});
+	r.push(Preset{"midnightpurple", "Midnight", 0xFF0D0A1A, 0xFF8A5CF6, false});
+	r.push(Preset{"minecraft", "Minecraft", 0xFF1A1A1A, 0xFF55BB55, false});
+	r.push(Preset{"nord", "Nord", 0xFF2E3440, 0xFF88C0D0, false});
+	r.push(Preset{"scripture", "Scripture", 0xFF1A1610, 0xFFC8A84C, false});
+	r.push(Preset{"tron", "Tron", 0xFF0C141F, 0xFF6FECFF, false});
+	r.push(Preset{"win95", "Win95", 0xFFBFBFBF, 0xFF000080, true});
+	r.push(Preset{"zelda", "Zelda", 0xFF0A120A, 0xFF44BB44, false});
+	r
+}
+fn find_preset(key const byte[:]) Preset {
+	fill_preset_cache();
+	for p in preset_cache {
+		if p.key == key { return p; }
+	}
+	preset_cache[0]
+}
+fn lerp_color(a u32, b u32, t f32) u32 {
+	let low f32 = 0.0;
+	let high f32 = 1.0;
+	let k = clamp(t, low, high);
+	var out u32 = 0;
+	var sh u32 = 0;
+	while sh < 32 {
+		let x = ((a >> sh) & 255) as f32;
+		let y = ((b >> sh) & 255) as f32;
+		let v f32 = x + (y - x) * k;
+		let half f32 = 0.5;
+		out = out | (((v + half) as! u32) << sh);
+		sh += 8;
+	}
+	out
+}
+fn channel_lum(c u32) f32 {
+	let s f32 = (c as f32) / 255.0;
+	if s <= 0.03928 {
+		s / 12.92
+	} else {
+		let q f32 = (s + 0.055) / 1.055;
+		let e f32 = 2.4;
+		pow(q, e) as f32
+	}
+}
+fn luminance(col u32) f32 {
+	let r = channel_lum((col >> 16) & 255);
+	let g = channel_lum((col >> 8) & 255);
+	let b = channel_lum(col & 255);
+	0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+fn contrast(a u32, b u32) f32 {
+	let la = luminance(a);
+	let lb = luminance(b);
+	let hi = max(la, lb);
+	let lo = min(la, lb);
+	(hi + 0.05) / (lo + 0.05)
+}
+fn legible(fg u32, bg u32, min_ratio f32) u32 {
+	if contrast(fg, bg) >= min_ratio { return fg; }
+	var pole u32 = 0xFF000000;
+	if luminance(bg) < 0.25 { pole = 0xFFFFFFFF; }
+	for i in 1..17 {
+		let t f32 = (i as f32) / 16.0;
+		let c = lerp_color(fg, pole, t);
+		if contrast(c, bg) >= min_ratio { return c; }
+	}
+	pole
+}
+fn build_palette(key const byte[:], custom_accent u32, high_contrast bool) Palette {
+	let p = find_preset(key);
+	let accent u32 = if custom_accent != 0 { custom_accent } else { p.accent };
+	let white u32 = 0xFFFFFFFF;
+	let black u32 = 0xFF000000;
+	var r = Palette { bg: p.bg, panel: 0, panel2: 0, line: 0, line2: 0, acc: 0, ink: 0, soft: 0, dim: 0, gold: 0, err: 0, ok: 0, light: p.light };
+	if p.light {
+		r.panel = white;
+		r.panel2 = lerp_color(p.bg, black, 0.06);
+		r.line = lerp_color(p.bg, black, 0.16);
+		r.line2 = lerp_color(p.bg, black, 0.28);
+		r.ink = 0xFF0A0E14;
+		r.soft = legible(0xFF2B3544, r.panel, 7.0);
+		r.dim = legible(0xFF4A5568, r.panel, 4.8);
+		r.acc = legible(accent, r.panel, 5.0);
+		r.gold = legible(0xFF9E6400, r.panel, 5.0);
+		r.err = legible(0xFFC8233A, r.panel, 5.0);
+		r.ok = legible(0xFF0B7A4B, r.panel, 5.0);
+	} else {
+		r.panel = lerp_color(p.bg, white, 0.055);
+		r.panel2 = lerp_color(p.bg, white, 0.11);
+		r.line = lerp_color(p.bg, white, 0.18);
+		r.line2 = lerp_color(p.bg, white, 0.28);
+		r.ink = 0xFFF5F8FA;
+		r.soft = legible(0xFFC5D0DC, r.panel, 7.0);
+		r.dim = legible(0xFF93A3B5, r.panel, 4.5);
+		r.acc = legible(accent, r.panel, 5.2);
+		r.gold = legible(0xFFFFC845, r.panel, 6.0);
+		r.err = legible(0xFFFF5C6C, r.panel, 5.2);
+		r.ok = legible(0xFF2CE8A0, r.panel, 5.2);
+	}
+	if high_contrast {
+		if p.light {
+			r.ink = black;
+			r.bg = white;
+			r.panel = 0xFFF2F2F2;
+		} else {
+			r.ink = white;
+			r.bg = black;
+			r.panel = 0xFF0A0A0A;
+		}
+		r.acc = legible(r.acc, r.panel, 7.0);
+	}
+	r
+}
+fn scaled_px(size f32, base f32, lo f32, hi f32) f32 {
+	let v f32 = size * base;
+	clamp(v, lo, hi)
+}
+fn car_type_scale(screen_w f32, screen_h f32, user_scale f32) TypeScale {
+	let short_side = min(screen_w, screen_h);
+	let ratio f32 = short_side / 540.0;
+	let ratio_lo f32 = 0.88;
+	let ratio_hi f32 = 1.45;
+	let user_lo f32 = 0.85;
+	let user_hi f32 = 1.50;
+	let base f32 = clamp(ratio, ratio_lo, ratio_hi) * clamp(user_scale, user_lo, user_hi);
+	TypeScale {
+		telemetry_px: scaled_px(42.0, base, 34.0, 62.0),
+		title_px: scaled_px(22.0, base, 18.0, 32.0),
+		button_px: scaled_px(18.0, base, 16.0, 26.0),
+		body_px: scaled_px(16.0, base, 15.0, 22.0),
+		meta_px: scaled_px(14.0, base, 13.5, 19.0),
+		min_hit_px: scaled_px(62.0, base, 56.0, 88.0),
+		gutter_px: scaled_px(12.0, base, 10.0, 18.0),
+		pad_px: scaled_px(14.0, base, 10.0, 22.0),
+	}
+}

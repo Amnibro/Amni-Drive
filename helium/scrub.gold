@@ -1,0 +1,13 @@
+use std
+into scrub.amni
+lang amni
+Amni-Drive's privacy scrubber for crash and bug session logs. Strips emails, phone numbers, IPv4 addresses, GPS decimal coordinates, and bearer tokens before any report leaves the device.
+Function `is_digit` takes an ASCII byte `b` and returns true if `b` is between `'0'` and `'9'`.
+Function `is_email_char` takes an ASCII byte `b` and returns true if `b` is alphanumeric or one of `'.'`, `'_'`, `'%'`, `'+'`, `'-'`.
+Function `scrub_line` takes `line` as a read-only byte slice and returns a growable byte buffer with sensitive patterns redacted:
+- Replace any email-like token containing `'@'` flanked by `is_email_char` runs (with a `'.'` in the domain) with `"[EMAIL]"`.
+- Replace any `"Bearer "` or `"token="` or `"cookie="` secret value (non-whitespace run after the prefix, case-insensitive on the prefix) with `"[TOKEN]"`.
+- Replace any dotted-quad IPv4 address (four 1-to-3 digit groups separated by dots) with `"[IP]"`.
+- Replace any GPS coordinate pair (signed decimal number with at least 3 fractional digits, optional comma/space, followed by a second signed decimal with at least 3 fractional digits) with `"[GPS]"`.
+- Replace any 10-digit or 11-digit phone number pattern (digits optionally grouped with `'-'`, `' '`, `'('`, `')'`, or leading `'+'`) with `"[PHONE]"`.
+Function `scrub_text` takes `text` as a read-only byte slice, splits on newline `'\n'`, applies `scrub_line` to each line, and joins with `'\n'`.

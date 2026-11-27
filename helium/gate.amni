@@ -1,0 +1,61 @@
+import math;
+let STATE_UNKNOWN i32 = 0;
+let STATE_PARKED i32 = 1;
+let STATE_MOVING i32 = 2;
+let DECISION_ALLOW i32 = 0;
+let DECISION_PASSENGER_CONFIRM i32 = 1;
+let DECISION_BLOCK i32 = 2;
+struct MotionState {
+	drive_state i32,
+	smooth_mph f32,
+	last_moving_ms int,
+	last_sample_ms int,
+	lat real,
+	lon real,
+	has_fix bool,
+	heading_deg f32,
+}
+fn haversine_meters(lat1 real, lon1 real, lat2 real, lon2 real) real {
+	let rad = PI / 180.0;
+	let s_lat = sin((lat2 - lat1) * rad / 2.0);
+	let s_lon = sin((lon2 - lon1) * rad / 2.0);
+	let a = clamp(s_lat * s_lat + cos(lat1 * rad) * cos(lat2 * rad) * s_lon * s_lon, 0.0, 1.0);
+	6371000.0 * 2.0 * atan2(sqrt(a), sqrt(1.0 - a))
+}
+fn bearing_deg(lat1 real, lon1 real, lat2 real, lon2 real) f32 {
+	let rad = PI / 180.0;
+	let p1 = lat1 * rad;
+	let p2 = lat2 * rad;
+	let dl = (lon2 - lon1) * rad;
+	let y = sin(dl) * cos(p2);
+	let x = cos(p1) * sin(p2) - sin(p1) * cos(p2) * cos(dl);
+	var deg = atan2(y, x) / rad;
+	if deg < 0.0 { deg += 360.0; }
+	deg as! f32
+}
+fn update_motion(st MotionState&, lat real, lon real, speed_mps f32, accuracy_m f32, now_ms int, move_thresh_mph f32, park_hold_ms int) {
+	var mph f32 = max(0.0, speed_mps * 2.2369363);
+	if accuracy_m > 45.0 && mph < 4.0 { mph = 0.0; }
+	let had_fix = st.has_fix;
+	let moved = if had_fix { haversine_meters(st.lat, st.lon, lat, lon) } else { 0.0 };
+	if had_fix && mph < 2.5 && moved < 4.5 { mph = 0.0; }
+	st.smooth_mph = if had_fix { 0.35 * mph + 0.65 * st.smooth_mph } else { mph };
+	if had_fix && moved >= 3.0 { st.heading_deg = bearing_deg(st.lat, st.lon, lat, lon); }
+	st.lat = lat;
+	st.lon = lon;
+	st.has_fix = true;
+	st.last_sample_ms = now_ms;
+	if st.smooth_mph >= move_thresh_mph {
+		st.drive_state = STATE_MOVING;
+		st.last_moving_ms = now_ms;
+	} else if st.drive_state == STATE_MOVING && now_ms - st.last_moving_ms < park_hold_ms {
+		st.drive_state = STATE_MOVING;
+	} else {
+		st.drive_state = STATE_PARKED;
+	}
+}
+fn resolve_gate(drive_state i32, gate_enabled bool, passenger_confirmed bool, app_category i32) i32 {
+	if !gate_enabled || drive_state != STATE_MOVING { return DECISION_ALLOW; }
+	if app_category == 0 || app_category == 1 || app_category == 2 { return DECISION_ALLOW; }
+	if passenger_confirmed { DECISION_ALLOW } else { DECISION_PASSENGER_CONFIRM }
+}
