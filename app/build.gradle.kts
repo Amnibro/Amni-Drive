@@ -20,8 +20,8 @@ android {
         applicationId = "com.amni.drive"
         minSdk = 26
         targetSdk = 34
-        versionCode = 92
-        versionName = "1.14.0"
+        versionCode = 93
+        versionName = "1.14.1"
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -69,7 +69,8 @@ android {
 }
 val syncBundledAmniMap by tasks.registering {
     doLast {
-        val mapApk = rootProject.file("../amni-map/joyride/build/outputs/apk/release/joyride-release.apk")
+        val playApk = rootProject.file("../amni-map/joyride/build/outputs/apk/release/joyride-play-signed.apk")
+        val mapApk = if (playApk.exists()) playApk else rootProject.file("../amni-map/joyride/build/outputs/apk/release/joyride-release.apk")
         val mapGradle = rootProject.file("../amni-map/joyride/build.gradle.kts")
         if (mapApk.exists()) {
             val bundledDir = project.file("src/main/assets/bundled").apply { mkdirs() }

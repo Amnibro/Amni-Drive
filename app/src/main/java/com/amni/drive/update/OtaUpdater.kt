@@ -108,8 +108,8 @@ object OtaUpdater {
             packageName = "com.amniscient.map",
             emoji = "🗺️",
             blurb = "Prebuilt & included inside Amni-Drive · 3D buildings, trees, bridges, vehicles & offline maps",
-            versionCode = 37L,
-            versionName = "2.14.0",
+            versionCode = 38L,
+            versionName = "2.14.1",
             downloadUrl = "https://amni-scient.com/downloads/amni-map.apk",
             carDashNative = true,
             requiredForCar = true

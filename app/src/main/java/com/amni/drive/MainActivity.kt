@@ -170,6 +170,34 @@ modifier = androidx.compose.ui.Modifier
 .padding(top = 10.dp, start = 10.dp, end = 10.dp)
 )
 }
+val selfRel = ota.selfRelease
+val bMap = ota.bundledMap
+val promptKey = when {
+ota.selfUpdateAvailable && selfRel != null -> "self:${selfRel.versionCode}"
+(ota.bundledMapMissing || ota.bundledMapUpdateReady) && bMap != null -> "bmap:${bMap.versionCode}"
+ota.totalUpdatesCount > 0 -> "apps:${ota.totalUpdatesCount}:${ota.apps.filter { it.updateAvailable }.joinToString(",") { "${it.app.id}:${it.app.versionCode}" }}"
+else -> ""
+}
+val otaPrefs = remember { getSharedPreferences("amni_ota_prompt", MODE_PRIVATE) }
+var skippedPromptKey by remember { mutableStateOf(otaPrefs.getString("skipped_key", "") ?: "") }
+if (crashFile == null && state != DriveState.MOVING && ota.hasActionableBanner && promptKey.isNotEmpty() && skippedPromptKey != promptKey) {
+com.amni.drive.ui.InAppUpdatePromptDialog(
+ota = ota,
+onInstallNow = { lifecycleScope.launch { com.amni.drive.update.OtaUpdater.installPrimaryAction(this@MainActivity) } },
+onOpenDetails = {
+skippedPromptKey = promptKey
+otaPrefs.edit().putString("skipped_key", promptKey).apply()
+startActivity(
+Intent(this@MainActivity, SettingsActivity::class.java)
+.putExtra(SettingsActivity.EXTRA_TAB, "UPDATES")
+)
+},
+onLater = {
+skippedPromptKey = promptKey
+otaPrefs.edit().putString("skipped_key", promptKey).apply()
+}
+)
+}
 }
 }
 }

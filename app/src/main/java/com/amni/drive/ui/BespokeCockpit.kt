@@ -1293,3 +1293,92 @@ fun InAppUpdateBanner(
         )
     }
 }
+@Composable
+fun InAppUpdatePromptDialog(
+    ota: OtaUpdater.OtaState,
+    onInstallNow: () -> Unit,
+    onOpenDetails: () -> Unit,
+    onLater: () -> Unit
+) {
+    val p = LocalAmni.current
+    val busy = ota.downloadingId != null
+    val pct = (ota.downloadProgress * 100f).roundToInt().coerceIn(1, 99)
+    val title = when {
+        ota.pendingInstallApkPath != null -> "Update Verified & Ready"
+        ota.selfUpdateAvailable && ota.selfRelease != null -> "Amni-Drive v${ota.selfRelease.versionName} Available"
+        ota.bundledMapMissing && ota.bundledMap != null -> "Install Built-In Amni-Map v${ota.bundledMap.versionName}"
+        ota.bundledMapUpdateReady && ota.bundledMap != null -> "Built-In Amni-Map v${ota.bundledMap.versionName} Ready"
+        else -> "${ota.totalUpdatesCount} Amni App Update${if (ota.totalUpdatesCount > 1) "s" else ""} Available"
+    }
+    val body = when {
+        ota.selfUpdateAvailable && ota.selfRelease != null -> ota.selfRelease.notes.ifBlank { "A new signed Amni-Drive release is ready to download and install." }
+        (ota.bundledMapMissing || ota.bundledMapUpdateReady) && ota.bundledMap != null -> "Amni-Map v${ota.bundledMap.versionName} is prebuilt right inside Amni-Drive for instant offline installation."
+        else -> "Signed updates are available for your installed Amni-Scient apps."
+    }
+    val cta = when {
+        busy -> "DOWNLOADING $pct%"
+        ota.pendingInstallApkPath != null -> "FINISH INSTALL"
+        ota.bundledMapMissing || ota.bundledMapUpdateReady -> "INSTALL BUILT-IN"
+        else -> "DOWNLOAD & UPDATE"
+    }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = { if (!busy) onLater() },
+        containerColor = p.panel,
+        shape = RoundedCornerShape(22.dp),
+        title = {
+            Text(title, color = p.ink, fontFamily = FontFamily.Monospace, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(body, color = p.soft, fontSize = 13.sp, lineHeight = 18.sp)
+                if (busy) {
+                    androidx.compose.material3.LinearProgressIndicator(
+                        progress = { ota.downloadProgress.coerceIn(0.02f, 1f) },
+                        modifier = Modifier.fillMaxWidth().height(7.dp).clip(RoundedCornerShape(99.dp)),
+                        color = p.acc,
+                        trackColor = p.panel2
+                    )
+                    Text("Downloading & verifying SHA-256 · $pct%", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+                ota.errorMsg?.takeIf { it.isNotBlank() }?.let { err ->
+                    Text(err, color = p.gold, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+                }
+            }
+        },
+        confirmButton = {
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(99.dp))
+                    .background(if (busy) p.acc.copy(alpha = 0.55f) else p.acc)
+                    .clickable(enabled = !busy) { onInstallNow() }
+                    .padding(horizontal = 16.dp, vertical = 9.dp)
+            ) {
+                Text(cta, color = if (p.isLight) Color.White else Color(0xFF05070A), fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            if (!busy) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Box(
+                        Modifier
+                            .clip(RoundedCornerShape(99.dp))
+                            .background(p.panel2)
+                            .border(1.dp, p.hairline, RoundedCornerShape(99.dp))
+                            .clickable { onOpenDetails() }
+                            .padding(horizontal = 11.dp, vertical = 9.dp)
+                    ) {
+                        Text("ALL APPS", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Box(
+                        Modifier
+                            .clip(RoundedCornerShape(99.dp))
+                            .clickable { onLater() }
+                            .padding(horizontal = 11.dp, vertical = 9.dp)
+                    ) {
+                        Text("LATER", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    )
+}
