@@ -50,6 +50,19 @@ fn low_bound(v f32) i32 {
 fn high_bound(v f32, limit i32) i32 {
 	min(floor(v + 3.0) as i32, limit)
 }
+fn sdf_round_rect(px f32, py f32, x f32, y f32, w f32, h f32, radius f32) f32 {
+	let half_min f32 = min(w, h) * 0.5;
+	let rad f32 = min(radius, half_min);
+	let hw f32 = w * 0.5;
+	let hh f32 = h * 0.5;
+	let qx f32 = abs(px - (x + hw)) - (hw - rad);
+	let qy f32 = abs(py - (y + hh)) - (hh - rad);
+	let ox f32 = max(qx, 0.0);
+	let oy f32 = max(qy, 0.0);
+	let outside f32 = sqrt(ox * ox + oy * oy) as f32;
+	let inside f32 = min(max(qx, qy), 0.0);
+	outside + inside - rad
+}
 fn fill_round_rect(c Canvas&, x f32, y f32, w f32, h f32, radius f32, fill u32, stroke u32, stroke_w f32) {
 	let half_min f32 = min(w, h) * 0.5;
 	let rad f32 = min(radius, half_min);
@@ -72,6 +85,27 @@ fn fill_round_rect(c Canvas&, x f32, y f32, w f32, h f32, radius f32, fill u32, 
 			let outside f32 = sqrt(ox * ox + oy * oy) as f32;
 			let inside f32 = min(max(qx, qy), 0.0);
 			let d f32 = outside + inside - rad;
+			shade_sdf(c, ix, iy, d, fill, stroke, stroke_w);
+		}
+	}
+}
+fn fill_crescent_pod(c Canvas&, r Rect, radius f32, cutout Circle, fill u32, stroke u32, stroke_w f32) {
+	let x0 = low_bound(r.x);
+	let x1 = high_bound(r.x + r.w, c.w);
+	let y0 = low_bound(r.y);
+	let y1 = high_bound(r.y + r.h, c.h);
+	for iy in y0..y1 {
+		for ix in x0..x1 {
+			let px f32 = (ix as f32) + 0.5;
+			let py f32 = (iy as f32) + 0.5;
+			let d_box f32 = sdf_round_rect(px, py, r.x, r.y, r.w, r.h, radius);
+			var d f32 = d_box;
+			if cutout.r > 0.0 {
+				let dx f32 = px - cutout.cx;
+				let dy f32 = py - cutout.cy;
+				let d_hole f32 = cutout.r - (sqrt(dx * dx + dy * dy) as f32);
+				d = max(d_box, d_hole);
+			}
 			shade_sdf(c, ix, iy, d, fill, stroke, stroke_w);
 		}
 	}
@@ -140,6 +174,16 @@ fn fill_hex_pod(c Canvas&, x f32, y f32, w f32, h f32, cut f32, fill u32, stroke
 			let d f32 = max(box_d, cut_d);
 			shade_sdf(c, ix, iy, d, fill, stroke, stroke_w);
 		}
+	}
+}
+fn draw_sun_icon(c Canvas&, cx f32, cy f32, r f32, col u32) {
+	fill_circle_pod(c, cx, cy, r * 0.48, col, col, 0.0, false);
+	let half_w f32 = max(r * 0.09, 0.7);
+	for i in 8 {
+		let ang f32 = (i as f32) * 0.78539816;
+		let ux f32 = cos(ang) as f32;
+		let uy f32 = sin(ang) as f32;
+		draw_line(c, cx + ux * r * 0.68, cy + uy * r * 0.68, cx + ux * r, cy + uy * r, half_w, col);
 	}
 }
 fn pack_rows(a u64, b u64, d u64, e u64, f u64, g u64, h u64) u64 {
@@ -277,27 +321,40 @@ fn draw_media_content(c Canvas&, r Rect, pal Palette) {
 	draw_text(c, "<<  PLAY  >>", cx, mid - sf * 3.5, s, pal.ink, true);
 	draw_text(c, "PLAY", cx, mid - sf * 3.5, s, on, true);
 }
-fn draw_speed_content(c Canvas&, r Rect, pal Palette, ts TypeScale, speed_mph i32) {
-	let cx f32 = r.x + r.w * 0.5;
+fn draw_speed_content(c Canvas&, r Rect, pal Palette, ts TypeScale, speed_mph i32, stacked bool) {
+	let cx f32 = if stacked { r.x + r.w * 0.42 } else { r.x + r.w * 0.5 };
 	let cy f32 = r.y + r.h * 0.5;
-	let big i32 = max(3, floor(ts.telemetry_px / 10.0) as i32);
-	let small i32 = max(2, big / 2);
 	var number byte[>..] = [];
-	format(number, speed_mph);
-	let big_h f32 = (big * 7) as f32;
-	let small_h f32 = (small * 7) as f32;
-	let gap f32 = (big * 2) as f32;
-	let top f32 = cy - (big_h + gap + small_h) * 0.5;
-	draw_text(c, number[..], cx, top, big, pal.ink, true);
-	draw_text(c, "MPH", cx, top + big_h + gap, small, pal.acc, true);
+	if stacked {
+		let big i32 = max(4, floor(ts.telemetry_px / 9.0) as i32);
+		let small i32 = max(2, big / 2);
+		format(number, speed_mph);
+		let big_h f32 = (big * 7) as f32;
+		let small_h f32 = (small * 7) as f32;
+		let gap f32 = (big * 2) as f32;
+		let top f32 = cy - (big_h + gap + small_h) * 0.5;
+		draw_text(c, number[..], cx, top, big, pal.ink, true);
+		draw_text(c, number[..], cx + 1.0, top, big, pal.ink, true);
+		draw_text(c, "MPH", cx, top + big_h + gap, small, pal.acc, true);
+	} else {
+		format(number, speed_mph, " MPH");
+		let want i32 = max(3, floor(ts.telemetry_px / 12.0) as i32);
+		draw_label(c, number[..], cx, cy, r.w, want, pal.ink);
+		draw_label(c, number[..], cx + 1.0, cy, r.w, want, pal.ink);
+	}
 }
 fn draw_weather_content(c Canvas&, r Rect, pal Palette, ts TypeScale, temp_f i32) {
-	let cx f32 = r.x + r.w * 0.5;
+	let cy f32 = r.y + r.h * 0.5;
 	var temp byte[>..] = [];
 	format(temp, temp_f, "F");
 	let want i32 = max(3, floor(ts.telemetry_px / 12.0) as i32);
-	draw_label(c, temp[..], cx, r.y + r.h * 0.4, r.w, want, pal.gold);
-	draw_label(c, "CLEAR", cx, r.y + r.h * 0.7, r.w, 3, pal.soft);
+	let sun f32 = min(r.h * 0.32, r.w * 0.16);
+	let gap f32 = sun * 0.5;
+	let s = fit_scale(temp.len, r.w - sun * 2.0 - gap, want);
+	let text_w f32 = (temp.len * 6 * (s as int) - (s as int)) as f32;
+	let start f32 = r.x + max((r.w - (sun * 2.0 + gap + text_w)) * 0.5, 0.0);
+	draw_sun_icon(c, start + sun, cy, sun, pal.gold);
+	draw_text(c, temp[..], start + sun * 2.0 + gap, cy - (s as f32) * 3.5, s, pal.ink, false);
 }
 fn draw_apps_content(c Canvas&, r Rect, pal Palette) {
 	let cx f32 = r.x + r.w * 0.5;
@@ -311,17 +368,8 @@ fn draw_apps_content(c Canvas&, r Rect, pal Palette) {
 	fill_circle_pod(c, cx, cy + ring, dot, pal.acc, pal.acc, 1.0, false);
 	fill_circle_pod(c, cx - ring, cy, dot, pal.acc, pal.acc, 1.0, false);
 }
-fn draw_card(c Canvas&, text const byte[:], r Rect, slot int, pal Palette) {
-	let step f32 = r.h / 3.0;
-	let y f32 = r.y + step * (slot as f32) + 3.0;
-	let card_h f32 = max(step - 6.0, 1.0);
-	fill_round_rect(c, r.x, y, r.w, card_h, 10.0, pal.panel2, pal.line, 1.0);
-	draw_label(c, text, r.x + r.w * 0.5, y + card_h * 0.5, r.w - 8.0, 3, pal.ink);
-}
-fn draw_widgets_content(c Canvas&, r Rect, pal Palette) {
-	draw_card(c, "65 MPH", r, 0, pal);
-	draw_card(c, "72F CLEAR", r, 1, pal);
-	draw_card(c, "11:45 PM", r, 2, pal);
+fn draw_clock_content(c Canvas&, r Rect, pal Palette) {
+	draw_label(c, "11:45 PM", r.x + r.w * 0.5, r.y + r.h * 0.5, r.w, 3, pal.soft);
 }
 fn draw_cockpit(w i32, h i32, preset_key const byte[:], layout_id i32, dock_mode i32, speed_mph i32, temp_f i32, active_btn i32) Canvas {
 	let pal = build_palette(preset_key, 0, false);
@@ -329,7 +377,7 @@ fn draw_cockpit(w i32, h i32, preset_key const byte[:], layout_id i32, dock_mode
 	let plan = compute_cockpit(w as f32, h as f32, ts.min_hit_px, ts.gutter_px, ts.pad_px, layout_id, dock_mode, false);
 	var c = new_canvas(w, h, pal.bg);
 	let dock = plan.dock_rect;
-	fill_round_rect(c, dock.x, dock.y, dock.w, dock.h, 20.0, pal.panel, pal.line, 1.5);
+	fill_round_rect(c, dock.x, dock.y, dock.w, dock.h, 18.0, pal.panel, pal.line, 1.5);
 	let on u32 = if pal.light { 0xFFFFFFFF } else { 0xFF05070A };
 	let text_scale i32 = max(2, floor(ts.button_px / 9.0) as i32);
 	for b in plan.buttons {
@@ -339,8 +387,6 @@ fn draw_cockpit(w i32, h i32, preset_key const byte[:], layout_id i32, dock_mode
 		let ink u32 = if active { on } else { pal.ink };
 		if b.id == 4 {
 			let orb f32 = min(br.w, br.h) * 0.5;
-			let glow u32 = (pal.acc & 0x00FFFFFF) | 0x40000000;
-			fill_round_rect(c, br.x - 4.0, br.y - 4.0, br.w + 8.0, br.h + 8.0, orb + 4.0, glow, glow, 0.0);
 			fill_round_rect(c, br.x, br.y, br.w, br.h, orb, face, pal.acc, 2.5);
 		} else {
 			let rim u32 = if active { pal.acc } else { pal.line };
@@ -349,32 +395,49 @@ fn draw_cockpit(w i32, h i32, preset_key const byte[:], layout_id i32, dock_mode
 		let height f32 = (text_scale * 7) as f32;
 		draw_text(c, button_label(b.id), br.x + br.w * 0.5, br.y + (br.h - height) * 0.5, text_scale, ink, true);
 	}
-	for pod in plan.pods {
-		let stroke u32 = if pod.kind == 0 { pal.acc } else { pal.line2 };
-		let pr = pod.rect;
-		if pod.shape == 1 {
-			let ticks = pod.kind == 0 || pod.kind == 2;
-			fill_circle_pod(c, pod.circle.cx, pod.circle.cy, pod.circle.r, pal.panel, stroke, 2.0, ticks);
-		} else if pod.shape == 2 {
-			fill_hex_pod(c, pr.x, pr.y, pr.w, pr.h, pod.chamfer, pal.panel, stroke, 2.0);
-		} else if pod.shape == 3 {
-			fill_round_rect(c, pr.x, pr.y, pr.w, pr.h, pod.chamfer, pal.panel, stroke, 2.0);
-		} else {
-			fill_round_rect(c, pr.x, pr.y, pr.w, pr.h, 22.0, pal.panel, stroke, 1.5);
-		}
-		let safe = pod.safe_rect;
-		if pod.kind == 0 {
-			draw_map_content(c, safe, pal);
-		} else if pod.kind == 1 {
-			draw_media_content(c, safe, pal);
-		} else if pod.kind == 2 {
-			draw_speed_content(c, safe, pal, ts, speed_mph);
-		} else if pod.kind == 3 {
-			draw_weather_content(c, safe, pal, ts, temp_f);
-		} else if pod.kind == 4 {
-			draw_apps_content(c, safe, pal);
-		} else if pod.kind == 5 {
-			draw_widgets_content(c, safe, pal);
+	for layer in 2 {
+		for pod in plan.pods {
+			let primary = pod.kind == 0 || pod.kind == 1 || (pod.shape >= 4 && pod.shape <= 6);
+			if primary != (layer == 0) { continue; }
+			let stroke u32 = if pod.kind == 0 { pal.acc } else { pal.line2 };
+			let pr = pod.rect;
+			if pod.shape == 1 {
+				let ticks = pod.kind == 0;
+				fill_circle_pod(c, pod.circle.cx, pod.circle.cy, pod.circle.r, pal.panel, stroke, 2.2, ticks);
+			} else if pod.shape == 2 {
+				fill_hex_pod(c, pr.x, pr.y, pr.w, pr.h, pod.chamfer, pal.panel, stroke, 2.0);
+			} else if pod.shape == 3 {
+				let body u32 = if pod.kind >= 2 { pal.panel2 } else { pal.panel };
+				fill_round_rect(c, pr.x, pr.y, pr.w, pr.h, pod.chamfer, body, stroke, 1.6);
+			} else if pod.shape >= 4 && pod.shape <= 6 {
+				fill_crescent_pod(c, pr, pod.chamfer, pod.cutout, pal.panel, pal.line2, 2.0);
+			} else {
+				fill_round_rect(c, pr.x, pr.y, pr.w, pr.h, 22.0, pal.panel, stroke, 1.6);
+			}
+			let safe = pod.safe_rect;
+			if pod.kind == 0 {
+				draw_map_content(c, safe, pal);
+			} else if pod.kind == 1 {
+				var area = pod.safe_rect;
+				if pod.shape == 5 {
+					area.w = min(safe.w, pr.w * 0.84);
+					area.x = pr.x + pr.w * 0.58 - area.w * 0.5;
+				} else if pod.shape == 6 {
+					area.h = min(safe.h, pr.h * 0.84);
+					area.y = pr.y + pr.h * 0.58 - area.h * 0.5;
+				}
+				draw_media_content(c, area, pal);
+			} else if pod.kind == 2 {
+				let stacked = pod.shape == 4;
+				let area = if stacked { pr } else { safe };
+				draw_speed_content(c, area, pal, ts, speed_mph, stacked);
+			} else if pod.kind == 3 {
+				draw_weather_content(c, safe, pal, ts, temp_f);
+			} else if pod.kind == 4 {
+				draw_apps_content(c, safe, pal);
+			} else if pod.kind == 5 {
+				draw_clock_content(c, safe, pal);
+			}
 		}
 	}
 	c
@@ -398,6 +461,6 @@ fn main() {
 	render_preview("/tmp/amni_he_preview/honda_800x480_twin_chrono.ppm", 800, 480, "amni_dark", 0, 0, 65, 72, 1);
 	render_preview("/tmp/amni_he_preview/car_1280x720_solar_orbit.ppm", 1280, 720, "amni_dark", 1, 0, 68, 72, 1);
 	render_preview("/tmp/amni_he_preview/car_1280x720_hex_light.ppm", 1280, 720, "amni_light", 4, 0, 45, 74, 2);
-	render_preview("/tmp/amni_he_preview/portrait_720x1280_capsule.ppm", 720, 1280, "high_contrast", 5, 1, 55, 68, 1);
-	print("rendered 4 helium previews ok");
+	render_preview("/tmp/amni_he_preview/portrait_720x1280_capsule.ppm", 720, 1280, "high_contrast", 1, 1, 55, 68, 1);
+	print("rendered 4 concave helium previews ok");
 }
