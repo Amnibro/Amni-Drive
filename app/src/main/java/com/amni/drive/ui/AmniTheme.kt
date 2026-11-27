@@ -213,7 +213,8 @@ fun paletteFor(
 enum class TileLayout(val label: String, val blurb: String, val group: Int = 2, val mapShape: String = "rect") {
     AUTO("Auto", "Smart fit for current screen", 2, "rect"),
     TWIN_CHRONO("Twin Chrono", "Dual circular gauges · compass map + vinyl turntable + center dial", 0, "circle"),
-    SOLAR_ORBIT("Solar Orbit", "Center map sphere · 4 orbital speed, media, wx & app dials", 0, "circle"),
+    SOLAR_ORBIT("Solar Orbit", "Giant circular map · concave-arc hugging media wing & spandrel badges", 0, "circle"),
+    DRUM_3D("3D Dash Roller", "Helium 3D cylindrical dash dial · swipe to spin apps into the dash", 0, "rect"),
     ORB_CENTER("Orb & Wings", "Circular compass map · sculpted capsule media & gauge wings", 0, "circle"),
     HORIZON_DIALS("Horizon Dials", "Full-bleed panoramic map · floating circular chronograph orbs", 0, "rect"),
     HEX_COCKPIT("Aero Hex HUD", "Chamfered octagonal cockpit pods · vector telemetry brackets", 1, "hex"),

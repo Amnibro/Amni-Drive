@@ -27,16 +27,25 @@ fn make_pod(kind i32, shape i32, r Rect, cutout Circle) Pod {
 		pod.circle = inscribe_circle(r);
 		pod.safe_rect = circle_safe_rect(pod.circle);
 	} else if shape == 2 {
-		pod.chamfer = clamp(min(r.w, r.h) * 0.075, 12.0, 26.0);
-		let inset f32 = pod.chamfer * 0.5;
+		pod.chamfer = clamp(min(r.w, r.h) * 0.07, 12.0, 24.0);
+		let inset f32 = pod.chamfer * 0.55;
 		pod.safe_rect = make_rect(r.x + inset, r.y + inset, r.w - 2.0 * inset, r.h - 2.0 * inset);
 	} else if shape == 3 {
-		pod.chamfer = min(min(r.w, r.h) * 0.28, 48.0);
-		let inset_x f32 = min(r.w * 0.07, pod.chamfer * 0.5);
+		pod.chamfer = min(min(r.w, r.h) * 0.28, 44.0);
+		let inset_x f32 = min(r.w * 0.08, pod.chamfer * 0.5);
 		pod.safe_rect = make_rect(r.x + inset_x, r.y + 8.0, r.w - 2.0 * inset_x, r.h - 16.0);
-	} else if shape == 4 || shape == 5 || shape == 6 {
+	} else if shape == 5 {
 		pod.chamfer = 24.0;
-		pod.safe_rect = make_rect(r.x + 8.0, r.y + 8.0, r.w - 16.0, r.h - 16.0);
+		let left_clear f32 = max(r.x + 12.0, cutout.cx + cutout.r + 12.0);
+		pod.safe_rect = make_rect(left_clear, r.y + 16.0, max(40.0, r.x + r.w - left_clear - 14.0), max(40.0, r.h - 32.0));
+	} else if shape == 4 {
+		pod.chamfer = 24.0;
+		let right_clear f32 = min(r.x + r.w - 12.0, cutout.cx - cutout.r - 12.0);
+		pod.safe_rect = make_rect(r.x + 14.0, r.y + 16.0, max(40.0, right_clear - (r.x + 14.0)), max(40.0, r.h - 32.0));
+	} else if shape == 6 {
+		pod.chamfer = 24.0;
+		let top_clear f32 = max(r.y + 12.0, cutout.cy + cutout.r + 14.0);
+		pod.safe_rect = make_rect(r.x + 18.0, top_clear, max(40.0, r.w - 36.0), max(40.0, r.y + r.h - top_clear - 16.0));
 	}
 	pod
 }
@@ -56,11 +65,11 @@ fn compute_cockpit(screen_w f32, screen_h f32, min_hit f32, gutter f32, edge_pad
 	var dock = make_rect(0.0, 0.0, 0.0, 0.0);
 	var stage = make_rect(0.0, 0.0, 0.0, 0.0);
 	if dock_bottom {
-		let dock_h f32 = min(max(min_hit + 10.0, 68.0), screen_h * 0.16);
+		let dock_h f32 = min(max(min_hit + 8.0, 66.0), screen_h * 0.15);
 		dock = make_rect(edge_pad, screen_h - dock_h - edge_pad, screen_w - 2.0 * edge_pad, dock_h);
 		stage = make_rect(edge_pad, edge_pad, screen_w - 2.0 * edge_pad, screen_h - dock_h - 2.0 * edge_pad - gutter);
 	} else {
-		let dock_w f32 = min(max(min_hit + 12.0, 72.0), screen_w * 0.125);
+		let dock_w f32 = min(max(min_hit + 12.0, 74.0), screen_w * 0.12);
 		if dock_mode == 2 {
 			dock = make_rect(screen_w - dock_w - edge_pad, edge_pad, dock_w, screen_h - 2.0 * edge_pad);
 			stage = make_rect(edge_pad, edge_pad, screen_w - dock_w - 2.0 * edge_pad - gutter, screen_h - 2.0 * edge_pad);
@@ -97,56 +106,59 @@ fn compute_cockpit(screen_w f32, screen_h f32, min_hit f32, gutter f32, edge_pad
 	let k_right i32 = if swap_map_media { 0 } else { 1 };
 	if layout_id == 0 {
 		if portrait {
-			let dial_h f32 = (sh - g) * 0.49;
-			cockpit_add_pod(plan, k_left, 1, sx, sy, sw, dial_h);
-			cockpit_add_pod(plan, k_right, 1, sx, sy + sh - dial_h, sw, dial_h);
-			cockpit_add_pod(plan, 2, 3, sx + 4.0, sy + 4.0, 94.0, 44.0);
-			cockpit_add_pod(plan, 3, 3, sx + sw - 98.0, sy + 4.0, 94.0, 44.0);
+			let dial_d f32 = min(sw * 0.94, (sh - g) * 0.495);
+			let dial_x f32 = sx + (sw - dial_d) * 0.5;
+			cockpit_add_pod(plan, k_left, 1, dial_x, sy, dial_d, dial_d);
+			cockpit_add_pod(plan, k_right, 1, dial_x, sy + sh - dial_d, dial_d, dial_d);
+			cockpit_add_pod(plan, 2, 3, sx + 4.0, sy + 4.0, 92.0, 40.0);
+			cockpit_add_pod(plan, 3, 3, sx + sw - 96.0, sy + 4.0, 92.0, 40.0);
 		} else {
-			let dial_d f32 = min(sh, (sw - g) * 0.50);
+			let dial_d f32 = min(sh * 0.96, (sw - g) * 0.50);
 			let dial_y f32 = sy + (sh - dial_d) * 0.5;
-			let bw f32 = clamp(sw * 0.22, 112.0, 176.0);
-			let bh f32 = clamp(sh * 0.13, 44.0, 64.0);
+			let bw f32 = clamp(sw * 0.21, 108.0, 158.0);
+			let bh f32 = clamp(sh * 0.10, 38.0, 48.0);
 			let bx f32 = sx + (sw - bw) * 0.5;
 			cockpit_add_pod(plan, k_left, 1, sx, dial_y, dial_d, dial_d);
 			cockpit_add_pod(plan, k_right, 1, sx + sw - dial_d, dial_y, dial_d, dial_d);
-			cockpit_add_pod(plan, 2, 3, bx, sy + 4.0, bw, bh);
-			cockpit_add_pod(plan, 3, 3, bx, sy + sh - bh - 4.0, bw, bh);
+			cockpit_add_pod(plan, 2, 3, bx, sy + 2.0, bw, bh);
+			cockpit_add_pod(plan, 3, 3, bx, sy + sh - bh - 2.0, bw, bh);
 		}
 	} else if layout_id == 1 {
 		if portrait {
-			let dial_d f32 = min(sw, sh * 0.56);
-			let wing_y f32 = sy + dial_d * 0.80;
-			let cut = Circle { cx: sx + sw * 0.5, cy: sy + dial_d * 0.5, r: dial_d * 0.5 + g };
-			cockpit_add_pod(plan, 0, 1, sx + (sw - dial_d) * 0.5, sy, dial_d, dial_d);
+			let dial_d f32 = min(sw * 0.94, sh * 0.50);
+			let map_r f32 = dial_d * 0.5;
+			let cx f32 = sx + sw * 0.5;
+			let cy f32 = sy + 2.0 + map_r;
+			let wing_y f32 = cy + map_r * 0.42;
+			let cut = Circle { cx: cx, cy: cy, r: map_r + g };
+			cockpit_add_pod(plan, 0, 1, sx + (sw - dial_d) * 0.5, sy + 2.0, dial_d, dial_d);
 			cockpit_add_cut(plan, 1, 6, sx, wing_y, sw, sy + sh - wing_y, cut);
-			cockpit_add_pod(plan, 2, 3, sx + 4.0, sy + 4.0, 96.0, 46.0);
-			cockpit_add_pod(plan, 3, 3, sx + sw - 100.0, sy + 4.0, 96.0, 46.0);
+			cockpit_add_pod(plan, 2, 3, sx + 6.0, sy + 6.0, 104.0, 42.0);
+			cockpit_add_pod(plan, 3, 3, sx + sw - 110.0, sy + 6.0, 104.0, 42.0);
 		} else {
-			let map_d f32 = min(sh * 0.96, sw * 0.54);
+			let map_d f32 = min(sh * 0.97, sw * 0.56);
 			let map_r f32 = map_d * 0.5;
-			let cx f32 = clamp(sx + sw * 0.45, sx + map_r, sx + sw - map_r);
+			let cx f32 = sx + map_d * 0.5;
 			let cy f32 = sy + sh * 0.5;
 			let cut = Circle { cx: cx, cy: cy, r: map_r + g };
-			let left_w f32 = max(120.0, cx - sx - map_r * 0.42);
-			let right_x f32 = cx + map_r * 0.42;
+			let right_x f32 = cx + map_r * 0.44;
 			cockpit_add_pod(plan, 0, 1, cx - map_r, cy - map_r, map_d, map_d);
-			cockpit_add_cut(plan, 2, 4, sx, sy, left_w, sh, cut);
 			cockpit_add_cut(plan, 1, 5, right_x, sy, sx + sw - right_x, sh, cut);
-			cockpit_add_pod(plan, 3, 3, sx + 6.0, sy + 6.0, 112.0, 44.0);
-			cockpit_add_pod(plan, 5, 3, sx + 6.0, sy + sh - 50.0, 112.0, 44.0);
+			cockpit_add_pod(plan, 2, 3, sx + 4.0, sy + 4.0, clamp(sw * 0.125, 108.0, 144.0), 42.0);
+			cockpit_add_pod(plan, 3, 3, sx + 4.0, sy + sh - 46.0, clamp(sw * 0.115, 96.0, 132.0), 42.0);
+			cockpit_add_pod(plan, 5, 3, sx + sw - 118.0, sy + 10.0, 108.0, 38.0);
 		}
 	} else if layout_id == 2 {
-		let map_d f32 = min(sh * 0.94, sw * 0.56);
+		let map_d f32 = min(sh * 0.96, sw * 0.54);
 		let map_r f32 = map_d * 0.5;
-		let cx f32 = clamp(sx + sw * 0.40, sx + map_r, sx + sw - map_r);
+		let cx f32 = sx + map_d * 0.5;
 		let cy f32 = sy + sh * 0.5;
 		let cut = Circle { cx: cx, cy: cy, r: map_r + g };
-		let right_x f32 = cx + map_r * 0.42;
+		let right_x f32 = cx + map_r * 0.44;
 		cockpit_add_pod(plan, 0, 1, cx - map_r, cy - map_r, map_d, map_d);
 		cockpit_add_cut(plan, 1, 5, right_x, sy, sx + sw - right_x, sh, cut);
-		cockpit_add_pod(plan, 2, 3, sx + 6.0, sy + 6.0, 112.0, 44.0);
-		cockpit_add_pod(plan, 3, 3, sx + 6.0, sy + sh - 50.0, 112.0, 44.0);
+		cockpit_add_pod(plan, 2, 3, sx + 4.0, sy + 4.0, clamp(sw * 0.125, 108.0, 144.0), 42.0);
+		cockpit_add_pod(plan, 3, 3, sx + 4.0, sy + sh - 46.0, clamp(sw * 0.115, 96.0, 132.0), 42.0);
 	} else if layout_id == 3 {
 		let short_side f32 = min(sw, sh);
 		let media_d f32 = clamp(short_side * 0.40, 128.0, 210.0);
@@ -160,28 +172,27 @@ fn compute_cockpit(screen_w f32, screen_h f32, min_hit f32, gutter f32, edge_pad
 			let second_y f32 = sy + first_h + g;
 			cockpit_add_pod(plan, k_left, 2, sx, sy, sw, first_h);
 			cockpit_add_pod(plan, k_right, 2, sx, second_y, sw, sh - g - first_h);
-			let map_y f32 = if swap_map_media { second_y } else { sy };
-			cockpit_add_chips(plan, sx + sw - 16.0, map_y + 8.0, g);
+			cockpit_add_pod(plan, 2, 3, sx + sw - 16.0 - 204.0 - g, sy + 14.0, 108.0, 38.0);
+			cockpit_add_pod(plan, 3, 3, sx + sw - 16.0 - 96.0, sy + 14.0, 96.0, 38.0);
 		} else {
 			let first_w f32 = (sw - g) * 0.60;
 			let second_x f32 = sx + first_w + g;
 			cockpit_add_pod(plan, k_left, 2, sx, sy, first_w, sh);
 			cockpit_add_pod(plan, k_right, 2, second_x, sy, sw - g - first_w, sh);
-			let map_right f32 = if swap_map_media { sx + sw } else { sx + first_w };
-			cockpit_add_chips(plan, map_right - 16.0, sy + 8.0, g);
+			cockpit_add_pod(plan, 2, 3, sx + first_w - 16.0 - 204.0 - g, sy + 14.0, 108.0, 38.0);
+			cockpit_add_pod(plan, 3, 3, sx + first_w - 16.0 - 96.0, sy + 14.0, 96.0, 38.0);
 		}
 	} else if layout_id == 5 {
 		if portrait {
-			let top_h f32 = (sh - g) * 0.62;
+			let top_h f32 = (sh - g) * 0.60;
 			cockpit_add_pod(plan, 0, 3, sx, sy, sw, top_h);
 			cockpit_add_pod(plan, 1, 3, sx, sy + top_h + g, sw, sh - g - top_h);
-			cockpit_add_pod(plan, 2, 3, sx + 8.0, sy + 8.0, 94.0, 44.0);
-			cockpit_add_pod(plan, 3, 3, sx + sw - 102.0, sy + 8.0, 94.0, 44.0);
+			cockpit_add_chips(plan, sx + sw - 8.0, sy + 8.0, g);
 		} else {
 			let map_w f32 = (sw - g) * 0.60;
 			cockpit_add_pod(plan, 0, 3, sx, sy, map_w, sh);
 			cockpit_add_pod(plan, 1, 3, sx + map_w + g, sy, sw - g - map_w, sh);
-			cockpit_add_chips(plan, sx + sw - 8.0, sy + 8.0, g);
+			cockpit_add_chips(plan, sx + map_w - 8.0, sy + 8.0, g);
 		}
 	} else if layout_id == 6 {
 		if portrait {
@@ -215,9 +226,13 @@ fn compute_cockpit(screen_w f32, screen_h f32, min_hit f32, gutter f32, edge_pad
 			cockpit_add_pod(plan, k_left, 0, sx, sy, first_w, sh);
 			cockpit_add_pod(plan, k_right, 0, sx + first_w + g, sy, sw - g - first_w, sh);
 		}
-	} else {
+	} else if layout_id == 9 {
 		cockpit_add_pod(plan, 0, 0, sx, sy, sw, sh);
 		cockpit_add_chips(plan, sx + sw - 8.0, sy + 8.0, g);
+	} else {
+		cockpit_add_pod(plan, 6, 0, sx, sy, sw, sh);
+		cockpit_add_pod(plan, 2, 3, sx + 8.0, sy + 8.0, 112.0, 40.0);
+		cockpit_add_pod(plan, 3, 3, sx + sw - 112.0, sy + 8.0, 104.0, 40.0);
 	}
 	plan
 }

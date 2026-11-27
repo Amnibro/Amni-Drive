@@ -3,6 +3,7 @@ import layout;
 import aap;
 import gate;
 import scrub;
+import drum3d;
 import cockpit_render;
 import ffi;
 export fn he_drive_gate(drive_state i32, gate_on i32, passenger i32, category i32) i32 {
@@ -71,19 +72,34 @@ export fn he_drive_scrub_buf(in_ptr uint, in_len i32, out_ptr uint, out_cap i32)
 	ffi::write(out_ptr, clean[..n]);
 	n as i32
 }
-export fn he_drive_render_rgba(out_ptr uint, w i32, h i32, preset_idx i32, layout_id i32, dock_mode i32, speed_mph i32, temp_f i32, active_btn i32) i32 {
+export fn he_drive_load_font(font_ptr uint, font_len i32) i32 {
+	let data = ffi::bytes(font_ptr, font_len);
+	if load_font_bytes(data[..]) { 1 } else { 0 }
+}
+export fn he_drive_render_rgba(out_ptr uint, w i32, h i32, preset_idx i32, layout_id i32, dock_mode i32, speed_mph i32, temp_f i32, active_btn i32, roll_deg f32) i32 {
 	let all = presets();
 	let idx = clamp(preset_idx as int, 0, all.len - 1);
 	var i = 0;
 	for p in all {
 		if i == idx {
-			let canvas = draw_cockpit(w, h, p.key, layout_id, dock_mode, speed_mph, temp_f, active_btn);
+			let canvas = draw_cockpit_at(w, h, p.key, layout_id, dock_mode, speed_mph, temp_f, active_btn, roll_deg);
 			ffi::write(out_ptr, canvas.px[..]);
 			return canvas.px.len as i32;
 		}
 		i++;
 	}
 	return 0;
+}
+export fn he_drive_drum_step(angle_deg f32, vel_deg f32, dt f32, dragging i32, out_ptr uint) i32 {
+	var st = DrumState { angle_deg: angle_deg, vel_deg: vel_deg, active_idx: 0, dragging: dragging != 0 };
+	drum_step(st, dt);
+	var angles f32[2] = [st.angle_deg, st.vel_deg];
+	var active i32[1] = [st.active_idx];
+	var packed byte[>..] = [];
+	packed.append(bytes_of(angles));
+	packed.append(bytes_of(active));
+	ffi::write(out_ptr, packed[..]);
+	st.active_idx
 }
 fn main() {
 }

@@ -1061,6 +1061,7 @@ BoxWithConstraints(Modifier.fillMaxSize()) {
 val isBespoke = layout in setOf(
 TileLayout.TWIN_CHRONO,
 TileLayout.SOLAR_ORBIT,
+TileLayout.DRUM_3D,
 TileLayout.ORB_CENTER,
 TileLayout.HORIZON_DIALS,
 TileLayout.HEX_COCKPIT,
@@ -1439,6 +1440,11 @@ Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
 Box(Modifier.size(7.dp).clip(CircleShape).background(a.copy(alpha = 0.45f)))
 Box(Modifier.size(7.dp).clip(CircleShape).background(a.copy(alpha = 0.45f)))
 }
+}
+TileLayout.DRUM_3D -> Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+Box(Modifier.fillMaxWidth(0.75f).height(4.dp).background(a.copy(alpha = 0.25f), RoundedCornerShape(3.dp)))
+Box(Modifier.fillMaxWidth(0.95f).weight(1f).background(a.copy(alpha = 0.7f), RoundedCornerShape(5.dp)).border(1.dp, a, RoundedCornerShape(5.dp)))
+Box(Modifier.fillMaxWidth(0.75f).height(4.dp).background(a.copy(alpha = 0.25f), RoundedCornerShape(3.dp)))
 }
 TileLayout.ORB_CENTER -> Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
 Box(Modifier.weight(0.55f).fillMaxHeight().background(a.copy(alpha = 0.35f), RoundedCornerShape(99.dp)))

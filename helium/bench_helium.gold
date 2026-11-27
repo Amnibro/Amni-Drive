@@ -1,0 +1,11 @@
+use std
+use os
+use amni-drive
+into bench_helium.amni
+lang amni
+Head-to-head native Helium + Gold benchmark harness for Amni-Drive core workloads (measured in milliseconds using `os::ticks_ms()` or monotonic nanoseconds, with checksum accumulators so the compiler cannot dead-code-eliminate any loop).
+Function `main` runs four benchmarks after a short warmup and prints machine-readable lines `BENCH <name> <iters> <elapsed_ms> <checksum>`:
+1. `scrub`: prepare a realistic 120-byte session log line `"2026-11-27 user anthony@amni-scient.com token=sk_live_987654321 ip 192.168.1.42 loc 40.7128, -74.0060 call 555-867-5309"`. Run `scrub::scrub_line` 10000 times, accumulating the scrubbed byte length into a 64-bit checksum. Print `BENCH scrub 10000 <ms> <sum>`.
+2. `geo_gate`: run 1000000 iterations calling `gate::haversine_meters(40.7128 + d, -74.0060, 40.7580, -73.9855 - d)` and `gate::resolve_gate(2, true, false, i & 5)` (where `d = f64(i & 1023) * 0.0001`), accumulating `int64(dist) + int64(dec)` into a checksum. Print `BENCH geo_gate 1000000 <ms> <sum>`.
+3. `aap_codec`: pre-build an 8-byte multi-frame AAP header and a 22-byte protobuf payload (field 1 varint 300, field 2 bytes `"amni-drive-audio"`). Run 500000 iterations calling `aap::decode_frame_header` plus decoding both fields via `aap::pb_next_field`, accumulating `header_size + varint + bytes_len` into a checksum. Print `BENCH aap_codec 500000 <ms> <sum>`.
+4. `layout_aaa`: run 100000 iterations calling `look::build_palette("amni_dark", 0, false)`, `look::car_type_scale(1280.0, 720.0, 1.0)`, and `layout::compute_cockpit(1280.0, 720.0, ts.min_hit_px, ts.gutter_px, ts.pad_px, i % 11, 0, false)`, accumulating `pal.acc + pods.len + buttons.len` into a checksum. Print `BENCH layout_aaa 100000 <ms> <sum>`.

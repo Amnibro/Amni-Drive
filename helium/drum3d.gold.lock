@@ -1,0 +1,60 @@
+=== 676c5ff620da6254
+import math;
+let SLOT_STEP_DEG f32 = 46.0;
+let NUM_APPS = 4;
+struct DrumState { angle_deg f32, vel_deg f32, active_idx i32, dragging bool }
+struct DrumFace { app_idx i32, rel_deg f32, y_center f32, vis_h f32, vis_w f32, shade f32, z_depth f32, visible bool }
+fn wrap_rel_deg(deg f32) f32 {
+	let total f32 = (NUM_APPS as f32) * SLOT_STEP_DEG;
+	let half f32 = total * 0.5;
+	let turns f32 = floor((deg + half) / total) as f32;
+	var r f32 = deg - turns * total;
+	if r >= half { r -= total; }
+	if r < -half { r += total; }
+	r
+}
+fn drum_swipe(st DrumState&, delta_px f32, viewport_h f32) {
+	st.dragging = true;
+	let d_deg f32 = (delta_px / max(viewport_h, 200.0)) * 95.0;
+	st.angle_deg += d_deg;
+	st.vel_deg = d_deg * 24.0;
+}
+fn drum_release(st DrumState&) {
+	st.dragging = false;
+	let proj f32 = st.angle_deg + st.vel_deg * 0.14;
+	let slot = round(proj / SLOT_STEP_DEG) as int;
+	st.active_idx = (((slot % NUM_APPS) + NUM_APPS) % NUM_APPS) as i32;
+}
+fn drum_step(st DrumState&, dt f32) {
+	let h f32 = clamp(dt, 0.001, 0.05);
+	if !st.dragging {
+		let target f32 = (round(st.angle_deg / SLOT_STEP_DEG) as f32) * SLOT_STEP_DEG;
+		let acc f32 = (target - st.angle_deg) * 140.0 - st.vel_deg * 21.0;
+		st.vel_deg += acc * h;
+		st.angle_deg += st.vel_deg * h;
+		if abs(target - st.angle_deg) < 0.08 && abs(st.vel_deg) < 0.4 {
+			st.angle_deg = target;
+			st.vel_deg = 0.0;
+		}
+		let slot = round(st.angle_deg / SLOT_STEP_DEG) as int;
+		st.active_idx = (((slot % NUM_APPS) + NUM_APPS) % NUM_APPS) as i32;
+	}
+}
+fn drum_project_face(app_idx i32, roll_deg f32, stage_x f32, stage_y f32, stage_w f32, stage_h f32) DrumFace {
+	let rel f32 = wrap_rel_deg((app_idx as f32) * SLOT_STEP_DEG - roll_deg);
+	if abs(rel) >= 78.0 { return DrumFace { app_idx: app_idx, rel_deg: rel, visible: false, .. }; }
+	let rad f32 = rel * 0.0174532925;
+	let drum_r f32 = stage_h * 0.62;
+	let focal f32 = stage_h * 1.45;
+	let s f32 = sin(rad) as f32;
+	let c f32 = cos(rad) as f32;
+	let y3 f32 = drum_r * s;
+	let z3 f32 = drum_r * (1.0 - c);
+	let persp f32 = focal / (focal + z3);
+	let y_center f32 = stage_y + stage_h * 0.5 + y3 * persp;
+	let vis_h f32 = (stage_h * 0.58) * max(0.08, c) * persp;
+	let vis_w f32 = (stage_w * 0.86) * (0.86 + 0.14 * persp);
+	let lit f32 = pow(max(0.0, c), 1.35) as f32;
+	let shade f32 = clamp(lit * 0.88 + 0.12, 0.10, 1.0);
+	DrumFace { app_idx: app_idx, rel_deg: rel, y_center: y_center, vis_h: vis_h, vis_w: vis_w, shade: shade, z_depth: z3, visible: true }
+}

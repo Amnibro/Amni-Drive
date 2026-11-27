@@ -1,0 +1,75 @@
+import os;
+import aap;
+import gate;
+import layout;
+import look;
+import scrub;
+fn bench_scrub(line const byte[:], iters int) int {
+	var sum = 0;
+	for i in iters {
+		let clean = scrub_line(line);
+		sum += clean.len;
+	}
+	sum
+}
+fn bench_geo_gate(iters int) int {
+	var sum = 0;
+	for i in iters {
+		let d = (i & 1023) as real * 0.0001;
+		let dist = haversine_meters(40.7128 + d, -74.0060, 40.7580, -73.9855 - d);
+		let dec = resolve_gate(2, true, false, (i & 5) as i32);
+		sum += (dist as! int) + (dec as int);
+	}
+	sum
+}
+fn bench_aap_codec(header const byte[:], payload const byte[:], iters int) int {
+	var sum = 0;
+	for i in iters {
+		let hdr = decode_frame_header(header);
+		let first = pb_next_field(payload, 0);
+		let second = pb_next_field(payload, first.next_off);
+		sum += (hdr.header_size as int) + (first.varint_value as int) + (second.bytes_len as int);
+	}
+	sum
+}
+fn bench_layout_aaa(iters int) int {
+	var sum = 0;
+	for i in iters {
+		let pal = build_palette("amni_dark", 0, false);
+		let ts = car_type_scale(1280.0, 720.0, 1.0);
+		let plan = compute_cockpit(1280.0, 720.0, ts.min_hit_px, ts.gutter_px, ts.pad_px, (i % 11) as i32, 0, false);
+		sum += (pal.acc as int) + (plan.pods.len as int) + (plan.buttons.len as int);
+	}
+	sum
+}
+fn main() {
+	let line const byte[:] = "2026-11-27 user anthony@amni-scient.com token=sk_live_987654321 ip 192.168.1.42 loc 40.7128, -74.0060 call 555-867-5309";
+	var payload byte[>..] = [];
+	pb_put_tag(1, 0, payload);
+	pb_put_varint(300, payload);
+	pb_put_bytes(2, "amni-drive-audio", payload);
+	var header byte[>..] = [];
+	encode_frame_header(3, FLAG_FIRST, payload.len as u16, payload.len as u32, header);
+	var warm = 0;
+	warm += bench_scrub(line, 100);
+	warm += bench_geo_gate(1000);
+	warm += bench_aap_codec(header[..], payload[..], 1000);
+	warm += bench_layout_aaa(100);
+	assert(warm != 0);
+	let scrub_start = clock_ns();
+	let scrub_sum = bench_scrub(line, 10000);
+	let scrub_ms = (clock_ns() - scrub_start) / 1000000;
+	print("BENCH scrub 10000 ", scrub_ms, " ", scrub_sum);
+	let geo_start = clock_ns();
+	let geo_sum = bench_geo_gate(1000000);
+	let geo_ms = (clock_ns() - geo_start) / 1000000;
+	print("BENCH geo_gate 1000000 ", geo_ms, " ", geo_sum);
+	let aap_start = clock_ns();
+	let aap_sum = bench_aap_codec(header[..], payload[..], 500000);
+	let aap_ms = (clock_ns() - aap_start) / 1000000;
+	print("BENCH aap_codec 500000 ", aap_ms, " ", aap_sum);
+	let layout_start = clock_ns();
+	let layout_sum = bench_layout_aaa(100000);
+	let layout_ms = (clock_ns() - layout_start) / 1000000;
+	print("BENCH layout_aaa 100000 ", layout_ms, " ", layout_sum);
+}

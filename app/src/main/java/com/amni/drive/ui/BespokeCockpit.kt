@@ -1004,6 +1004,18 @@ fun BespokeLayoutHost(
         val rootH = maxHeight
         val portrait = rootH > rootW * 1.05f
         when (layout) {
+            TileLayout.DRUM_3D -> {
+                com.amni.drive.helium.HeliumDrumCockpit(
+                    theme = UiTheme(preset = AmniPreset.entries.firstOrNull { it.light == p.isLight } ?: AmniPreset.AMNI_DARK),
+                    speedMph = speedMph,
+                    weather = weather,
+                    mapContent = { m -> map(m, false) },
+                    mediaContent = { m -> media(m, dense) },
+                    appsContent = { m -> CircularRotaryAppsPod(allApps, onQuickLaunch, onOpenAllApps, m) },
+                    onOpenSettings = onOpenMapStudio,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
             TileLayout.TWIN_CHRONO -> {
                 if (portrait) {
                     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(gap), horizontalAlignment = Alignment.CenterHorizontally) {
