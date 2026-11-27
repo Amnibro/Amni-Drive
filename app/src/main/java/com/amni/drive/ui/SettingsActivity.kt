@@ -258,6 +258,7 @@ private fun LooksPane(themes: ThemeStore, theme: UiTheme) {
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
         TileLayout.entries.forEach { mode -> Seg(mode.label.uppercase(), theme.tileLayout == mode) { scope.launch { themes.setTileLayout(mode) } } }
     }
+    HeliumLayoutPreview(theme)
     Text("APP LAUNCHER SHAPE", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 9.sp, letterSpacing = 1.5.sp)
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
         AppLauncherShape.entries.forEach { sh -> Seg("${sh.glyph} ${sh.label.uppercase()}", theme.appShape == sh) { scope.launch { themes.setAppShape(sh) } } }

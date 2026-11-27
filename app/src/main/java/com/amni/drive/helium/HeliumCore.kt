@@ -1,13 +1,15 @@
 package com.amni.drive.helium
 import android.content.Context
+import android.graphics.Bitmap
 import java.nio.ByteBuffer
 object HeliumCore {
     val available: Boolean = runCatching {
         System.loadLibrary("amni_drive_he")
         true
     }.getOrDefault(false)
+    private val renderLock = Any()
     @Volatile private var fontLoaded = false
-    fun ensureFontLoaded(ctx: Context): Boolean {
+    fun ensureFontLoaded(ctx: Context): Boolean = synchronized(renderLock) {
         if (!available) return false
         if (fontLoaded) return true
         return runCatching {
@@ -36,10 +38,20 @@ object HeliumCore {
             val out = nativeScrub(raw.toByteArray(Charsets.UTF_8)) ?: return null
             String(out, Charsets.UTF_8)
         }.getOrNull()
-    fun renderCockpitRgba(outDirect: ByteBuffer, w: Int, h: Int, presetIdx: Int, layoutId: Int, dockMode: Int, speedMph: Int, tempF: Int, activeBtn: Int, rollDeg: Float = 0f): Int =
+    fun renderCockpitRgba(outDirect: ByteBuffer, w: Int, h: Int, presetIdx: Int, layoutId: Int, dockMode: Int, speedMph: Int, tempF: Int, activeBtn: Int, rollDeg: Float = 0f): Int = synchronized(renderLock) {
         if (!available || !outDirect.isDirect) 0 else runCatching {
             nativeRenderRgba(outDirect, w, h, presetIdx, layoutId, dockMode, speedMph, tempF, activeBtn, rollDeg)
         }.getOrDefault(0)
+    }
+    fun renderCockpitBitmap(ctx: Context, w: Int, h: Int, presetIdx: Int, layoutId: Int, dockMode: Int, speedMph: Int = 64, tempF: Int = 72, activeBtn: Int = 0, rollDeg: Float = 0f): Bitmap? {
+        if (!available || w <= 0 || h <= 0) return null
+        ensureFontLoaded(ctx)
+        val buf = ByteBuffer.allocateDirect(w * h * 4)
+        val n = renderCockpitRgba(buf, w, h, presetIdx, layoutId, dockMode, speedMph, tempF, activeBtn, rollDeg)
+        if (n < w * h * 4) return null
+        buf.rewind()
+        return Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).apply { copyPixelsFromBuffer(buf) }
+    }
     data class DrumStepResult(val angleDeg: Float, val velDeg: Float, val activeIdx: Int)
     fun drumStep(angleDeg: Float, velDeg: Float, dt: Float, dragging: Boolean): DrumStepResult {
         if (available) {

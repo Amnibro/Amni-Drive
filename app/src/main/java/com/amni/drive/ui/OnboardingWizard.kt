@@ -2,11 +2,13 @@ package com.amni.drive.ui
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -16,6 +18,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -30,6 +33,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,6 +43,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
@@ -51,6 +57,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.amni.drive.config.ConfigStore
+import com.amni.drive.helium.HeliumCore
 import com.amni.drive.launcher.CarEmbed
 import com.amni.drive.media.MediaBrowserHub
 import com.amni.drive.media.MediaSessionBridge
@@ -218,8 +225,9 @@ fun OnboardingWizard(
                             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                                 listOf(
                                     TileLayout.AUTO to "✦ Auto",
-                                    TileLayout.TWIN_CHRONO to "◯ Twin Chrono",
+                                    TileLayout.DRUM_3D to "◎ 3D Dash Roller",
                                     TileLayout.SOLAR_ORBIT to "◎ Solar Orbit",
+                                    TileLayout.TWIN_CHRONO to "◯ Twin Chrono",
                                     TileLayout.HEX_COCKPIT to "⬡ Aero Hex",
                                     TileLayout.CAPSULE_DECK to "⬭ Capsule Deck",
                                     TileLayout.BALANCED to "⊞ Tri-Cockpit"
@@ -227,6 +235,7 @@ fun OnboardingWizard(
                                     WizardChip(lbl, theme.tileLayout == ly) { scope.launch { themeStore.setTileLayout(ly) } }
                                 }
                             }
+                            HeliumLayoutPreview(theme)
                         }
                         1 -> {
                             val mapSt = ota.apps.firstOrNull { it.app.packageName == CarEmbed.MAP_PKG }
@@ -478,5 +487,79 @@ private fun WizardActionCard(title: String, subtitle: String, ok: Boolean, butto
                 fontWeight = FontWeight.Bold
             )
         }
+    }
+}
+private fun heliumLayoutId(ly: TileLayout): Int = when (ly) {
+    TileLayout.TWIN_CHRONO -> 0
+    TileLayout.SOLAR_ORBIT -> 1
+    TileLayout.ORB_CENTER -> 2
+    TileLayout.HORIZON_DIALS -> 3
+    TileLayout.HEX_COCKPIT -> 4
+    TileLayout.CAPSULE_DECK, TileLayout.STACKED -> 5
+    TileLayout.ASYM_TRIPTYCH, TileLayout.MAP_FOCUS -> 6
+    TileLayout.BALANCED, TileLayout.AUTO -> 7
+    TileLayout.SPLIT_50, TileLayout.MEDIA_FOCUS -> 8
+    TileLayout.MAP_ONLY -> 9
+    TileLayout.DRUM_3D -> 10
+}
+@Composable
+fun HeliumLayoutPreview(theme: UiTheme, modifier: Modifier = Modifier) {
+    val p = LocalAmni.current
+    val ctx = LocalContext.current
+    val layoutId = heliumLayoutId(theme.tileLayout)
+    val presetIdx = theme.preset.ordinal
+    val dockMode = theme.dockPosition
+    var rollDeg by remember(layoutId) { mutableFloatStateOf(0f) }
+    var bmp by remember { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(presetIdx, layoutId, dockMode, rollDeg) {
+        val rendered = withContext(Dispatchers.Default) {
+            HeliumCore.renderCockpitBitmap(ctx, 640, 360, presetIdx, layoutId, dockMode, 64, 72, 0, rollDeg)
+        }
+        if (rendered != null) bmp = rendered
+    }
+    Column(
+        modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(p.panel2.copy(alpha = 0.85f))
+            .border(1.dp, p.acc.copy(alpha = 0.45f), RoundedCornerShape(14.dp))
+            .padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("LIVE PREVIEW · ${theme.tileLayout.label.uppercase()}", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+            if (theme.tileLayout == TileLayout.DRUM_3D) {
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(p.accDim)
+                        .border(1.dp, p.acc.copy(alpha = 0.65f), RoundedCornerShape(8.dp))
+                        .clickable { rollDeg = (rollDeg + 46f) % 184f }
+                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                ) {
+                    Text("↻ SPIN DIAL", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                }
+            } else {
+                Text(if (dockMode == 1) "BOTTOM DOCK" else "LEFT RAIL", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .aspectRatio(16f / 9f)
+                .clip(RoundedCornerShape(10.dp))
+                .background(p.bg)
+                .border(1.dp, p.hairline, RoundedCornerShape(10.dp))
+                .clickable(enabled = theme.tileLayout == TileLayout.DRUM_3D) { rollDeg = (rollDeg + 46f) % 184f },
+            contentAlignment = Alignment.Center
+        ) {
+            val frame = bmp
+            if (frame != null) {
+                Image(frame.asImageBitmap(), "${theme.tileLayout.label} cockpit preview", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            } else {
+                Text("Rendering Helium preview…", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 10.sp)
+            }
+        }
+        Text(theme.tileLayout.blurb, color = p.soft, fontSize = 11.sp, lineHeight = 15.sp)
     }
 }
