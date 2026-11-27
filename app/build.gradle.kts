@@ -15,13 +15,13 @@ val ksProp = Properties().apply { ksFile?.inputStream()?.use { load(it) } }
 
 android {
     namespace = "com.amni.drive"
-    compileSdk = 34
+    compileSdk = 36
     defaultConfig {
         applicationId = "com.amni.drive"
         minSdk = 26
-        targetSdk = 34
-        versionCode = 93
-        versionName = "1.14.1"
+        targetSdk = 36
+        versionCode = 94
+        versionName = "1.14.2"
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
