@@ -15,6 +15,9 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioPlaybackCaptureConfiguration
 import android.media.AudioRecord
+import android.media.MediaCodec
+import android.media.MediaCodecInfo
+import android.media.MediaFormat
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Build
@@ -25,22 +28,71 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.abs
-
-/**
- * Captures phone media & navigation guidance audio via Android 10+ AudioPlaybackCapture
- * and streams 20 ms PCM chunks to an active AAP MEDIA_AUDIO sink channel (USB or Wireless AA).
- *
- * When not enabled, AAP still completes ChannelOpen + MEDIA_SETUP so strict head units stay happy
- * while audio continues over Bluetooth A2DP with zero interference.
- */
+class AacAudioEncoder(
+    sampleRate: Int,
+    channels: Int,
+    private val onConfig: (ByteArray) -> Unit,
+    private val onAccessUnit: (ByteArray, Long) -> Unit
+) {
+    private val codec: MediaCodec? = runCatching {
+        val fmt = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, sampleRate, channels).apply {
+            setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
+            setInteger(MediaFormat.KEY_BIT_RATE, if (channels == 1) 64_000 else 128_000)
+            setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 16_384)
+        }
+        MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC).apply {
+            configure(fmt, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            start()
+        }
+    }.onFailure { Log.w("Amni.AaAudio", "AAC encoder init failed: ${it.message}") }.getOrNull()
+    private val info = MediaCodec.BufferInfo()
+    fun pushPcm(pcm: ByteArray, ptsUs: Long) {
+        val c = codec ?: return
+        runCatching {
+            var off = 0
+            while (off < pcm.size) {
+                val inIdx = c.dequeueInputBuffer(7_000L)
+                if (inIdx < 0) break
+                val ib: ByteBuffer = c.getInputBuffer(inIdx) ?: break
+                ib.clear()
+                val n = minOf(ib.remaining(), pcm.size - off)
+                ib.put(pcm, off, n)
+                c.queueInputBuffer(inIdx, 0, n, ptsUs, 0)
+                off += n
+                drain(c)
+            }
+            drain(c)
+        }
+    }
+    private fun drain(c: MediaCodec) {
+        while (true) {
+            val outIdx = c.dequeueOutputBuffer(info, 0L)
+            if (outIdx < 0) break
+            val ob = c.getOutputBuffer(outIdx)
+            if (ob != null && info.size > 0) {
+                ob.position(info.offset)
+                ob.limit(info.offset + info.size)
+                val bytes = ByteArray(info.size)
+                ob.get(bytes)
+                if ((info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0) onConfig(bytes)
+                else onAccessUnit(bytes, info.presentationTimeUs)
+            }
+            c.releaseOutputBuffer(outIdx, false)
+        }
+    }
+    fun release() {
+        runCatching { codec?.stop() }
+        runCatching { codec?.release() }
+    }
+}
 object AaAudioStreamer {
     private const val TAG = "Amni.AaAudio"
     private const val SILENCE_THRESHOLD = 96
     private const val SILENCE_STOP_MS = 3_200L
-
     data class Sink(
         val sampleRate: Int = 48_000,
         val channels: Int = 2,
@@ -49,13 +101,10 @@ object AaAudioStreamer {
         val onPcm: (pcm: ByteArray, ptsUs: Long) -> Unit,
         val onStop: () -> Unit
     )
-
     private val _armed = MutableStateFlow(false)
     val armed: StateFlow<Boolean> = _armed
-
     private val _streaming = MutableStateFlow(false)
     val streaming: StateFlow<Boolean> = _streaming
-
     private val projectionRef = AtomicReference<MediaProjection?>(null)
     private val sinkRef = AtomicReference<Sink?>(null)
     private val workerRunning = AtomicBoolean(false)

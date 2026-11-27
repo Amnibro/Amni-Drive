@@ -29,6 +29,7 @@ object CarEmbed {
     private const val TEXT = 7
     private const val VOICE_REQ = 8
     private const val KB_REQ = 9
+    private const val CONFIG = 10
     private const val TAG = "Amni.Embed"
     data class Shown(val pkg: String, val label: String, val displayId: Int, val at: Long, val front: Boolean = true, val mirror: Boolean = false, val slot: String? = null)
     val shown = MutableStateFlow<Shown?>(null)
@@ -40,6 +41,7 @@ object CarEmbed {
     private var target = 0
     private var frame: Bundle? = null
     private var pendingQuery: Bundle? = null
+    private var latestConfig: Bundle? = null
     @Volatile var overlayBlocking: Boolean = false
     @Volatile var tileKeyboardBlocking: Boolean = false
     private var area: IntArray? = null
@@ -121,6 +123,11 @@ object CarEmbed {
         pendingQuery = b
         if (remote != null) send(Message.obtain(null, TEXT).apply { data = Bundle(b) })
     }
+    fun sendConfig(b: Bundle) {
+        val copy = Bundle(b)
+        latestConfig = copy
+        if (remote != null) send(Message.obtain(null, CONFIG).apply { data = Bundle(copy) })
+    }
     fun sendText(text: String) {
         if (text.isEmpty()) return
         ipc.post {
@@ -139,7 +146,7 @@ object CarEmbed {
         val copy = android.location.Location(loc)
         latestLoc = copy
         val now = SystemClock.uptimeMillis()
-        if (now - lastLocSentMs < 850L) return
+        if (now - lastLocSentMs < 350L) return
         lastLocSentMs = now
         if (remote != null) send(Message.obtain(null, LOCATION).apply { obj = copy })
     }
@@ -151,6 +158,7 @@ object CarEmbed {
             override fun onServiceConnected(name: ComponentName, service: IBinder) {
                 remote = Messenger(service).also { r -> runCatching { r.send(Message.obtain(null, HELLO).apply { replyTo = inbox }) } }
                 sendFrame()
+                latestConfig?.let { cfg -> send(Message.obtain(null, CONFIG).apply { data = Bundle(cfg) }) }
                 latestLoc?.let { l -> send(Message.obtain(null, LOCATION).apply { obj = android.location.Location(l) }) }
                 pendingQuery?.let { q -> send(Message.obtain(null, TEXT).apply { data = Bundle(q) }); pendingQuery = null }
             }

@@ -1121,8 +1121,9 @@ object AaPostTls {
             audioUnacked.incrementAndGet()
         }
 
-        fun wireAudioSink(chId: Int, spec: AudioSpec, cfgIdx: Int) {
+        fun wireAudioSink(chId: Int, spec: AudioSpec, cfgIdx: Int, codecType: Int) {
             if (audioSinkHandle != null || chId <= 0) return
+            var aacEnc: AacAudioEncoder? = null
             val sink = AaAudioStreamer.Sink(
                 sampleRate = spec.sampleRate,
                 channels = spec.channels,
@@ -1132,16 +1133,30 @@ object AaPostTls {
                     audioUnacked.set(0)
                     txEncrypted(CH_CONTROL, MSG_AUDIO_FOCUS_REQUEST, AaPb.u32(1, AUDIO_FOCUS_GAIN), control = false, tag = "AudioFocusGain")
                     txEncrypted(chId, MEDIA_START, AaPb.cat(AaPb.u32(1, sid), AaPb.u32(2, cfgIdx)), control = false, tag = "AudioStart ch=$chId idx=$cfgIdx")
+                    if (codecType == CODEC_AAC_LC) {
+                        aacEnc?.release()
+                        aacEnc = AacAudioEncoder(
+                            sampleRate = spec.sampleRate.coerceIn(16_000, 48_000),
+                            channels = if (spec.channels == 1) 1 else 2,
+                            onConfig = { csd -> txEncrypted(chId, MEDIA_CODEC_CONFIG, csd, control = false, tag = "AudioCodecConfig") },
+                            onAccessUnit = { au, pts -> sendAudioPcm(chId, au, pts) }
+                        )
+                    }
                 },
-                onPcm = { pcm, ptsUs -> sendAudioPcm(chId, pcm, ptsUs) },
+                onPcm = { pcm, ptsUs ->
+                    if (codecType == CODEC_AAC_LC) aacEnc?.pushPcm(pcm, ptsUs)
+                    else sendAudioPcm(chId, pcm, ptsUs)
+                },
                 onStop = {
+                    aacEnc?.release()
+                    aacEnc = null
                     txEncrypted(chId, MEDIA_STOP, ByteArray(0), control = false, tag = "AudioStop ch=$chId")
                     txEncrypted(CH_CONTROL, MSG_AUDIO_FOCUS_REQUEST, AaPb.u32(1, AUDIO_FOCUS_RELEASE), control = false, tag = "AudioFocusRelease")
                 }
             )
             audioSinkHandle = sink
             AaAudioStreamer.attachSink(sink)
-            log("POST-TLS audio sink armed ch=$chId ${spec.sampleRate}Hz/${spec.bits}b/${spec.channels}ch")
+            log("POST-TLS audio sink armed ch=$chId codec=$codecType ${spec.sampleRate}Hz/${spec.bits}b/${spec.channels}ch")
         }
 
         fun startProjectionIfNeeded() {
@@ -1222,7 +1237,9 @@ object AaPostTls {
                         val inp = chans.firstOrNull { it.kind == "input" }
                         val sens = chans.firstOrNull { it.kind == "sensor" }
                         val bt = chans.firstOrNull { it.kind == "bt" }
-                        val mediaAud = chans.firstOrNull { it.isAudioSink && it.audioType == AUDIO_STREAM_MEDIA }
+                        val mediaAud = chans.firstOrNull { it.isAudioSink && it.audioType == AUDIO_STREAM_MEDIA && it.codecType == CODEC_PCM }
+                            ?: chans.firstOrNull { it.isAudioSink && it.audioType == AUDIO_STREAM_MEDIA }
+                            ?: chans.firstOrNull { it.isAudioSink && it.codecType == CODEC_PCM && it.id != av?.id }
                             ?: chans.firstOrNull { it.isAudioSink && it.id != av?.id }
                         val speechAud = chans.firstOrNull { it.isAudioSink && it.audioType == AUDIO_STREAM_SPEECH && it.id != mediaAud?.id }
 
@@ -1437,8 +1454,8 @@ object AaPostTls {
                         }
                         audioMaxUnacked.set(maxU.coerceAtLeast(1))
                         notes.append("acfg-ok;")
-                        if (mediaAudioCodec == CODEC_PCM) {
-                            wireAudioSink(mediaAudioCh, mediaAudioSpec, cfgIdx)
+                        if (mediaAudioCodec == CODEC_PCM || mediaAudioCodec == CODEC_AAC_LC) {
+                            wireAudioSink(mediaAudioCh, mediaAudioSpec, cfgIdx, mediaAudioCodec)
                         }
                     }
                     MEDIA_ACK -> {

@@ -43,10 +43,10 @@ import kotlin.math.roundToInt
 class MapCamera(lat: Double, lon: Double) {
     var lat by mutableDoubleStateOf(lat)
     var lon by mutableDoubleStateOf(lon)
-    var zoom by mutableIntStateOf(15)
+    var zoom by mutableIntStateOf(16)
     var follow by mutableStateOf(true)
-    var northUp by mutableStateOf(true)
-    var tilt by mutableStateOf(false)
+    var northUp by mutableStateOf(false)
+    var tilt by mutableStateOf(true)
     var basemap by mutableIntStateOf(0)
 }
 
@@ -277,6 +277,14 @@ fun AmniMap(
         }
     }
 
+    var lastBearing by remember { mutableDoubleStateOf(0.0) }
+    LaunchedEffect(location) {
+        location?.let { l ->
+            if (l.hasBearing() && (l.speed > 0.5f || abs(l.bearing) > 0.1f)) {
+                lastBearing = l.bearing.toDouble()
+            }
+        }
+    }
     LaunchedEffect(location, camera.follow) {
         if (camera.follow) {
             location?.let {
@@ -285,7 +293,6 @@ fun AmniMap(
             }
         }
     }
-
     LaunchedEffect(map, camera.basemap, mapDestroyed) {
         val m = map ?: return@LaunchedEffect
         if (mapDestroyed) return@LaunchedEffect
@@ -301,21 +308,20 @@ fun AmniMap(
             }
         }
     }
-
     LaunchedEffect(loadedStyle, styleGen, route, reports, stops, destination, location, accentArgb, mapDestroyed) {
         if (mapDestroyed) return@LaunchedEffect
         val st = loadedStyle ?: return@LaunchedEffect
         if (!st.isFullyLoaded) return@LaunchedEffect
         runCatching { syncOverlays(st, route, stops, destination, reports, location, accentArgb) }
     }
-
-    LaunchedEffect(map, camera.lat, camera.lon, camera.zoom, camera.tilt, camera.northUp, location?.bearing, mapDestroyed) {
+    LaunchedEffect(map, camera.lat, camera.lon, camera.zoom, camera.tilt, camera.northUp, lastBearing, location, mapDestroyed) {
         if (mapDestroyed) return@LaunchedEffect
         val m = map ?: return@LaunchedEffect
         if (userDragging) return@LaunchedEffect
         runCatching {
-            val targetBearing = if (camera.northUp) 0.0 else (location?.bearing?.toDouble() ?: 0.0)
-            val targetTilt = if (camera.tilt) 45.0 else 0.0
+            val targetBearing = if (camera.northUp) 0.0 else lastBearing
+            val targetTilt = if (camera.tilt) 52.0 else 0.0
+            val padTop = if (!camera.northUp && camera.tilt && mapView.height > 0) (mapView.height * 0.34).coerceAtLeast(0.0) else 0.0
             val cur = m.cameraPosition
             val curT = cur.target
             val moved = curT == null ||
@@ -330,6 +336,7 @@ fun AmniMap(
                     .zoom(camera.zoom.toDouble())
                     .tilt(targetTilt)
                     .bearing(targetBearing)
+                    .padding(0.0, padTop, 0.0, 0.0)
                     .build()
                 m.moveCamera(CameraUpdateFactory.newCameraPosition(pos))
             }

@@ -7,8 +7,10 @@ import android.view.TextureView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -26,6 +28,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -51,11 +54,37 @@ import com.amni.drive.launcher.CarEmbed
 import com.amni.drive.launcher.CarMirror
 import com.amni.drive.voice.VoiceSearch
 import kotlin.math.roundToInt
-
-/**
- * Shared chunky car touch keyboard with live preview, Shift, symbols, voice-to-text, and GO/Enter.
- * Sized to stay comfortable to tap while leaving the target search field visible on wide car screens.
- */
+data class DashKeyboardSpec(
+    val id: String,
+    val preview: String,
+    val voiceStatus: String?,
+    val placeholder: String,
+    val enterLabel: String,
+    val isMapMode: Boolean = false,
+    val onText: (String) -> Unit,
+    val onBackspace: () -> Unit,
+    val onClear: (() -> Unit)? = null,
+    val onEnter: () -> Unit,
+    val onAutoGo: (() -> Unit)? = null,
+    val onVoice: (() -> Unit)? = null,
+    val onClose: () -> Unit
+)
+class DashKeyboardHost {
+    var active by mutableStateOf<DashKeyboardSpec?>(null)
+}
+val LocalDashKeyboard = compositionLocalOf<DashKeyboardHost?> { null }
+@Composable
+fun BindDashKeyboard(enabled: Boolean, spec: DashKeyboardSpec): Boolean {
+    val host = LocalDashKeyboard.current ?: return false
+    LaunchedEffect(enabled, spec.preview, spec.voiceStatus, spec.placeholder, spec.enterLabel) {
+        if (enabled) host.active = spec
+        else if (host.active?.id == spec.id) host.active = null
+    }
+    DisposableEffect(spec.id) {
+        onDispose { if (host.active?.id == spec.id) host.active = null }
+    }
+    return true
+}
 @Composable
 fun CarTouchKeyboard(
     preview: String,
@@ -75,229 +104,269 @@ fun CarTouchKeyboard(
     val p = LocalAmni.current
     var symMode by remember { mutableStateOf(false) }
     var shiftOn by remember { mutableStateOf(false) }
+    val previewScroll = rememberScrollState()
+    LaunchedEffect(preview, voiceStatus) {
+        previewScroll.scrollTo(previewScroll.maxValue)
+    }
     val rows = when {
         symMode -> listOf("1234567890", "@._-/:;?!,", "+=&%#()'\"")
         shiftOn -> listOf("QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM")
         else -> listOf("qwertyuiop", "asdfghjkl", "zxcvbnm")
     }
-    val keyH = 32.dp
-    Column(
-        modifier
-            .fillMaxWidth()
-            .background(p.panel.copy(alpha = 0.98f))
-            .border(1.dp, p.acc.copy(alpha = 0.45f))
-            .clickable(
-                indication = null,
-                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-            ) {}
-            .padding(horizontal = 5.dp, vertical = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(3.dp)
-    ) {
-        Row(
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val narrow = maxWidth < 430.dp
+        val tightH = maxHeight in 1.dp..250.dp
+        val keyH = when {
+            maxHeight in 1.dp..205.dp -> 22.dp
+            tightH || maxWidth < 360.dp -> 26.dp
+            narrow -> 29.dp
+            else -> 33.dp
+        }
+        val topH = if (keyH <= 26.dp) 28.dp else 33.dp
+        val gapDp = if (keyH <= 26.dp) 2.dp else 3.dp
+        val keyFont = if (narrow) 12.sp else 14.sp
+        Column(
             Modifier
                 .fillMaxWidth()
-                .height(34.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(p.panel.copy(alpha = 0.98f))
+                .border(1.dp, p.acc.copy(alpha = 0.55f), RoundedCornerShape(12.dp))
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                ) {}
+                .padding(horizontal = if (narrow) 4.dp else 6.dp, vertical = if (tightH) 3.dp else 5.dp),
+            verticalArrangement = Arrangement.spacedBy(gapDp)
         ) {
             Row(
                 Modifier
-                    .weight(1f)
-                    .height(32.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(p.bg)
-                    .border(1.dp, p.acc.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
-                    .padding(horizontal = 9.dp),
+                    .fillMaxWidth()
+                    .height(topH),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(7.dp)
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Text(if (!voiceStatus.isNullOrBlank()) "🎤" else "🔎", fontSize = 13.sp)
-                val mainTxt = when {
-                    !voiceStatus.isNullOrBlank() && preview.isEmpty() -> voiceStatus
-                    preview.isNotEmpty() -> "$preview|"
-                    else -> placeholder
-                }
-                Text(
-                    mainTxt,
-                    color = if (preview.isNotEmpty()) p.ink else if (!voiceStatus.isNullOrBlank()) p.acc else p.soft,
-                    fontFamily = if (preview.isNotEmpty()) FontFamily.SansSerif else FontFamily.Monospace,
-                    fontSize = if (preview.isNotEmpty()) 14.sp else 11.5.sp,
-                    fontWeight = if (preview.isNotEmpty()) FontWeight.Bold else FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
-                )
-                if (preview.isNotEmpty() && onClear != null) {
-                    Box(
-                        Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(p.panel2)
-                            .clickable { onClear() }
-                            .padding(horizontal = 7.dp, vertical = 2.dp)
-                    ) {
-                        Text("CLEAR", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-            Box(
-                Modifier
-                    .height(32.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(p.panel2)
-                    .border(1.dp, p.hairline, RoundedCornerShape(8.dp))
-                    .clickable { onClose() }
-                    .padding(horizontal = 10.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("HIDE ✕", color = p.ink, fontFamily = FontFamily.Monospace, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
-            }
-        }
-        rows.forEachIndexed { rIdx, row ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                if (rIdx == 2 && !symMode) {
-                    Box(
-                        Modifier
-                            .weight(1.35f)
-                            .height(keyH)
-                            .clip(RoundedCornerShape(7.dp))
-                            .background(if (shiftOn) p.acc else p.panel2)
-                            .border(1.dp, if (shiftOn) p.acc else p.hairline, RoundedCornerShape(7.dp))
-                            .clickable { shiftOn = !shiftOn },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            "⇧",
-                            color = if (shiftOn) (if (p.isLight) Color.White else Color(0xFF05070A)) else p.ink,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-                row.forEach { ch ->
-                    Box(
+                Row(
+                    Modifier
+                        .weight(1f)
+                        .height(topH - 2.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(p.bg)
+                        .border(1.dp, p.acc.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(if (!voiceStatus.isNullOrBlank()) "🎤" else "🔎", fontSize = 12.5.sp)
+                    Row(
                         Modifier
                             .weight(1f)
-                            .height(keyH)
-                            .clip(RoundedCornerShape(7.dp))
-                            .background(p.panel2)
-                            .border(1.dp, p.hairline, RoundedCornerShape(7.dp))
-                            .clickable {
-                                onText(ch.toString())
-                                if (shiftOn) shiftOn = false
-                            },
-                        contentAlignment = Alignment.Center
+                            .horizontalScroll(previewScroll),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            ch.toString(),
-                            color = p.ink,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 13.5.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                        if (preview.isNotEmpty()) {
+                            Text(
+                                preview,
+                                color = p.ink,
+                                fontFamily = FontFamily.SansSerif,
+                                fontSize = if (narrow) 13.sp else 14.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                            Box(
+                                Modifier
+                                    .padding(start = 1.dp)
+                                    .width(2.dp)
+                                    .height(16.dp)
+                                    .background(p.acc)
+                            )
+                        } else {
+                            val hintTxt = if (!voiceStatus.isNullOrBlank()) voiceStatus else placeholder
+                            Text(
+                                hintTxt,
+                                color = if (!voiceStatus.isNullOrBlank()) p.acc else p.soft,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = if (narrow) 10.5.sp else 11.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
+                    }
+                    if (preview.isNotEmpty() && onClear != null) {
+                        Box(
+                            Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(p.panel2)
+                                .clickable { onClear() }
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(if (narrow) "✕" else "CLEAR", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
-                if (rIdx == 2) {
-                    Box(
-                        Modifier
-                            .weight(1.35f)
-                            .height(keyH)
-                            .clip(RoundedCornerShape(7.dp))
-                            .background(p.panel2)
-                            .border(1.dp, p.err.copy(alpha = 0.5f), RoundedCornerShape(7.dp))
-                            .clickable { onBackspace() },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("⌫", color = p.err, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-            Box(
-                Modifier
-                    .weight(1.15f)
-                    .height(keyH)
-                    .clip(RoundedCornerShape(7.dp))
-                    .background(p.panel2)
-                    .border(1.dp, p.hairline, RoundedCornerShape(7.dp))
-                    .clickable { symMode = !symMode },
-                contentAlignment = Alignment.Center
-            ) {
-                Text(if (symMode) "ABC" else "123", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-            }
-            if (onVoice != null) {
                 Box(
                     Modifier
-                        .weight(1.05f)
-                        .height(keyH)
-                        .clip(RoundedCornerShape(7.dp))
-                        .background(if (!voiceStatus.isNullOrBlank()) p.acc else p.accDim)
-                        .border(1.dp, p.acc.copy(alpha = 0.7f), RoundedCornerShape(7.dp))
-                        .clickable { onVoice() },
+                        .height(topH - 2.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(p.panel2)
+                        .border(1.dp, p.hairline, RoundedCornerShape(8.dp))
+                        .clickable { onClose() }
+                        .padding(horizontal = if (narrow) 8.dp else 10.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("🎤", fontSize = 14.sp)
+                    Text(if (narrow) "✕" else "HIDE ✕", color = p.ink, fontFamily = FontFamily.Monospace, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
                 }
             }
-            Box(
-                Modifier
-                    .weight(0.95f)
-                    .height(keyH)
-                    .clip(RoundedCornerShape(7.dp))
-                    .background(p.panel2)
-                    .border(1.dp, p.hairline, RoundedCornerShape(7.dp))
-                    .clickable { onText(if (isMapMode) ", " else ".com") },
-                contentAlignment = Alignment.Center
-            ) {
-                Text(if (isMapMode) "," else ".com", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            rows.forEachIndexed { rIdx, row ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(gapDp)) {
+                    if (rIdx == 2 && !symMode) {
+                        Box(
+                            Modifier
+                                .weight(1.3f)
+                                .height(keyH)
+                                .clip(RoundedCornerShape(7.dp))
+                                .background(if (shiftOn) p.acc else p.panel2)
+                                .border(1.dp, if (shiftOn) p.acc else p.hairline, RoundedCornerShape(7.dp))
+                                .clickable { shiftOn = !shiftOn },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "⇧",
+                                color = if (shiftOn) (if (p.isLight) Color.White else Color(0xFF05070A)) else p.ink,
+                                fontSize = keyFont,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                    row.forEach { ch ->
+                        Box(
+                            Modifier
+                                .weight(1f)
+                                .height(keyH)
+                                .clip(RoundedCornerShape(7.dp))
+                                .background(p.panel2)
+                                .border(1.dp, p.hairline, RoundedCornerShape(7.dp))
+                                .clickable {
+                                    onText(ch.toString())
+                                    if (shiftOn) shiftOn = false
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                ch.toString(),
+                                color = p.ink,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = keyFont,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                    if (rIdx == 2) {
+                        Box(
+                            Modifier
+                                .weight(1.3f)
+                                .height(keyH)
+                                .clip(RoundedCornerShape(7.dp))
+                                .background(p.panel2)
+                                .border(1.dp, p.err.copy(alpha = 0.5f), RoundedCornerShape(7.dp))
+                                .clickable { onBackspace() },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("⌫", color = p.err, fontSize = keyFont, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
             }
-            Box(
-                Modifier
-                    .weight(2.5f)
-                    .height(keyH)
-                    .clip(RoundedCornerShape(7.dp))
-                    .background(p.panel2)
-                    .border(1.dp, p.hairline, RoundedCornerShape(7.dp))
-                    .clickable { onText(" ") },
-                contentAlignment = Alignment.Center
-            ) {
-                Text("SPACE", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-            }
-            Box(
-                Modifier
-                    .weight(1.45f)
-                    .height(keyH)
-                    .clip(RoundedCornerShape(7.dp))
-                    .background(if (onAutoGo != null) p.accDim else p.acc)
-                    .border(1.dp, p.acc, RoundedCornerShape(7.dp))
-                    .clickable { onEnter() },
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    enterLabel,
-                    color = if (onAutoGo != null) p.acc else (if (p.isLight) Color.White else Color(0xFF05070A)),
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 10.5.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-            if (onAutoGo != null) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(gapDp)) {
                 Box(
                     Modifier
-                        .weight(1.25f)
+                        .weight(1.1f)
                         .height(keyH)
                         .clip(RoundedCornerShape(7.dp))
-                        .background(p.acc)
-                        .clickable { onAutoGo() },
+                        .background(p.panel2)
+                        .border(1.dp, p.hairline, RoundedCornerShape(7.dp))
+                        .clickable { symMode = !symMode },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(if (symMode) "ABC" else "123", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                }
+                if (onVoice != null) {
+                    Box(
+                        Modifier
+                            .weight(0.95f)
+                            .height(keyH)
+                            .clip(RoundedCornerShape(7.dp))
+                            .background(if (!voiceStatus.isNullOrBlank()) p.acc else p.accDim)
+                            .border(1.dp, p.acc.copy(alpha = 0.7f), RoundedCornerShape(7.dp))
+                            .clickable { onVoice() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("🎤", fontSize = 13.sp)
+                    }
+                }
+                Box(
+                    Modifier
+                        .weight(0.9f)
+                        .height(keyH)
+                        .clip(RoundedCornerShape(7.dp))
+                        .background(p.panel2)
+                        .border(1.dp, p.hairline, RoundedCornerShape(7.dp))
+                        .clickable { onText(if (isMapMode) ", " else ".com") },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(if (isMapMode) "," else ".com", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                }
+                Box(
+                    Modifier
+                        .weight(2.35f)
+                        .height(keyH)
+                        .clip(RoundedCornerShape(7.dp))
+                        .background(p.panel2)
+                        .border(1.dp, p.hairline, RoundedCornerShape(7.dp))
+                        .clickable { onText(" ") },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("SPACE", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                }
+                Box(
+                    Modifier
+                        .weight(if (narrow) 1.25f else 1.45f)
+                        .height(keyH)
+                        .clip(RoundedCornerShape(7.dp))
+                        .background(if (onAutoGo != null) p.accDim else p.acc)
+                        .border(1.dp, p.acc, RoundedCornerShape(7.dp))
+                        .clickable { onEnter() },
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        "GO ↱",
-                        color = if (p.isLight) Color.White else Color(0xFF05070A),
+                        if (narrow && enterLabel.length > 6) "↵" else enterLabel,
+                        color = if (onAutoGo != null) p.acc else (if (p.isLight) Color.White else Color(0xFF05070A)),
                         fontFamily = FontFamily.Monospace,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
                     )
+                }
+                if (onAutoGo != null) {
+                    Box(
+                        Modifier
+                            .weight(1.15f)
+                            .height(keyH)
+                            .clip(RoundedCornerShape(7.dp))
+                            .background(p.acc)
+                            .clickable { onAutoGo() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "GO ↱",
+                            color = if (p.isLight) Color.White else Color(0xFF05070A),
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1
+                        )
+                    }
                 }
             }
         }
@@ -310,6 +379,7 @@ fun AmniMapEmbedTile(
     isExpanded: Boolean = false,
     carUiScale: Float = 1.0f,
     onToggleExpand: (() -> Unit)? = null,
+    onOpenStudio: (() -> Unit)? = null,
     onSwitchBuiltIn: () -> Unit
 ) {
     val p = LocalAmni.current
@@ -468,6 +538,18 @@ fun AmniMapEmbedTile(
                     ) {
                         Text("🎤", fontSize = 12.sp)
                     }
+                    if (onOpenStudio != null) {
+                        Box(
+                            Modifier
+                                .clip(RoundedCornerShape(7.dp))
+                                .background(p.accDim)
+                                .border(1.dp, p.acc.copy(alpha = 0.7f), RoundedCornerShape(7.dp))
+                                .clickable { onOpenStudio() }
+                                .padding(horizontal = 7.dp, vertical = 4.dp)
+                        ) {
+                            Text("⚙ 3D", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
                     Box(
                         Modifier
                             .clip(RoundedCornerShape(7.dp))
@@ -523,7 +605,42 @@ fun AmniMapEmbedTile(
                 }
                 Box(Modifier.weight(1f).fillMaxWidth()) {
                     mapSurfaceBox(Modifier.fillMaxSize())
-                    if (showKb) {
+                    val hostedKb = BindDashKeyboard(
+                        enabled = showKb,
+                        spec = DashKeyboardSpec(
+                            id = "amni_map_embed",
+                            preview = typedPreview,
+                            voiceStatus = voiceStatus,
+                            placeholder = "Search place or address in Amni-Map…",
+                            enterLabel = "FIND ↵",
+                            isMapMode = true,
+                            onText = { txt ->
+                                typedPreview = (typedPreview + txt).take(80)
+                                CarEmbed.sendQuery(typedPreview, submit = false)
+                            },
+                            onBackspace = {
+                                typedPreview = typedPreview.dropLast(1)
+                                CarEmbed.sendQuery(typedPreview, submit = false)
+                            },
+                            onClear = {
+                                typedPreview = ""
+                                CarEmbed.sendQuery("", submit = false)
+                            },
+                            onEnter = {
+                                CarEmbed.sendQuery(typedPreview, submit = true, autoGo = false)
+                                showKb = false
+                            },
+                            onAutoGo = {
+                                if (typedPreview.isNotBlank()) {
+                                    CarEmbed.sendQuery(typedPreview, submit = true, autoGo = true)
+                                    showKb = false
+                                }
+                            },
+                            onVoice = { startMapVoice() },
+                            onClose = { showKb = false }
+                        )
+                    )
+                    if (showKb && !hostedKb) {
                         Box(
                             Modifier
                                 .fillMaxSize()
@@ -1352,6 +1469,16 @@ fun EmbeddedWebMediaTile(
     var typedPreview by remember { mutableStateOf("") }
     var voiceStatus by remember { mutableStateOf<String?>(null) }
     var loginBanner by remember { mutableStateOf<String?>(null) }
+    val loginSyncPulse by WebLoginActivity.syncPulse.collectAsState()
+    var seenSyncPulse by remember { mutableStateOf(loginSyncPulse) }
+    LaunchedEffect(loginSyncPulse) {
+        if (loginSyncPulse != seenSyncPulse && loginSyncPulse > 0L) {
+            seenSyncPulse = loginSyncPulse
+            runCatching { android.webkit.CookieManager.getInstance().flush() }
+            webRef?.reload()
+            loginBanner = "✓ Signed-in session synced from phone"
+        }
+    }
     fun startWebVoice() {
         VoiceSearch.listen(
             ctx,
@@ -1560,7 +1687,16 @@ fun EmbeddedWebMediaTile(
                                     if (t != null) pageTitle = t
                                 }
                             }
-                            webChromeClient = android.webkit.WebChromeClient()
+                            webChromeClient = object : android.webkit.WebChromeClient() {
+                                override fun onPermissionRequest(request: android.webkit.PermissionRequest?) {
+                                    val r = request ?: return
+                                    val allowed = r.resources.filter {
+                                        it == android.webkit.PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID ||
+                                            it == android.webkit.PermissionRequest.RESOURCE_AUDIO_CAPTURE
+                                    }.toTypedArray()
+                                    if (allowed.isNotEmpty()) r.grant(allowed) else r.deny()
+                                }
+                            }
                             loadUrl(app.url)
                             webRef = this
                         }
@@ -1573,7 +1709,35 @@ fun EmbeddedWebMediaTile(
                         }
                     }
                 )
-                if (showKb) {
+                val hostedKb = BindDashKeyboard(
+                    enabled = showKb,
+                    spec = DashKeyboardSpec(
+                        id = "web_media_${app.id}",
+                        preview = typedPreview,
+                        voiceStatus = voiceStatus,
+                        placeholder = "Search ${app.label} or type into field…",
+                        enterLabel = "SEARCH ↵",
+                        onText = { txt ->
+                            typedPreview = (typedPreview + txt).take(80)
+                            setWebInputValue(webRef, typedPreview)
+                        },
+                        onBackspace = {
+                            typedPreview = typedPreview.dropLast(1)
+                            setWebInputValue(webRef, typedPreview)
+                        },
+                        onClear = {
+                            typedPreview = ""
+                            setWebInputValue(webRef, "")
+                        },
+                        onEnter = {
+                            submitWebQuery(webRef, app, typedPreview)
+                            showKb = false
+                        },
+                        onVoice = { startWebVoice() },
+                        onClose = { showKb = false }
+                    )
+                )
+                if (showKb && !hostedKb) {
                     Box(
                         Modifier
                             .fillMaxSize()

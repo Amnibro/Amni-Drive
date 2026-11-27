@@ -50,9 +50,11 @@ class LocationTracker(context: Context) {
         if (acc > 60f && prevAcc <= 25f && now - lastFusedAtMs < 15_000L) return
 
         val dist = prev.distanceTo(raw)
+        val dtS = ((raw.time - prev.time) / 1000f).coerceIn(0.25f, 15f)
+        val derivedSpd = dist / dtS
         val spd = if (raw.hasSpeed()) raw.speed else -1f
-        val deadbandM = maxOf(10f, acc * 0.75f).coerceAtMost(28f)
-        val stationary = (spd in 0f..0.85f && dist < deadbandM) || (spd < 0f && dist < maxOf(8f, acc * 0.6f))
+        val deadbandM = maxOf(2.5f, acc * 0.35f).coerceAtMost(7.5f)
+        val stationary = (spd < 0f || spd < 0.75f) && derivedSpd < 1.1f && dist < deadbandM
         if (stationary) {
             val held = Location(prev).apply {
                 time = raw.time
@@ -64,8 +66,11 @@ class LocationTracker(context: Context) {
             return
         }
         val clean = Location(raw)
-        if (!clean.hasBearing() || (spd in 0f..1.4f)) {
-            if (prev.hasBearing()) clean.bearing = prev.bearing
+        if (!clean.hasSpeed() && derivedSpd >= 0.8f) clean.speed = derivedSpd
+        if ((!clean.hasBearing() || clean.bearing == 0f || spd in 0f..1.1f) && dist >= 2.5f) {
+            clean.bearing = ((prev.bearingTo(clean) % 360f) + 360f) % 360f
+        } else if (!clean.hasBearing() && prev.hasBearing()) {
+            clean.bearing = prev.bearing
         }
         _location.value = clean
         CarEmbed.sendLocation(clean)

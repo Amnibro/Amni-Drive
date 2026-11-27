@@ -43,9 +43,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.amni.drive.aa.AaNavState
@@ -240,7 +242,12 @@ private fun SearchPanel(
     onVoice: (() -> Unit)? = null
 ) {
     val p = LocalAmni.current
-    var query by remember { mutableStateOf(AaNavState.lastQuery) }
+    var tfv by remember { mutableStateOf(TextFieldValue(AaNavState.lastQuery, TextRange(AaNavState.lastQuery.length))) }
+    val query = tfv.text
+    fun setQueryEnd(next: String) {
+        val capped = next.take(90)
+        tfv = TextFieldValue(capped, TextRange(capped.length))
+    }
     var symMode by remember { mutableStateOf(false) }
     var results by remember { mutableStateOf<List<Place>>(emptyList()) }
     var searching by remember { mutableStateOf(false) }
@@ -269,8 +276,8 @@ private fun SearchPanel(
                 }
                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(p.bg).border(1.dp, p.acc.copy(alpha = 0.65f), RoundedCornerShape(10.dp)).padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("🔎", fontSize = 14.sp)
-                    BasicTextField(query, { query = it }, Modifier.weight(1f), textStyle = TextStyle(color = p.ink, fontFamily = FontFamily.SansSerif, fontSize = 14.sp, fontWeight = FontWeight.Bold), cursorBrush = SolidColor(p.acc), singleLine = true, decorationBox = { inner -> Box { if (query.isEmpty()) Text("Search place, city, or street…", color = p.soft, fontSize = 12.sp); inner() } })
-                    if (query.isNotEmpty()) Box(Modifier.clip(RoundedCornerShape(6.dp)).background(p.panel2).clickable { query = "" }.padding(horizontal = 7.dp, vertical = 2.dp)) { Text("CLEAR", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 9.5.sp, fontWeight = FontWeight.Bold) }
+                    BasicTextField(tfv, { tfv = it }, Modifier.weight(1f), textStyle = TextStyle(color = p.ink, fontFamily = FontFamily.SansSerif, fontSize = 14.sp, fontWeight = FontWeight.Bold), cursorBrush = SolidColor(p.acc), singleLine = true, decorationBox = { inner -> Box { if (query.isEmpty()) Text("Search place, city, or street…", color = p.soft, fontSize = 12.sp); inner() } })
+                    if (query.isNotEmpty()) Box(Modifier.clip(RoundedCornerShape(6.dp)).background(p.panel2).clickable { setQueryEnd("") }.padding(horizontal = 7.dp, vertical = 2.dp)) { Text("CLEAR", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 9.5.sp, fontWeight = FontWeight.Bold) }
                 }
                 val resultsPane: @Composable (Modifier) -> Unit = { rMod ->
                     Column(rMod.then(if (dense) Modifier.height(if (splitCols) 137.dp else 84.dp) else Modifier).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -290,19 +297,19 @@ private fun SearchPanel(
                     }
                 }
                 val kbPane: @Composable (Modifier) -> Unit = { kMod ->
-                    val keyH = 30.dp
+                    val keyH = 29.dp
                     val keyRows = if (symMode) listOf("1234567890", "-/:;()&@.,", "#+!?%'\"") else listOf("QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM")
                     Column(kMod, verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         keyRows.forEachIndexed { idx, keys ->
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                                 keys.forEach { ch ->
-                                    Box(Modifier.weight(1f).height(keyH).clip(RoundedCornerShape(6.dp)).background(p.panel2).border(1.dp, p.hairline, RoundedCornerShape(6.dp)).clickable { query += ch.lowercaseChar() }, contentAlignment = Alignment.Center) {
-                                        Text(ch.toString(), color = p.ink, fontFamily = FontFamily.Monospace, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+                                    Box(Modifier.weight(1f).height(keyH).clip(RoundedCornerShape(6.dp)).background(p.panel2).border(1.dp, p.hairline, RoundedCornerShape(6.dp)).clickable { setQueryEnd(query + ch.lowercaseChar()) }, contentAlignment = Alignment.Center) {
+                                        Text(ch.toString(), color = p.ink, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
                                 if (idx == 2) {
-                                    Box(Modifier.weight(1.4f).height(keyH).clip(RoundedCornerShape(6.dp)).background(p.panel2).border(1.dp, p.err.copy(alpha = 0.5f), RoundedCornerShape(6.dp)).clickable { query = query.dropLast(1) }, contentAlignment = Alignment.Center) {
-                                        Text("⌫", color = p.err, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
+                                    Box(Modifier.weight(1.35f).height(keyH).clip(RoundedCornerShape(6.dp)).background(p.panel2).border(1.dp, p.err.copy(alpha = 0.5f), RoundedCornerShape(6.dp)).clickable { setQueryEnd(query.dropLast(1)) }, contentAlignment = Alignment.Center) {
+                                        Text("⌫", color = p.err, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
@@ -316,7 +323,7 @@ private fun SearchPanel(
                                     Text("🎤", fontSize = 13.sp)
                                 }
                             }
-                            Box(Modifier.weight(2.8f).height(keyH).clip(RoundedCornerShape(6.dp)).background(p.panel2).border(1.dp, p.hairline, RoundedCornerShape(6.dp)).clickable { query += " " }, contentAlignment = Alignment.Center) {
+                            Box(Modifier.weight(2.7f).height(keyH).clip(RoundedCornerShape(6.dp)).background(p.panel2).border(1.dp, p.hairline, RoundedCornerShape(6.dp)).clickable { setQueryEnd("$query ") }, contentAlignment = Alignment.Center) {
                                 Text("SPACE", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
                             }
                             if (results.isNotEmpty()) {
@@ -372,8 +379,8 @@ private fun LayersPanel(camera: MapCamera, tiles: TileStore, modifier: Modifier)
                 LayerChip("SAT", camera.basemap == 2) { camera.basemap = 2 }
             }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("NORTH-UP (OFF = HEADING)", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 9.sp, modifier = Modifier.weight(1f))
-                Switch(camera.northUp, { camera.northUp = it }, colors = SwitchDefaults.colors(checkedTrackColor = p.acc, checkedThumbColor = if (p.isLight) Color.White else Color(0xFF05070A)))
+                Text("PERSPECTIVE TOP-DEAD-CENTER", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 9.sp, modifier = Modifier.weight(1f))
+                Switch(!camera.northUp, { camera.northUp = !it }, colors = SwitchDefaults.colors(checkedTrackColor = p.acc, checkedThumbColor = if (p.isLight) Color.White else Color(0xFF05070A)))
             }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("3D TILT", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 9.sp, modifier = Modifier.weight(1f))
@@ -392,7 +399,7 @@ private fun LayersPanel(camera: MapCamera, tiles: TileStore, modifier: Modifier)
 private fun LayerChip(label: String, sel: Boolean, onClick: () -> Unit) {
     val p = LocalAmni.current
     Box(Modifier.clip(RoundedCornerShape(9.dp)).background(if (sel) p.acc else p.panel2).border(1.dp, if (sel) p.acc else p.line2, RoundedCornerShape(9.dp)).clickable { onClick() }.padding(horizontal = 10.dp, vertical = 7.dp)) {
-        Text(label, color = if (sel) Color(0xFF05070A) else p.soft, fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+        Text(label, color = if (sel) (if (p.isLight) Color.White else Color(0xFF05070A)) else p.soft, fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold)
     }
 }
 @Composable

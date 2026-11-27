@@ -118,10 +118,14 @@ import com.amni.drive.map.VoiceGuide
 import com.amni.drive.map.rememberMapCamera
 import com.amni.drive.voice.VoiceSearch
 import com.amni.drive.media.IncomingMsg
+import com.amni.drive.media.MediaBrowserHub
 import com.amni.drive.media.MediaSessionBridge
 import com.amni.drive.media.MessageFeed
+import com.amni.drive.media.NativeMediaAppTile
 import com.amni.drive.weather.WeatherNow
 import com.amni.drive.weather.Wx
+import com.amni.drive.wire.AaAudioStreamer
+import com.amni.drive.wire.AudioCaptureGrantActivity
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.LocalTime
@@ -146,6 +150,7 @@ onToggleGate: () -> Unit,
 onToggleWeather: (Boolean) -> Unit,
 onConfirmPassenger: () -> Unit,
 onOpenSettings: () -> Unit,
+onOpenTutorial: () -> Unit = {},
 initialPage: DrivePage = DrivePage.HOME,
 carSurface: Boolean = false,
 surfaceDisplayId: Int? = null,
@@ -171,12 +176,36 @@ LaunchedEffect(page) { if (page != DrivePage.HOME) expandedTile = null }
 var menuOpen by remember { mutableStateOf(false) }
 var layoutPicker by remember { mutableStateOf(false) }
 var widgetPicker by remember { mutableStateOf(false) }
+var mapStudioOpen by remember { mutableStateOf(false) }
 var blocked by remember { mutableStateOf<AppEntry?>(null) }
 var mediaHint by remember { mutableStateOf<String?>(null) }
 var launchHint by remember { mutableStateOf<String?>(null) }
 var mediaPicker by remember { mutableStateOf(false) }
 var embeddedMediaApp by remember { mutableStateOf<AppEntry?>(null) }
 var embeddedWebApp by remember { mutableStateOf<WebAppEntry?>(null) }
+var autoRegisteredMedia by remember { mutableStateOf(false) }
+val dashKbHost = remember { DashKeyboardHost() }
+val mapStudioPrefs by AmniMapStudio.prefs.collectAsState()
+LaunchedEffect(p.isLight, mapStudioPrefs) {
+AmniMapStudio.ensureLoaded(ctxRoot)
+AmniMapStudio.syncHostTheme(ctxRoot, p.isLight)
+}
+val liveNp by MediaSessionBridge.nowPlaying.collectAsState()
+LaunchedEffect(apps, liveNp?.pkg) {
+MediaSessionBridge.ensureStarted(ctxRoot)
+if (!autoRegisteredMedia && embeddedMediaApp == null && embeddedWebApp == null && apps.isNotEmpty()) {
+val activePkg = liveNp?.pkg
+val preferred = (if (!activePkg.isNullOrBlank()) apps.firstOrNull { it.packageName.equals(activePkg, true) } else null)
+?: apps.firstOrNull { it.packageName.equals("com.spotify.music", true) }
+?: apps.firstOrNull { it.packageName.equals("com.google.android.apps.youtube.music", true) }
+?: apps.firstOrNull { it.packageName.equals("com.apple.android.music", true) }
+if (preferred != null) {
+embeddedMediaApp = preferred
+mediaHint = preferred.label
+autoRegisteredMedia = true
+}
+}
+}
 val hasAmniMap = remember(apps) { com.amni.drive.launcher.CarEmbed.supports(ctxRoot, com.amni.drive.launcher.CarEmbed.MAP_PKG) }
 var useAmniMap by remember(carSurface, hasAmniMap) { mutableStateOf(carSurface && hasAmniMap) }
 val navScope = rememberCoroutineScope()
@@ -185,21 +214,18 @@ val mediaAppsList = remember(apps) {
 apps.filter {
 it.category == com.amni.drive.gate.AppCategory.MEDIA ||
 it.category == com.amni.drive.gate.AppCategory.VIDEO ||
-it.packageName.contains("spotify", true) ||
-it.packageName.contains("music", true) ||
+MediaBrowserHub.isAudioApp(ctxRoot, it.packageName) ||
 it.packageName.contains("youtube", true) ||
 it.packageName.contains("netflix", true) ||
 it.packageName.contains("disney", true) ||
 it.packageName.contains("hulu", true) ||
 it.packageName.contains("plex", true) ||
 it.packageName.contains("twitch", true) ||
-it.packageName.contains("pandora", true) ||
-it.packageName.contains("audible", true) ||
-it.packageName.contains("prime", true) ||
-it.packageName.contains("pocketcasts", true)
+it.packageName.contains("prime", true)
 }
 }
 val openWebInMediaBox: (WebAppEntry) -> Unit = { web ->
+autoRegisteredMedia = true
 embeddedMediaApp = null
 embeddedWebApp = web
 mediaHint = web.label
@@ -212,10 +238,21 @@ useAmniMap = true
 page = DrivePage.HOME
 launchHint = "Amni-Map active"
 } else {
+val isAudio = MediaBrowserHub.isAudioApp(ctxRoot, app.packageName) || app.category == com.amni.drive.gate.AppCategory.MEDIA
+if (isAudio) {
+autoRegisteredMedia = true
+embeddedWebApp = null
+embeddedMediaApp = app
+mediaHint = app.label
+page = DrivePage.HOME
+MediaBrowserHub.wakeAndPlay(ctxRoot, app.packageName)
+launchHint = "▶ ${app.label} (Signed In)"
+} else {
 val d = onLaunch(app)
 if (!d.allow) {
 blocked = app
 } else {
+autoRegisteredMedia = true
 mediaHint = app.label
 if (carSurface) {
 val webMatch = if (!com.amni.drive.launcher.CarApps.ready.value) WebAppEntry.matchPackage(app.packageName) else null
@@ -228,15 +265,8 @@ embeddedMediaApp = app
 }
 page = DrivePage.HOME
 }
-val isAudio = app.category == com.amni.drive.gate.AppCategory.MEDIA || app.packageName.contains("spotify", true) || app.packageName.contains("music", true)
-if (isAudio) {
-playViaBrowser(ctxRoot, app.packageName) { mediaKey(ctxRoot, KeyEvent.KEYCODE_MEDIA_PLAY) }
-navScope.launch {
-delay(650)
-if (!MediaSessionBridge.play()) mediaKey(ctxRoot, KeyEvent.KEYCODE_MEDIA_PLAY)
-}
-}
 launchHint = "▶ ${app.label}"
+}
 }
 }
 }
@@ -247,7 +277,11 @@ var showLayers by remember { mutableStateOf(false) }
 var showReport by remember { mutableStateOf(false) }
 val camera = rememberMapCamera()
 val reports by reportStore.reports.collectAsState()
-LaunchedEffect(theme.basemap, p.isLight) { camera.basemap = if (theme.basemap < 0) (if (p.isLight) 1 else 0) else theme.basemap }
+LaunchedEffect(theme.basemap, p.isLight, mapStudioPrefs.headingUp, mapStudioPrefs.perspective3d) {
+camera.basemap = if (theme.basemap < 0) (if (p.isLight) 1 else 0) else theme.basemap
+camera.northUp = !mapStudioPrefs.headingUp
+camera.tilt = mapStudioPrefs.perspective3d
+}
 val moving = driveState == DriveState.MOVING || driveState == DriveState.UNKNOWN
 val speedMph = ((location?.speed ?: 0f) * 2.23694f).roundToInt()
 val addPoint: (Double, Double) -> Unit = { la, lo -> if (stops.isEmpty()) stops.add(RoutePoint(la, lo)) else stops.add(stops.size - 1, RoutePoint(la, lo)) }
@@ -346,14 +380,16 @@ val netOk by produceState(true) {
 val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 while (true) { value = cm.activeNetwork != null; delay(3000) }
 }
-val anyOverlayOpen = menuOpen || layoutPicker || widgetPicker || mediaPicker || orbKbOpen || blocked != null || showLayers || showReport
+val anyOverlayOpen = menuOpen || layoutPicker || widgetPicker || mapStudioOpen || mediaPicker || orbKbOpen || dashKbHost.active != null || blocked != null || showLayers || showReport
 SideEffect { com.amni.drive.launcher.CarEmbed.overlayBlocking = anyOverlayOpen }
 DisposableEffect(Unit) { onDispose { com.amni.drive.launcher.CarEmbed.overlayBlocking = false } }
+CompositionLocalProvider(LocalDashKeyboard provides dashKbHost) {
 BoxWithConstraints(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(p.bg, if (p.isLight) Color(0xFFE8ECF0) else Color(0xFF05070A))))) {
+val isPortraitPhone = !carSurface && maxHeight > maxWidth * 1.15f
 val aspect = maxWidth / maxHeight
 val micro = maxWidth < 520.dp || maxHeight < 220.dp
 val dense = carSurface || maxHeight < 560.dp || aspect > 1.5f || maxWidth < 960.dp
-val bottomDock = theme.dockPosition == 1
+val bottomDock = theme.dockPosition == 1 || isPortraitPhone
 val railW = if (bottomDock) 0.dp else when {
 micro -> 48.dp
 maxWidth < 720.dp -> 54.dp
@@ -373,11 +409,11 @@ contentW < 640.dp -> baseWidgetW.coerceAtMost(140.dp)
 dense -> baseWidgetW
 else -> (baseWidgetW + 44.dp)
 }
-val showTopBar = !carSurface && maxHeight > 480.dp && !micro
+val showTopBar = !carSurface && maxHeight > 480.dp && (!micro || isPortraitPhone)
 val mediaPulse by AaNavState.mediaPulse.collectAsState()
 var mediaFlash by remember { mutableStateOf(false) }
 LaunchedEffect(mediaPulse) { if (mediaPulse > 0L) { mediaFlash = true; page = DrivePage.HOME; delay(1200); mediaFlash = false } }
-val layout = resolveTileLayout(theme.tileLayout, micro, dense, contentW, maxHeight, carSurface)
+val layout = resolveTileLayout(theme.tileLayout, micro && !isPortraitPhone, dense, contentW, maxHeight, carSurface)
 if (theme.weatherBg && !micro && !carSurface) WeatherLayer(weather?.wx ?: Wx.NONE, moving, Modifier.fillMaxSize())
 Row(Modifier.fillMaxSize()) {
 if (!bottomDock) {
@@ -403,7 +439,7 @@ openInMediaBox(app)
 }
 DrivePage.NAV -> Box(Modifier.fillMaxSize().padding(pad)) {
 if (useAmniMap && carSurface && hasAmniMap) {
-AmniMapEmbedTile(Modifier.fillMaxSize(), isExpanded = true, carUiScale = theme.carUiScale, onToggleExpand = { page = DrivePage.HOME }) { useAmniMap = false }
+AmniMapEmbedTile(Modifier.fillMaxSize(), isExpanded = true, carUiScale = theme.carUiScale, onToggleExpand = { page = DrivePage.HOME }, onOpenStudio = { mapStudioOpen = true }) { useAmniMap = false }
 } else {
 MapCard(Modifier.fillMaxSize(), camera, tiles, route, reports, stops, location, routing, true, netOk, showLayers, showReport, { showLayers = it }, { showReport = it }, reportStore, addPoint, onGo, onAddStop, onEnd, dense || micro, if (carSurface) ({ AaNavState.openHostSearch() }) else null, onVoice, isExpanded = true, onToggleExpand = { page = DrivePage.HOME })
 }
@@ -423,9 +459,11 @@ surfaceDisplayId = surfaceDisplayId,
 useAmniMap = useAmniMap && hasAmniMap,
 hasAmniMap = hasAmniMap,
 onToggleAmniMap = { useAmniMap = !useAmniMap },
+onOpenMapStudio = { mapStudioOpen = true },
 embeddedMediaApp = embeddedMediaApp,
 embeddedWebApp = embeddedWebApp,
-onClearMediaApp = { embeddedMediaApp = null; embeddedWebApp = null },
+onOpenWebFallback = openWebInMediaBox,
+onClearMediaApp = { autoRegisteredMedia = true; embeddedMediaApp = null; embeddedWebApp = null },
 widgetsList = theme.widgets,
 onSetWidgets = onSetWidgets,
 onEditWidgets = { widgetPicker = true },
@@ -513,6 +551,9 @@ onClose = { menuOpen = false },
 onMedia = { menuOpen = false; mediaPicker = true },
 onTileLayout = { menuOpen = false; layoutPicker = true },
 onWidgets = { menuOpen = false; widgetPicker = true },
+onMapStudio = { menuOpen = false; mapStudioOpen = true },
+onReportBug = { menuOpen = false; CrashReportActivity.openBugReporter(ctxRoot); if (carSurface) launchHint = "🐞 Scrubbed bug report opened on phone" },
+onTutorial = { menuOpen = false; onOpenTutorial() },
 onToggleDock = { onSetDockPosition(if (theme.dockPosition == 0) 1 else 0) },
 onToggleSwap = { onSetSwapMapMedia(!theme.swapMapMedia) },
 onSetCarUiScale = onSetCarUiScale,
@@ -536,14 +577,43 @@ onClose = { layoutPicker = false },
 compact = carSurface
 )
 if (widgetPicker) WidgetPickerSheet(theme.widgets, theme.widgetWidthMode, theme.widgetCompact, onSetWidgets, onSetWidgetWidthMode, onSetWidgetCompact) { widgetPicker = false }
+if (mapStudioOpen) AmniMapStudioSheet(ctxRoot, mapStudioPrefs, p.isLight) { mapStudioOpen = false }
 if (mediaPicker) MediaSourceSheet(mediaAppsList, apps, { mediaPicker = false }, { openInMediaBox(it); mediaPicker = false }, { openWebInMediaBox(it); mediaPicker = false })
+dashKbHost.active?.let { kb ->
+BoxWithConstraints(
+Modifier.fillMaxSize().background(p.scrim.copy(alpha = 0.35f)).clickable { kb.onClose() },
+contentAlignment = Alignment.BottomCenter
+) {
+Box(
+Modifier
+.fillMaxWidth(if (maxWidth > 720.dp) 0.94f else 0.99f)
+.padding(horizontal = 4.dp, vertical = 5.dp)
+.clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) {}
+) {
+CarTouchKeyboard(
+preview = kb.preview,
+voiceStatus = kb.voiceStatus,
+placeholder = kb.placeholder,
+enterLabel = kb.enterLabel,
+isMapMode = kb.isMapMode,
+onText = kb.onText,
+onBackspace = kb.onBackspace,
+onClear = kb.onClear,
+onEnter = kb.onEnter,
+onAutoGo = kb.onAutoGo,
+onVoice = kb.onVoice,
+onClose = kb.onClose
+)
+}
+}
+}
 if (orbKbOpen) {
 Box(
 Modifier.fillMaxSize().background(p.scrim.copy(alpha = 0.45f)).clickable { orbKbOpen = false },
 contentAlignment = Alignment.BottomCenter
 ) {
 Box(
-Modifier.fillMaxWidth(0.88f).padding(bottom = 8.dp)
+Modifier.fillMaxWidth(0.95f).padding(bottom = 6.dp)
 .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) {}
 ) {
 CarTouchKeyboard(
@@ -597,6 +667,7 @@ GateSheet(app, rearAvailable,
 onRear = { onLaunchRear(app); blocked = null },
 onPassenger = { onConfirmPassenger(); if (onLaunch(app).allow) { embeddedMediaApp = app; blocked = null } },
 onDismiss = { blocked = null })
+}
 }
 }
 }
@@ -670,8 +741,10 @@ surfaceDisplayId: Int?,
 useAmniMap: Boolean = false,
 hasAmniMap: Boolean = false,
 onToggleAmniMap: () -> Unit = {},
+onOpenMapStudio: () -> Unit = {},
 embeddedMediaApp: AppEntry? = null,
 embeddedWebApp: WebAppEntry? = null,
+onOpenWebFallback: (WebAppEntry) -> Unit = {},
 onClearMediaApp: () -> Unit = {},
 widgetsList: List<DashWidget> = DashWidget.DEFAULTS,
 onSetWidgets: (List<DashWidget>) -> Unit = {},
@@ -716,6 +789,7 @@ carUiScale: Float = 1.0f,
 fontScale: Float = 1.0f
 ) {
 val p = LocalAmni.current
+val ctxHome = LocalContext.current
 val dens = LocalDensity.current
 val wDense = dense || widgetCompact
 var liveMapRatio by remember(mapSplitRatio) { mutableStateOf(mapSplitRatio) }
@@ -730,6 +804,7 @@ compactOrb = orb,
 isExpanded = mapFull,
 carUiScale = carUiScale,
 onToggleExpand = if (orb) null else ({ onToggleExpand("MAP") }),
+onOpenStudio = if (orb) null else onOpenMapStudio,
 onSwitchBuiltIn = onToggleAmniMap
 )
 } else {
@@ -943,11 +1018,11 @@ val mediaFull = expandedTile == "MEDIA"
 val onToggleMediaFull: () -> Unit = { onToggleExpand("MEDIA") }
 when {
 embeddedWebApp != null -> EmbeddedWebMediaTile(embeddedWebApp, mod.then(mediaMod), isExpanded = mediaFull, fontScale = fontScale, onToggleExpand = onToggleMediaFull, onChangeApp = onOpenMediaPicker, onCloseToControls = onClearMediaApp)
+embeddedMediaApp != null && (MediaBrowserHub.isAudioApp(ctxHome, embeddedMediaApp.packageName) || embeddedMediaApp.category == com.amni.drive.gate.AppCategory.MEDIA) -> NativeMediaAppTile(app = embeddedMediaApp, modifier = mod.then(mediaMod), isExpanded = mediaFull, onToggleExpand = onToggleMediaFull, onOpenWebFallback = WebAppEntry.matchPackage(embeddedMediaApp.packageName)?.let { w -> ({ onOpenWebFallback(w) }) }, onChangeApp = onOpenMediaPicker, onCloseToControls = onClearMediaApp)
 embeddedMediaApp != null && carSurface -> EmbeddedAppMediaTile(embeddedMediaApp, mod.then(mediaMod), isExpanded = mediaFull, onToggleExpand = onToggleMediaFull, onChangeApp = onOpenMediaPicker, onCloseToControls = onClearMediaApp)
 else -> MediaCard(mod.then(mediaMod), d, mediaHint, surfaceDisplayId, mediaApps, onOpenMediaPicker, isExpanded = mediaFull, onToggleExpand = onToggleMediaFull)
 }
 }
-
 if (expandedTile != null) {
 Box(Modifier.fillMaxSize().padding(pad)) {
 when (expandedTile) {
@@ -959,7 +1034,6 @@ else -> map(Modifier.fillMaxSize(), false)
 }
 return
 }
-
 BoxWithConstraints(Modifier.fillMaxSize()) {
 val isPortraitCar = maxHeight > maxWidth * 1.05f
 if (isPortraitCar && layout != TileLayout.MAP_ONLY) {
@@ -1494,6 +1568,9 @@ onClose: () -> Unit,
 onMedia: () -> Unit,
 onTileLayout: () -> Unit,
 onWidgets: () -> Unit = {},
+onMapStudio: () -> Unit = {},
+onReportBug: () -> Unit = {},
+onTutorial: () -> Unit = {},
 onToggleDock: () -> Unit = {},
 onToggleSwap: () -> Unit = {},
 onSetCarUiScale: (Float) -> Unit = {},
@@ -1553,7 +1630,8 @@ MenuRow(Icons.Rounded.Home, "Home", "Dashboard & map", page == DrivePage.HOME) {
 MenuRow(Icons.Rounded.Apps, "All Apps", "Everything installed", page == DrivePage.APPS) { onPage(DrivePage.APPS) }
 MenuRow(Icons.Rounded.Map, "Navigation", "Full-screen map", page == DrivePage.NAV) { onPage(DrivePage.NAV) }
 }
-MenuRow(Icons.Rounded.MusicNote, "Media & Apps", "Spotify, YouTube, Netflix, any app", false) { onMedia() }
+MenuRow(Icons.Rounded.MusicNote, "Media & Apps", "Signed-in Spotify, YT Music, web & apps", false) { onMedia() }
+MenuRow(Icons.Rounded.Map, "Amni-Map 3D Studio", "3D buildings · trees · bridges · vehicles", false) { onMapStudio() }
 MenuRow(Icons.Rounded.Palette, "Theme", "$themeLabel · tap to cycle", false) { onTheme() }
 MenuRow(Icons.Rounded.ViewModule, "Tile layout", tileLayout.label + " · fit glass", false) { onTileLayout() }
 MenuRow(Icons.Rounded.Apps, "Widgets", "Customize & drag-edit cards", false) { onWidgets() }
@@ -1573,14 +1651,16 @@ onClose()
 Box(Modifier.fillMaxWidth().height(1.dp).background(p.hairline).padding(vertical = 5.dp))
 MenuSwitch(Icons.Rounded.Security, "Driver gate", gateOn) { onToggleGate() }
 MenuSwitch(Icons.Rounded.WaterDrop, "Weather background", weatherOn) { onToggleWeather(it) }
-if (!carSurface) {
 Box(Modifier.fillMaxWidth().height(1.dp).background(p.hairline))
-MenuRow(Icons.Rounded.Settings, "Settings", "Gate · themes · car · link", false, onSettings)
+MenuRow(Icons.Rounded.Info, "Report Bug", "Attach scrubbed log · no personal data", false) { onReportBug() }
+if (!carSurface) {
+MenuRow(Icons.Rounded.Info, "Setup & Connection Guide", "First-launch tutorial · audio · USB/Wi-Fi", false) { onTutorial() }
+MenuRow(Icons.Rounded.Settings, "Settings", "Gate · themes · 3D map · wire · link", false, onSettings)
+}
 Spacer(Modifier.weight(1f))
 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
 Icon(Icons.Rounded.Info, null, Modifier.size(14.dp), tint = p.dim)
-Text("v1.2.0 · modern shell · AA · link", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 8.sp)
-}
+Text("v${com.amni.drive.BuildConfig.VERSION_NAME} · Amni-Scient · AA · Link", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 8.sp)
 }
 }
 }
@@ -1730,12 +1810,14 @@ onToggleExpand: (() -> Unit)? = null
 val p = LocalAmni.current
 val ctx = LocalContext.current
 val np by MediaSessionBridge.nowPlaying.collectAsState()
-LaunchedEffect(Unit) { MediaSessionBridge.start(ctx) }
+val audioArmed by AaAudioStreamer.armed.collectAsState()
+val audioStreaming by AaAudioStreamer.streaming.collectAsState()
+LaunchedEffect(Unit) { MediaSessionBridge.ensureStarted(ctx) }
 val (src, fallbackPlaying) = rememberMediaSource(ctx)
 val playing = np?.playing ?: fallbackPlaying
 val title = np?.title?.takeIf { it.isNotBlank() } ?: preferred?.takeIf { it.isNotBlank() } ?: src
 val subtitle = np?.let { listOf(it.artist, it.appLabel).filter { s -> s.isNotBlank() }.joinToString(" · ") } ?: ""
-val hasAccess = remember { MediaSessionBridge.hasAccess(ctx) }
+val hasAccess = remember(np) { MediaSessionBridge.hasAccess(ctx) }
 val pad = if (dense) 8.dp else 16.dp
 Box(modifier) {
 GlassCard(Modifier.fillMaxSize()) {
@@ -1744,6 +1826,9 @@ Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, hor
 AccentBar(Modifier.width(if (dense) 14.dp else 28.dp).height(3.dp))
 Text("MEDIA", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = if (dense) 9.sp else 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
 Spacer(Modifier.weight(1f))
+Box(Modifier.clip(RoundedCornerShape(99.dp)).background(if (audioArmed) p.accDim else p.panel2).border(1.dp, if (audioArmed) p.acc else p.hairline, RoundedCornerShape(99.dp)).clickable { if (audioArmed) AaAudioStreamer.stopAll(ctx) else AudioCaptureGrantActivity.launch(ctx) }.padding(horizontal = 7.dp, vertical = 2.dp)) {
+Text(if (audioStreaming) "🔊 LIVE" else if (audioArmed) "🔊 CAR" else "🔊 BT", color = if (audioArmed) p.acc else p.soft, fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+}
 Box(Modifier.clip(RoundedCornerShape(99.dp)).background(p.accDim).border(1.dp, p.acc.copy(alpha = 0.5f), RoundedCornerShape(99.dp)).clickable { onOpenPicker() }.padding(horizontal = 8.dp, vertical = 2.dp)) {
 Text("SOURCE", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 9.sp, fontWeight = FontWeight.Bold)
 }
@@ -1826,10 +1911,31 @@ onPickWeb: (WebAppEntry) -> Unit = {}
 ) {
 val p = LocalAmni.current
 val ctx = LocalContext.current
-var tab by remember { mutableStateOf(0) }
+var tab by remember { mutableStateOf(if (mediaApps.isNotEmpty()) 0 else 1) }
 var query by remember { mutableStateOf("") }
 var showKb by remember { mutableStateOf(false) }
 var voiceStatus by remember { mutableStateOf<String?>(null) }
+val startVoiceFilter: () -> Unit = {
+VoiceSearch.listen(ctx, { voiceStatus = it }, { spoken ->
+if (!spoken.isNullOrBlank()) { query = spoken.trim(); voiceStatus = null; showKb = false }
+})
+}
+val dockedKb = BindDashKeyboard(
+enabled = showKb,
+spec = DashKeyboardSpec(
+id = "media_source_filter",
+preview = query,
+voiceStatus = voiceStatus,
+placeholder = "Filter Spotify, audio & web apps…",
+enterLabel = "DONE ↵",
+onText = { query = (query + it).take(32) },
+onBackspace = { query = query.dropLast(1) },
+onClear = { query = "" },
+onEnter = { showKb = false },
+onVoice = startVoiceFilter,
+onClose = { showKb = false }
+)
+)
 Box(Modifier.fillMaxSize().background(p.scrim).clickable { onClose() }, contentAlignment = Alignment.Center) {
 SoftSurface(
 Modifier
@@ -1839,9 +1945,9 @@ Modifier
 radius = 18.dp
 ) {
 Column(Modifier.padding(12.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
 Text("MEDIA BOX", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 11.5.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-listOf("CAR WEB APPS", "MEDIA", "ALL (${allApps.size})").forEachIndexed { idx, label ->
+listOf("SIGNED-IN AUDIO", "CAR WEB APPS", "ALL (${allApps.size})").forEachIndexed { idx, label ->
 val on = tab == idx
 Box(Modifier.clip(RoundedCornerShape(99.dp)).background(if (on) p.acc else p.panel2).border(1.dp, p.acc.copy(alpha = 0.6f), RoundedCornerShape(99.dp)).clickable { tab = idx }.padding(horizontal = 9.dp, vertical = 4.dp)) {
 Text(label, color = if (on) (if (p.isLight) Color.White else Color(0xFF05070A)) else p.ink, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)
@@ -1864,21 +1970,17 @@ Modifier.clip(RoundedCornerShape(99.dp)).background(p.panel2).border(1.dp, p.hai
 Text("CLOSE ✕", color = p.ink, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)
 }
 }
-if (showKb) {
+if (showKb && !dockedKb) {
 CarTouchKeyboard(
 preview = query,
 voiceStatus = voiceStatus,
-placeholder = "Filter web & installed apps…",
+placeholder = "Filter Spotify, audio & web apps…",
 enterLabel = "DONE ↵",
 onText = { query = (query + it).take(32) },
 onBackspace = { query = query.dropLast(1) },
 onClear = { query = "" },
 onEnter = { showKb = false },
-onVoice = {
-VoiceSearch.listen(ctx, { voiceStatus = it }, { spoken ->
-if (!spoken.isNullOrBlank()) { query = spoken.trim(); voiceStatus = null; showKb = false }
-})
-},
+onVoice = startVoiceFilter,
 onClose = { showKb = false }
 )
 }
@@ -1894,8 +1996,8 @@ Text("▶", color = p.acc, fontSize = 14.sp, fontWeight = FontWeight.Bold)
 Spacer(Modifier.width(10.dp))
 Text("Play / Resume Active Audio", color = p.ink, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
 }
-if (tab == 0) {
-Text("Runs directly inside car display · no ADB · no screenshare · never opens on phone", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 9.5.sp)
+if (tab == 1) {
+Text("Runs directly inside car display · synced with phone Web Sign-In", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 9.5.sp)
 val webFiltered = if (query.isBlank()) WebAppEntry.CATALOG else WebAppEntry.CATALOG.filter { it.label.contains(query.trim(), ignoreCase = true) || it.id.contains(query.trim(), ignoreCase = true) }
 webFiltered.chunked(2).forEach { pair ->
 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
@@ -1913,10 +2015,12 @@ Text(web.label, color = p.ink, fontSize = 12.5.sp, fontWeight = FontWeight.SemiB
 }
 }
 } else {
+Text("Uses your phone's active sign-in, playlists & audio session directly in the dashboard", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 9.5.sp)
 val baseShown = if (tab == 2) allApps else mediaApps
 val shown = if (query.isBlank()) baseShown else baseShown.filter { it.label.contains(query.trim(), ignoreCase = true) || it.packageName.contains(query.trim(), ignoreCase = true) }
 if (shown.isEmpty()) Text("No matching apps · tap ALL or CAR WEB APPS above", color = p.soft, fontSize = 11.5.sp)
 shown.take(50).forEach { app ->
+val signedAudio = MediaBrowserHub.isAudioApp(ctx, app.packageName)
 Row(
 Modifier.fillMaxWidth().height(42.dp).clip(RoundedCornerShape(12.dp)).background(p.panel2).border(1.dp, p.hairline, RoundedCornerShape(12.dp))
 .clickable { onPick(app) }.padding(horizontal = 12.dp),
@@ -1925,7 +2029,7 @@ verticalAlignment = Alignment.CenterVertically
 Icon(Icons.Rounded.MusicNote, null, Modifier.size(18.dp), tint = p.acc)
 Spacer(Modifier.width(10.dp))
 Text(app.label, color = p.ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-Text("OPEN →", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+Text(if (signedAudio) "✓ SIGNED IN →" else "OPEN →", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)
 }
 }
 }
@@ -2185,7 +2289,7 @@ Text("${app.label} is gated while moving", color = p.ink, fontSize = 17.sp, font
 Text("Video pauses on the driver screen when moving. Send it rear — crew watches, you drive.", color = p.soft, fontSize = 13.sp, textAlign = TextAlign.Center, lineHeight = 18.sp)
 Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
 if (rear) Box(Modifier.clip(RoundedCornerShape(12.dp)).background(p.accentBrush).clickable { onRear() }.padding(horizontal = 15.dp, vertical = 11.dp)) {
-Text("SEND TO REAR →", color = Color(0xFF05070A), fontFamily = FontFamily.Monospace, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+Text("SEND TO REAR →", color = if (p.isLight) Color.White else Color(0xFF05070A), fontFamily = FontFamily.Monospace, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
 }
 Box(Modifier.clip(RoundedCornerShape(12.dp)).border(1.dp, p.acc, RoundedCornerShape(12.dp)).clickable { onPassenger() }.padding(horizontal = 15.dp, vertical = 11.dp)) {
 Text("I'M A PASSENGER", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)

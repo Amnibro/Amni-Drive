@@ -55,15 +55,16 @@ import com.amni.drive.config.DriveConfig
 import com.amni.drive.link.LinkProto
 import kotlinx.coroutines.launch
 private enum class SettingsPage(val icon: String, val title: String, val sub: String) {
+    LOOKS("🎨", "APPEARANCE", "Themes · UI scale · tiles"),
+    AMNI_MAP("🗺️", "AMNI-MAP 3D", "Buildings · trees · bridges · rides"),
+    UPDATES("📦", "OTA & AMNI APPS", "Auto-updater · Amni-Map & suite"),
     GATE("🛡️", "DISTRACTION GATE", "Per-display · no hard locks"),
     NAV("🧭", "NAVIGATION", "Voice prompts · rerouting"),
     AUTO("🔌", "AUTO-START", "Plug in & go · wireless & go"),
-    LOOKS("🎨", "APPEARANCE", "Presets · accent · weather · tiles"),
-    UPDATES("📦", "OTA & AMNI APPS", "Auto-updater · Amni-Map & suite"),
     CAR("🚗", "CAR / USB", "Plug phone into factory Android Auto"),
-    WIRE("⚡", "AMNI WIRE", "Replace Android Auto on the wire"),
+    WIRE("⚡", "AMNI WIRE", "Audio · certs · wireless AA · sign-ins"),
     LINK("🔗", "AMNI LINK", "Phone host · Android head unit"),
-    ABOUT("ℹ️", "ABOUT", "Amni-Drive v${com.amni.drive.BuildConfig.VERSION_NAME} · AA replacement")
+    ABOUT("ℹ️", "ABOUT & LOGS", "Tutorial · bug report · v${com.amni.drive.BuildConfig.VERSION_NAME}")
 }
 class SettingsActivity : ComponentActivity() {
     companion object {
@@ -91,19 +92,29 @@ class SettingsActivity : ComponentActivity() {
 @Composable
 private fun SettingsScreen(store: ConfigStore, themes: ThemeStore, theme: UiTheme, initialPage: SettingsPage = SettingsPage.LOOKS, onBack: () -> Unit) {
     val p = LocalAmni.current
+    val ctx = LocalContext.current
+    val primaryPages = setOf(SettingsPage.LOOKS, SettingsPage.AMNI_MAP, SettingsPage.UPDATES, SettingsPage.WIRE, SettingsPage.ABOUT)
     var page by remember { mutableStateOf(initialPage) }
-    var advanced by remember { mutableStateOf(initialPage !in setOf(SettingsPage.LOOKS, SettingsPage.UPDATES, SettingsPage.ABOUT)) }
+    var advanced by remember { mutableStateOf(initialPage !in primaryPages) }
     val ota by com.amni.drive.update.OtaUpdater.state.collectAsStateWithLifecycle()
+    val mapPrefs by AmniMapStudio.prefs.collectAsStateWithLifecycle()
+    androidx.compose.runtime.LaunchedEffect(Unit) { AmniMapStudio.ensureLoaded(ctx) }
     Column(Modifier.fillMaxSize().background(p.bg).padding(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("‹", color = p.acc, fontSize = 22.sp, modifier = Modifier.clickable { onBack() }.padding(horizontal = 8.dp))
             Text("SETTINGS", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 17.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
+            Spacer(Modifier.weight(1f))
+            Box(Modifier.clip(RoundedCornerShape(99.dp)).background(p.accDim).border(1.dp, p.acc, RoundedCornerShape(99.dp)).clickable {
+                CrashReportActivity.openBugReporter(ctx)
+            }.padding(horizontal = 11.dp, vertical = 5.dp)) {
+                Text("🐞 REPORT BUG", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            }
         }
         Spacer(Modifier.height(10.dp))
         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             GlassCard(Modifier.width(250.dp).fillMaxHeight()) {
                 Column(Modifier.padding(8.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    SettingsPage.entries.filter { advanced || it == SettingsPage.LOOKS || it == SettingsPage.UPDATES || it == SettingsPage.ABOUT }.forEach { pg ->
+                    SettingsPage.entries.filter { advanced || it in primaryPages }.forEach { pg ->
                         val sel = page == pg
                         val badge = if (pg == SettingsPage.UPDATES && ota.totalUpdatesCount > 0) " (${ota.totalUpdatesCount})" else ""
                         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(if (sel) p.accDim else Color.Transparent).border(1.dp, if (sel) p.acc.copy(alpha = 0.4f) else Color.Transparent, RoundedCornerShape(12.dp)).clickable { page = pg }.padding(10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -114,7 +125,7 @@ private fun SettingsScreen(store: ConfigStore, themes: ThemeStore, theme: UiThem
                             }
                         }
                     }
-                    Text(if (advanced) "HIDE ADVANCED" else "ADVANCED", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { advanced = !advanced; if (!advanced && page !in setOf(SettingsPage.LOOKS, SettingsPage.UPDATES, SettingsPage.ABOUT)) page = SettingsPage.LOOKS }.padding(horizontal = 12.dp, vertical = 14.dp))
+                    Text(if (advanced) "HIDE ADVANCED" else "ADVANCED", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { advanced = !advanced; if (!advanced && page !in primaryPages) page = SettingsPage.LOOKS }.padding(horizontal = 12.dp, vertical = 14.dp))
                 }
             }
             GlassCard(Modifier.weight(1f).fillMaxHeight()) {
@@ -124,6 +135,7 @@ private fun SettingsScreen(store: ConfigStore, themes: ThemeStore, theme: UiThem
                         SettingsPage.NAV -> NavPane(store)
                         SettingsPage.AUTO -> AutoPane(store)
                         SettingsPage.LOOKS -> LooksPane(themes, theme)
+                        SettingsPage.AMNI_MAP -> AmniMapStudioControls(ctx, mapPrefs, p.isLight, compact = false)
                         SettingsPage.UPDATES -> UpdatesAndAppsPane()
                         SettingsPage.CAR -> CarUsbPane()
                         SettingsPage.WIRE -> WirePane()
@@ -951,12 +963,28 @@ private fun AboutPane() {
     val ctx = LocalContext.current
     Text("AMNI//DRV", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 20.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
     Text(
-        "v${com.amni.drive.BuildConfig.VERSION_NAME} (build ${com.amni.drive.BuildConfig.VERSION_CODE}) — Universal USB Android Auto replacement with native Amni-Map embed, customizable resizable cockpit layouts, built-in OTA auto-updater, and packaged Amni Apps hub.",
+        "v${com.amni.drive.BuildConfig.VERSION_NAME} (build ${com.amni.drive.BuildConfig.VERSION_CODE}) — Universal USB & Wireless Android Auto replacement with native 3D Amni-Map studio, signed-in phone music carry-over, AAP USB/Wi-Fi car speaker audio, and privacy-scrubbed diagnostics.",
         color = p.soft,
         fontSize = 12.sp,
         lineHeight = 17.sp
     )
-    Box(Modifier.clip(RoundedCornerShape(12.dp)).background(p.acc).clickable {
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Box(Modifier.clip(RoundedCornerShape(12.dp)).background(p.acc).clickable {
+            ctx.startActivity(
+                Intent(ctx, com.amni.drive.MainActivity::class.java)
+                    .putExtra(com.amni.drive.MainActivity.EXTRA_TUTORIAL, true)
+                    .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            )
+        }.padding(horizontal = 14.dp, vertical = 10.dp)) {
+            Text("🎓 SETUP & CONNECTION GUIDE", color = if (p.isLight) Color.White else Color(0xFF05070A), fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        }
+        Box(Modifier.clip(RoundedCornerShape(12.dp)).background(p.panel2).border(1.dp, p.acc, RoundedCornerShape(12.dp)).clickable {
+            CrashReportActivity.openBugReporter(ctx)
+        }.padding(horizontal = 14.dp, vertical = 10.dp)) {
+            Text("🐞 REPORT BUG (SCRUBBED LOG)", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        }
+    }
+    Box(Modifier.clip(RoundedCornerShape(12.dp)).background(p.panel2).border(1.dp, p.line, RoundedCornerShape(12.dp)).clickable {
         runCatching {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val rm = ctx.getSystemService(Context.ROLE_SERVICE) as RoleManager
@@ -965,10 +993,10 @@ private fun AboutPane() {
             } else ctx.startActivity(Intent(android.provider.Settings.ACTION_HOME_SETTINGS))
         }
     }.padding(horizontal = 16.dp, vertical = 10.dp)) {
-        Text("SET AS DEFAULT LAUNCHER (HEAD UNIT)", color = if (p.isLight) Color.White else Color(0xFF05070A), fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+        Text("SET AS DEFAULT LAUNCHER (HEAD UNIT)", color = p.ink, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
     }
-    Text("ON THE HEAD UNIT: TAP ABOVE (OR PRESS HOME) → PICK AMNI-DRIVE → ALWAYS. THE HOME BUTTON THEN OPENS AMNI//DRV INSTEAD OF THE STOCK LAUNCHER. ON A PHONE, JUST OPEN THE APP NORMALLY — DON'T SET IT AS YOUR PHONE LAUNCHER.", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 8.sp, lineHeight = 12.sp)
-    Text("MAP DATA © OPENSTREETMAP CONTRIBUTORS · TILES CARTO + ESRI · ROUTING OSRM · WEATHER OPEN-METEO · AMNI-SCIENT.COM", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 8.sp, lineHeight = 12.sp)
+    Text("BUG & CRASH PRIVACY: ALL REPORTS AUTOMATICALLY SCRUB GPS COORDINATES, SEARCH QUERIES, ADDRESSES, TOKENS, MACS & PERSONAL DATA BEFORE SENDING TO ANTHONY@AMNI-SCIENT.COM.", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 8.5.sp, lineHeight = 13.sp)
+    Text("MAP DATA © OPENSTREETMAP CONTRIBUTORS · TILES OPENFREEMAP + ESRI · ROUTING OSRM · WEATHER OPEN-METEO · AMNI-SCIENT.COM", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 8.sp, lineHeight = 12.sp)
 }
 @Composable
 private fun SetRow(icon: String, title: String, desc: String, checked: Boolean, onChange: (Boolean) -> Unit) {

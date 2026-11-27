@@ -44,6 +44,7 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
 private lateinit var controller: DriveController
 private var startPage by mutableStateOf(DrivePage.HOME)
+private var forceTutorial by mutableStateOf(false)
 @Volatile private var huMode = false
 override fun onCreate(savedInstanceState: Bundle?) {
 super.onCreate(savedInstanceState)
@@ -53,14 +54,16 @@ requestLocation()
 applyDriveIntent(intent)
 setContent {
 val theme by app.themeStore.theme.collectAsStateWithLifecycle(UiTheme())
-val cfg by controller.config.collectAsStateWithLifecycle(DriveConfig())
+val cfgState by controller.config.collectAsStateWithLifecycle( null )
 val state by controller.driveState.collectAsStateWithLifecycle(DriveState.UNKNOWN)
 val passenger by controller.passengerConfirmed.collectAsStateWithLifecycle()
 val location by app.tracker.location.collectAsStateWithLifecycle()
 val ota by com.amni.drive.update.OtaUpdater.state.collectAsStateWithLifecycle()
 var dismissOtaBanner by remember { mutableStateOf(false) }
+var unsentCrash by remember { mutableStateOf(com.amni.drive.diag.CrashReporter.latestUnsent(this@MainActivity)) }
 var apps by remember { mutableStateOf<List<AppEntry>>(emptyList()) }
 var weather by remember { mutableStateOf<WeatherNow?>(null) }
+val cfg = cfgState ?: DriveConfig(onboardingCompleted = true)
 LaunchedEffect(Unit) { apps = controller.apps() }
 LaunchedEffect(state) { if (state == DriveState.MOVING) controller.clearPassenger() }
 LaunchedEffect(Unit) {
@@ -70,6 +73,17 @@ if (l != null) { WeatherService.fetch(l.latitude, l.longitude)?.let { weather = 
 }
 }
 AmniDriveTheme(rememberPalette(theme)) {
+if (cfgState != null && (!cfg.onboardingCompleted || forceTutorial)) {
+com.amni.drive.ui.OnboardingWizard(
+theme = theme,
+themeStore = app.themeStore,
+configStore = app.configStore,
+onFinish = {
+forceTutorial = false
+lifecycleScope.launch { apps = controller.apps() }
+}
+)
+} else {
 androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize()) {
 Dashboard(
 apps = apps, cfg = cfg, driveState = state, passenger = passenger, theme = theme,
@@ -81,6 +95,7 @@ onToggleGate = { lifecycleScope.launch { controller.setDriverGate(!cfg.driverGat
 onToggleWeather = { v -> lifecycleScope.launch { app.themeStore.setWeather(v) } },
 onConfirmPassenger = { controller.confirmPassenger() },
 onOpenSettings = { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) },
+onOpenTutorial = { forceTutorial = true },
 initialPage = startPage,
 onSetTileLayout = { v -> lifecycleScope.launch { app.themeStore.setTileLayout(v) } },
 onSetWidgets = { v -> lifecycleScope.launch { app.themeStore.setWidgets(v) } },
@@ -91,9 +106,54 @@ onSetMapSplitRatio = { v -> lifecycleScope.launch { app.themeStore.setMapSplitRa
 onSetWidgetRatio = { v -> lifecycleScope.launch { app.themeStore.setWidgetRatio(v) } },
 onSetSwapMapMedia = { v -> lifecycleScope.launch { app.themeStore.setSwapMapMedia(v) } },
 onSetCarUiScale = { v -> lifecycleScope.launch { app.themeStore.setCarUiScale(v) } },
-onSetFontScale = { v -> lifecycleScope.launch { app.themeStore.setFontScale(v) } }
+onSetFontScale = { v -> lifecycleScope.launch { app.themeStore.setFontScale(v) } },
+onCycleTheme = {
+lifecycleScope.launch {
+val next = com.amni.drive.ui.AmniPreset.entries[(theme.preset.ordinal + 1) % com.amni.drive.ui.AmniPreset.entries.size]
+app.themeStore.setPreset(next)
+}
+}
 )
-if (ota.totalUpdatesCount > 0 && !dismissOtaBanner) {
+val crashFile = unsentCrash
+if (crashFile != null) {
+val p = com.amni.drive.ui.LocalAmni.current
+androidx.compose.foundation.layout.Row(
+modifier = androidx.compose.ui.Modifier
+.align(androidx.compose.ui.Alignment.TopCenter)
+.padding(top = 10.dp)
+.clip(androidx.compose.foundation.shape.RoundedCornerShape(99.dp))
+.background(p.panel)
+.border(1.5.dp, p.gold, androidx.compose.foundation.shape.RoundedCornerShape(99.dp))
+.clickable {
+startActivity(
+Intent(this@MainActivity, com.amni.drive.ui.CrashReportActivity::class.java)
+.putExtra(com.amni.drive.ui.CrashReportActivity.EXTRA_PATH, crashFile.absolutePath)
+.putExtra(com.amni.drive.ui.CrashReportActivity.EXTRA_CRASH, true)
+)
+unsentCrash = null
+}
+.padding(horizontal = 14.dp, vertical = 7.dp),
+verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp)
+) {
+androidx.compose.material3.Text(
+"⚠ Crash log captured — tap to email ${com.amni.drive.diag.CrashReporter.SUPPORT_EMAIL}",
+color = p.gold,
+fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+fontSize = 11.sp,
+fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+)
+androidx.compose.material3.Text(
+"✕",
+color = p.soft,
+fontSize = 12.sp,
+modifier = androidx.compose.ui.Modifier.clickable {
+com.amni.drive.diag.CrashReporter.dismissUnsent(this@MainActivity)
+unsentCrash = null
+}.padding(horizontal = 4.dp)
+)
+}
+} else if (ota.totalUpdatesCount > 0 && !dismissOtaBanner) {
 val p = com.amni.drive.ui.LocalAmni.current
 val bannerMsg = if (ota.selfUpdateAvailable && ota.selfRelease != null) {
 "⬆ Amni-Drive v${ota.selfRelease!!.versionName} OTA ready — tap to update"
@@ -136,14 +196,18 @@ modifier = androidx.compose.ui.Modifier.clickable { dismissOtaBanner = true }.pa
 }
 }
 }
+}
 override fun onNewIntent(intent: Intent) {
 super.onNewIntent(intent)
 setIntent(intent)
 applyDriveIntent(intent)
 }
 override fun onStart() { super.onStart(); (application as AmniDriveApp).tracker.start() }
-override fun onStop() { super.onStop() /* keep shared tracker running for car display */ }
+override fun onStop() { super.onStop() }
 private fun applyDriveIntent(intent: Intent?) {
+if (intent?.getBooleanExtra(EXTRA_TUTORIAL, false) == true) {
+forceTutorial = true
+}
 val page = when (intent?.getStringExtra(EXTRA_PAGE)?.lowercase()) {
 "nav", "navigation", "map" -> DrivePage.NAV
 "apps" -> DrivePage.APPS
@@ -205,6 +269,7 @@ const val EXTRA_PAGE = "amni_page"
 const val EXTRA_DRIVE_MODE = "amni_drive_mode"
 const val EXTRA_START_PROJECTION = "amni_start_projection"
 const val EXTRA_START_AOA = "amni_start_aoa"
+const val EXTRA_TUTORIAL = "amni_open_tutorial"
 const val ACTION_OPEN_NAV = "com.amni.drive.action.OPEN_NAV"
 const val ACTION_OWN_STACK = "com.amni.drive.action.OWN_STACK"
 fun openNavIntent(from: android.content.Context): Intent =

@@ -44,7 +44,7 @@ val oldMph = (cur.speed * 2.23694f).toInt()
 val newMph = (nl.speed * 2.23694f).toInt()
 val movedM = cur.distanceTo(nl)
 val degDiff = kotlin.math.abs(((nl.bearing - cur.bearing + 540f) % 360f) - 180f)
-if (oldMph != newMph || movedM >= 15f || (newMph >= 2 && degDiff >= 6f)) {
+if (oldMph != newMph || movedM >= 1.5f || degDiff >= 3f || nl.time - cur.time >= 1500L) {
 location = nl
 }
 }

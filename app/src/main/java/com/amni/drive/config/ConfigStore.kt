@@ -30,7 +30,8 @@ it[MESH] ?: true,
 it[VOICENAV] ?: true,
 it[MSGBANNER] ?: true,
 it[MSGREAD] ?: true,
-it[HUFULL] ?: true
+it[HUFULL] ?: true,
+it[ONBOARDED] ?: false
 )
 }
 suspend fun setMaster(v: Boolean) = write { it[MASTER] = v }
@@ -48,6 +49,7 @@ suspend fun setVoiceNav(v: Boolean) = write { it[VOICENAV] = v }
 suspend fun setMsgBanner(v: Boolean) = write { it[MSGBANNER] = v }
 suspend fun setMsgAutoRead(v: Boolean) = write { it[MSGREAD] = v }
 suspend fun setHuFullscreen(v: Boolean) = write { it[HUFULL] = v }
+suspend fun setOnboardingCompleted(v: Boolean) = write { it[ONBOARDED] = v }
 suspend fun applyGateOffDefaultOnce() = context.dataStore.edit {
 if (it[GATE_OFF_V13] != true) {
 it[MASTER] = false
@@ -74,5 +76,6 @@ private val MSGBANNER = booleanPreferencesKey("msgbanner")
 private val MSGREAD = booleanPreferencesKey("msgread")
 private val HUFULL = booleanPreferencesKey("hufullscreen")
 private val GATE_OFF_V13 = booleanPreferencesKey("gate_off_default_v13")
+private val ONBOARDED = booleanPreferencesKey("onboarding_completed_v13")
 }
 }

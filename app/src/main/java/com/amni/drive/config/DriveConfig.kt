@@ -15,7 +15,8 @@ val meshBridgeEnabled: Boolean = true,
 val voiceNav: Boolean = true,
 val msgBanner: Boolean = true,
 val msgAutoRead: Boolean = true,
-val huFullscreen: Boolean = true
+val huFullscreen: Boolean = true,
+val onboardingCompleted: Boolean = false
 ) {
 companion object {
 const val PATH_RIDE = "ride"

@@ -45,19 +45,26 @@ private const val TAG = "Amni.MediaBridge"
 private val _nowPlaying = MutableStateFlow<NowPlaying?>(null)
 val nowPlaying: StateFlow<NowPlaying?> = _nowPlaying.asStateFlow()
 private var controller: MediaController? = null
+private var activeControllers: List<MediaController> = emptyList()
 private var started = false
+private var appRef: Context? = null
 private val controllerCb = object : MediaController.Callback() {
-override fun onMetadataChanged(metadata: MediaMetadata?) { publish() }
-override fun onPlaybackStateChanged(state: PlaybackState?) { publish() }
-override fun onSessionDestroyed() { controller = null; _nowPlaying.value = null }
+override fun onMetadataChanged(metadata: MediaMetadata?) { publish(appRef) }
+override fun onPlaybackStateChanged(state: PlaybackState?) { publish(appRef) }
+override fun onSessionDestroyed() { controller = null; _nowPlaying.value = null; appRef?.let { refreshSessions(it) } }
 }
 fun hasAccess(ctx: Context): Boolean = NotificationManagerCompat.getEnabledListenerPackages(ctx).contains(ctx.packageName)
 fun requestAccess(ctx: Context) {
 runCatching { ctx.startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
 }
+fun ensureStarted(ctx: Context) {
+if (!started) start(ctx) else refreshSessions(ctx.applicationContext)
+}
 fun start(ctx: Context) {
-if (started || !hasAccess(ctx)) return
+if (!hasAccess(ctx)) return
 val app = ctx.applicationContext
+appRef = app
+if (started) { refreshSessions(app); return }
 val msm = app.getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
 val comp = ComponentName(app, AmniNotifListener::class.java)
 runCatching {
@@ -67,8 +74,15 @@ started = true
 Log.i(TAG, "bridge started")
 }.onFailure { Log.w(TAG, "start failed ${it.message}") }
 }
+private fun refreshSessions(app: Context) {
+if (!hasAccess(app)) return
+val msm = app.getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
+val comp = ComponentName(app, AmniNotifListener::class.java)
+runCatching { attach(app, msm.getActiveSessions(comp)) }
+}
 private fun attach(ctx: Context, list: List<MediaController>?) {
-val best = list.orEmpty().sortedByDescending { c ->
+activeControllers = list.orEmpty()
+val best = activeControllers.sortedByDescending { c ->
 val st = c.playbackState?.state
 (if (st == PlaybackState.STATE_PLAYING) 2 else if (st == PlaybackState.STATE_PAUSED) 1 else 0)
 }.firstOrNull()
@@ -77,6 +91,8 @@ controller = best
 best?.registerCallback(controllerCb)
 publish(ctx)
 }
+private fun findController(pkg: String?): MediaController? =
+if (pkg.isNullOrBlank()) controller else activeControllers.firstOrNull { it.packageName.equals(pkg, true) } ?: controller?.takeIf { it.packageName.equals(pkg, true) }
 private fun publish(ctx: Context? = null) {
 val c = controller ?: run { _nowPlaying.value = null; return }
 val md = c.metadata
@@ -91,7 +107,10 @@ c.playbackState?.state == PlaybackState.STATE_PLAYING
 )
 }
 fun playPause(): Boolean = controller?.let { val playing = it.playbackState?.state == PlaybackState.STATE_PLAYING; if (playing) it.transportControls.pause() else it.transportControls.play(); true } ?: false
-fun next(): Boolean = controller?.let { it.transportControls.skipToNext(); true } ?: false
-fun prev(): Boolean = controller?.let { it.transportControls.skipToPrevious(); true } ?: false
+fun playPausePackage(pkg: String): Boolean = findController(pkg)?.let { val playing = it.playbackState?.state == PlaybackState.STATE_PLAYING; if (playing) it.transportControls.pause() else it.transportControls.play(); true } ?: false
+fun playPackage(pkg: String): Boolean = findController(pkg)?.let { it.transportControls.play(); true } ?: false
+fun playSearch(pkg: String, query: String): Boolean = findController(pkg)?.let { it.transportControls.playFromSearch(query, android.os.Bundle()); true } ?: false
+fun next(pkg: String? = null): Boolean = findController(pkg)?.let { it.transportControls.skipToNext(); true } ?: false
+fun prev(pkg: String? = null): Boolean = findController(pkg)?.let { it.transportControls.skipToPrevious(); true } ?: false
 fun play(): Boolean = controller?.let { it.transportControls.play(); true } ?: false
 }

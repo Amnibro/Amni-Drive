@@ -50,10 +50,9 @@ class WebLoginActivity : ComponentActivity() {
     companion object {
         private const val EXTRA_URL = "url"
         private const val EXTRA_LABEL = "label"
-
+        val syncPulse = kotlinx.coroutines.flow.MutableStateFlow(0L)
         fun cleanChromeUserAgent(raw: String): String =
             raw.replace("; wv", "").replace(Regex("Version/\\d+\\.\\d+\\s*"), "")
-
         fun open(ctx: Context, url: String, label: String): Boolean {
             val appCtx = ctx.applicationContext
             val intent = Intent(appCtx, WebLoginActivity::class.java)
@@ -75,7 +74,6 @@ class WebLoginActivity : ComponentActivity() {
             }.getOrDefault(false)
         }
     }
-
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -103,11 +101,11 @@ class WebLoginActivity : ComponentActivity() {
                                 .background(p.panel2)
                                 .border(1.dp, p.hairline, RoundedCornerShape(10.dp))
                                 .clickable { if (webRef?.canGoBack() == true) webRef?.goBack() else finish() }
-                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                                .padding(horizontal = 10.dp, vertical = 7.dp)
                         ) { Text("◀", color = p.ink, fontWeight = FontWeight.Bold) }
                         Column(Modifier.weight(1f)) {
                             Text(title, color = p.ink, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text("Shared with Car Display · sign in here once", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 9.sp)
+                            Text("Shared with Car Display · auto-syncs to Media box", color = p.soft, fontFamily = FontFamily.Monospace, fontSize = 9.sp)
                         }
                         Box(
                             Modifier
@@ -115,6 +113,7 @@ class WebLoginActivity : ComponentActivity() {
                                 .background(p.acc)
                                 .clickable {
                                     runCatching { CookieManager.getInstance().flush() }
+                                    syncPulse.value = android.os.SystemClock.uptimeMillis()
                                     finish()
                                 }
                                 .padding(horizontal = 12.dp, vertical = 7.dp)
@@ -135,6 +134,7 @@ class WebLoginActivity : ComponentActivity() {
                                 settings.javaScriptEnabled = true
                                 settings.domStorageEnabled = true
                                 settings.databaseEnabled = true
+                                settings.javaScriptCanOpenWindowsAutomatically = true
                                 settings.userAgentString = cleanChromeUserAgent(settings.userAgentString)
                                 settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
                                 runCatching {
@@ -158,9 +158,9 @@ class WebLoginActivity : ComponentActivity() {
             }
         }
     }
-
     override fun onPause() {
         runCatching { CookieManager.getInstance().flush() }
+        syncPulse.value = android.os.SystemClock.uptimeMillis()
         super.onPause()
     }
 }

@@ -37,6 +37,18 @@
         <intent>
             <action android:name="android.speech.action.RECOGNIZE_SPEECH" />
         </intent>
+        <intent>
+            <action android:name="android.media.browse.MediaBrowserService" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MEDIA_BUTTON" />
+        </intent>
+        <package android:name="com.spotify.music" />
+        <package android:name="com.google.android.apps.youtube.music" />
+        <package android:name="com.apple.android.music" />
+        <package android:name="com.amazon.mp3" />
+        <package android:name="com.audible.application" />
+        <package android:name="com.pandora.android" />
     </queries>
     <application
         android:name=".AmniDriveApp"
@@ -141,6 +153,14 @@
             android:name=".ui.WebLoginActivity"
             android:exported="false"
             android:label="Car Web Sign-In"
+            android:configChanges="orientation|screenSize|keyboardHidden|density|uiMode"
+            android:theme="@style/Theme.AmniDrive" />
+        <activity
+            android:name=".ui.CrashReportActivity"
+            android:process=":crash"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:label="Amni-Drive Diagnostics"
             android:configChanges="orientation|screenSize|keyboardHidden|density|uiMode"
             android:theme="@style/Theme.AmniDrive" />
         <service
