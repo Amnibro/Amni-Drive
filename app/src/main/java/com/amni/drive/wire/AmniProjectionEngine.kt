@@ -214,12 +214,7 @@ class AmniProjectionEngine(
                 }
             }
 
-            val effH = (height - heightMargin).coerceAtLeast(360)
-            val carDpi = if (effH < 600) {
-                (dpi * 1.35f).toInt().coerceIn(200, 280)
-            } else {
-                (dpi * 1.62f).toInt().coerceIn(320, 430)
-            }
+            val carDpi = computeCarDpi(width, height, widthMargin, heightMargin)
             val dm = context.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
             val flags = DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY or
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_PRESENTATION
@@ -229,7 +224,6 @@ class AmniProjectionEngine(
             virtualDisplay = vd
             val display = vd.display ?: throw IllegalStateException("no virtual display")
             onLog("VirtualDisplay id=${display.displayId} ${width}x$height@$fps dpi=$carDpi (raw=$dpi) margins=${widthMargin}x${heightMargin}")
-
             val app = context.applicationContext as AmniDriveApp
             val latch = CountDownLatch(1)
             var uiErr: Throwable? = null
@@ -240,21 +234,16 @@ class AmniProjectionEngine(
                     val padY = (heightMargin / 2f).coerceAtLeast(0f)
                     val p = RearPresentation(context, display) {
                         val baseDens = LocalDensity.current
-                        val carFontScale = (baseDens.fontScale * 1.24f).coerceIn(1.20f, 1.40f)
-                        androidx.compose.runtime.CompositionLocalProvider(
-                            LocalDensity provides androidx.compose.ui.unit.Density(baseDens.density, fontScale = carFontScale)
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .background(Color.Black)
+                                .padding(
+                                    horizontal = with(baseDens) { padX.toDp() },
+                                    vertical = with(baseDens) { padY.toDp() }
+                                )
                         ) {
-                            Box(
-                                Modifier
-                                    .fillMaxSize()
-                                    .background(Color.Black)
-                                    .padding(
-                                        horizontal = with(baseDens) { padX.toDp() },
-                                        vertical = with(baseDens) { padY.toDp() }
-                                    )
-                            ) {
-                                RideDashboard(app, controller, DrivePage.HOME, surfaceDisplayId = display.displayId)
-                            }
+                            RideDashboard(app, controller, DrivePage.HOME, surfaceDisplayId = display.displayId)
                         }
                     }
                     p.window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED)
@@ -325,5 +314,12 @@ class AmniProjectionEngine(
 
     companion object {
         private const val TAG = "Amni.Projection"
+        fun computeCarDpi(width: Int, height: Int, widthMargin: Int = 0, heightMargin: Int = 0): Int {
+            val effW = (width - widthMargin).coerceAtLeast(480)
+            val effH = (height - heightMargin).coerceAtLeast(360)
+            val dpiByH = effH * 160f / 415f
+            val dpiByW = effW * 160f / 690f
+            return (minOf(dpiByH, dpiByW) + 0.5f).toInt().coerceIn(150, 370)
+        }
     }
 }

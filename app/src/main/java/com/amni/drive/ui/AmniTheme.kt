@@ -259,7 +259,8 @@ data class UiTheme(
     val dockPosition: Int = 0, // 0 = left rail, 1 = bottom-center dock
     val mapSplitRatio: Float = 0.54f,
     val widgetRatio: Float = 0.24f,
-    val swapMapMedia: Boolean = false
+    val swapMapMedia: Boolean = false,
+    val carUiScale: Float = 1.0f
 )
 
 class ThemeStore(private val context: Context) {
@@ -282,7 +283,8 @@ class ThemeStore(private val context: Context) {
             dockPosition = (it[DOCK_POSITION] ?: 0).coerceIn(0, 1),
             mapSplitRatio = (it[MAP_SPLIT_RATIO] ?: 0.54f).coerceIn(0.24f, 0.78f),
             widgetRatio = (it[WIDGET_RATIO] ?: 0.24f).coerceIn(0.14f, 0.42f),
-            swapMapMedia = it[SWAP_MAP_MEDIA] ?: false
+            swapMapMedia = it[SWAP_MAP_MEDIA] ?: false,
+            carUiScale = (it[CAR_UI_SCALE] ?: 1.0f).coerceIn(0.80f, 1.40f)
         )
     }
 
@@ -307,6 +309,7 @@ class ThemeStore(private val context: Context) {
     suspend fun setMapSplitRatio(ratio: Float) = context.themeStore.edit { it[MAP_SPLIT_RATIO] = ratio.coerceIn(0.24f, 0.78f) }
     suspend fun setWidgetRatio(ratio: Float) = context.themeStore.edit { it[WIDGET_RATIO] = ratio.coerceIn(0.14f, 0.42f) }
     suspend fun setSwapMapMedia(swap: Boolean) = context.themeStore.edit { it[SWAP_MAP_MEDIA] = swap }
+    suspend fun setCarUiScale(scale: Float) = context.themeStore.edit { it[CAR_UI_SCALE] = scale.coerceIn(0.80f, 1.40f) }
 
     companion object {
         private val PRESET = stringPreferencesKey("preset")
@@ -327,6 +330,7 @@ class ThemeStore(private val context: Context) {
         private val MAP_SPLIT_RATIO = floatPreferencesKey("map_split_ratio")
         private val WIDGET_RATIO = floatPreferencesKey("widget_ratio")
         private val SWAP_MAP_MEDIA = booleanPreferencesKey("swap_map_media")
+        private val CAR_UI_SCALE = floatPreferencesKey("car_ui_scale")
     }
 }
 

@@ -3,6 +3,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -54,29 +56,89 @@ private val FILTERS = listOf("ALL" to null, "NAV" to AppCategory.NAV, "MEDIA" to
 @Composable
 fun AppDrawer(apps: List<AppEntry>, cfg: DriveConfig, state: DriveState, passenger: Boolean, tileScale: Int, onLaunch: (AppEntry) -> Unit) {
 val p = LocalAmni.current
+val ctx = LocalContext.current
 var filter by remember { mutableStateOf<AppCategory?>(null) }
-val shown = if (filter == null) apps else apps.filter { it.category == filter || (filter == AppCategory.SAFE && it.category == AppCategory.INTERACTIVE) }
-val cell = when (tileScale) { 0 -> 100.dp; 2 -> 140.dp; else -> 118.dp }
-Column(Modifier.fillMaxSize().padding(horizontal = 14.dp)) {
-Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+var query by remember { mutableStateOf("") }
+var showKb by remember { mutableStateOf(false) }
+var voiceStatus by remember { mutableStateOf<String?>(null) }
+val catShown = if (filter == null) apps else apps.filter { it.category == filter || (filter == AppCategory.SAFE && it.category == AppCategory.INTERACTIVE) }
+val shown = if (query.isBlank()) catShown else catShown.filter { it.label.contains(query.trim(), ignoreCase = true) || it.packageName.contains(query.trim(), ignoreCase = true) }
+val cell = when (tileScale) { 0 -> 97.dp; 2 -> 137.dp; else -> 114.dp }
+Box(Modifier.fillMaxSize()) {
+Column(Modifier.fillMaxSize().padding(horizontal = 10.dp)) {
+Row(
+Modifier.fillMaxWidth().padding(vertical = 5.dp).then(Modifier),
+horizontalArrangement = Arrangement.spacedBy(7.dp),
+verticalAlignment = Alignment.CenterVertically
+) {
+Box(
+Modifier.clip(RoundedCornerShape(99.dp))
+.background(if (showKb || query.isNotBlank()) p.acc else p.panel2)
+.border(1.dp, p.acc.copy(alpha = 0.65f), RoundedCornerShape(99.dp))
+.clickable { showKb = !showKb }
+.padding(horizontal = 12.dp, vertical = 7.dp)
+) {
+Text(
+if (query.isBlank()) "🔎 SEARCH" else "🔎 ${query.take(14)}",
+color = if (showKb || query.isNotBlank()) (if (p.isLight) Color.White else Color(0xFF05070A)) else p.acc,
+fontFamily = FontFamily.Monospace,
+fontSize = 11.sp,
+fontWeight = FontWeight.Bold
+)
+}
+if (query.isNotBlank()) {
+Box(
+Modifier.clip(RoundedCornerShape(99.dp)).background(p.panel2).border(1.dp, p.hairline, RoundedCornerShape(99.dp))
+.clickable { query = ""; showKb = false }.padding(horizontal = 9.dp, vertical = 7.dp)
+) {
+Text("✕", color = p.ink, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+}
+}
+Row(
+Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+horizontalArrangement = Arrangement.spacedBy(7.dp),
+verticalAlignment = Alignment.CenterVertically
+) {
 FILTERS.forEach { (label, cat) ->
 val sel = filter == cat
 Box(
 Modifier.clip(RoundedCornerShape(99.dp))
-.background(if (sel) Brush.horizontalGradient(listOf(p.acc.copy(alpha = 0.22f), p.acc.copy(alpha = 0.08f))) else Brush.horizontalGradient(listOf(p.panel.copy(alpha = 0.7f), p.panel.copy(alpha = 0.7f))))
-.border(1.dp, if (sel) p.acc.copy(alpha = 0.5f) else p.hairline, RoundedCornerShape(99.dp))
+.background(if (sel) Brush.horizontalGradient(listOf(p.acc.copy(alpha = 0.24f), p.acc.copy(alpha = 0.10f))) else Brush.horizontalGradient(listOf(p.panel.copy(alpha = 0.8f), p.panel.copy(alpha = 0.8f))))
+.border(1.dp, if (sel) p.acc.copy(alpha = 0.6f) else p.hairline, RoundedCornerShape(99.dp))
 .clickable { filter = cat }
-.padding(horizontal = 16.dp, vertical = 10.dp)
+.padding(horizontal = 13.dp, vertical = 7.dp)
 ) {
-Text(label, color = if (sel) p.acc else p.soft, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+Text(label, color = if (sel) p.acc else p.soft, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)
 }
 }
-Box(Modifier.weight(1f))
-val gatedCount = shown.count { isGated(it, cfg, state, passenger) }
-if (gatedCount > 0) Text("$gatedCount gated — tap to send rear", color = p.dim, fontSize = 11.sp)
 }
-LazyVerticalGrid(GridCells.Adaptive(cell), Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-items(shown, key = { it.packageName }) { app -> AppCell(app, isGated(app, cfg, state, passenger), cell) { onLaunch(app) } }
+}
+LazyVerticalGrid(GridCells.Adaptive(cell), Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(9.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+items(shown, key = { it.packageName }) { app -> AppCell(app, isGated(app, cfg, state, passenger), cell) { showKb = false; onLaunch(app) } }
+}
+}
+if (showKb) {
+Box(Modifier.fillMaxSize().clickable { showKb = false }, contentAlignment = Alignment.BottomCenter) {
+CarTouchKeyboard(
+preview = query,
+voiceStatus = voiceStatus,
+placeholder = "Filter installed apps…",
+enterLabel = if (shown.size == 1) "OPEN ↵" else "DONE ↵",
+onText = { query = (query + it).take(32) },
+onBackspace = { query = query.dropLast(1) },
+onClear = { query = "" },
+onEnter = {
+if (shown.size == 1) { val pick = shown.first(); showKb = false; onLaunch(pick) }
+else showKb = false
+},
+onVoice = {
+com.amni.drive.voice.VoiceSearch.listen(ctx, { voiceStatus = it }, { spoken ->
+if (!spoken.isNullOrBlank()) { query = spoken.trim(); voiceStatus = null; showKb = false }
+})
+},
+onClose = { showKb = false }
+)
+}
 }
 }
 }

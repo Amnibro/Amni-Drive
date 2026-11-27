@@ -66,6 +66,11 @@ delay(900_000L)
 } else delay(5_000L)
 }
 }
+val baseDens = androidx.compose.ui.platform.LocalDensity.current
+val uiScale = theme.carUiScale.coerceIn(0.80f, 1.40f)
+androidx.compose.runtime.CompositionLocalProvider(
+androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(baseDens.density * uiScale, fontScale = 1.14f)
+) {
 AmniDriveTheme(rememberPalette(theme)) {
 Dashboard(
 apps = apps,
@@ -99,6 +104,8 @@ onSetDockPosition = { v -> scope.launch { app.themeStore.setDockPosition(v) } },
 onSetMapSplitRatio = { v -> scope.launch { app.themeStore.setMapSplitRatio(v) } },
 onSetWidgetRatio = { v -> scope.launch { app.themeStore.setWidgetRatio(v) } },
 onSetSwapMapMedia = { v -> scope.launch { app.themeStore.setSwapMapMedia(v) } },
+onSetCarUiScale = { v -> scope.launch { app.themeStore.setCarUiScale(v) } },
+onSetFontScale = { v -> scope.launch { app.themeStore.setFontScale(v) } },
 onCycleTheme = {
 android.util.Log.i("Amni.Theme", "cycle from ${theme.preset}")
 scope.launch {
@@ -107,5 +114,6 @@ runCatching { app.themeStore.setPreset(com.amni.drive.ui.AmniPreset.entries[(the
 }
 }
 )
+}
 }
 }

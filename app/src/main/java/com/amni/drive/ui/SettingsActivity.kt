@@ -217,8 +217,14 @@ private fun LooksPane(themes: ThemeStore, theme: UiTheme) {
         }
     }
     Text("ACCESSIBILITY & COMFORT", color = p.acc, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
+    Text("CAR SCREEN UI SCALE", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 9.sp, letterSpacing = 1.5.sp)
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+        listOf("COMPACT 85%" to 0.85f, "STANDARD 100%" to 1.0f, "LARGE 115%" to 1.15f, "XL 130%" to 1.30f).forEach { (label, sc) ->
+            Seg(label, kotlin.math.abs(theme.carUiScale - sc) < 0.04f) { scope.launch { themes.setCarUiScale(sc) } }
+        }
+    }
     Text("TEXT SIZE", color = p.dim, fontFamily = FontFamily.Monospace, fontSize = 9.sp, letterSpacing = 1.5.sp)
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
         listOf("NORMAL" to 1.0f, "LARGE" to 1.15f, "XL" to 1.3f).forEach { (label, sc) ->
             Seg(label, kotlin.math.abs(theme.fontScale - sc) < 0.04f) { scope.launch { themes.setFontScale(sc) } }
         }

@@ -89,7 +89,9 @@ onSetWidgetCompact = { v -> lifecycleScope.launch { app.themeStore.setWidgetComp
 onSetDockPosition = { v -> lifecycleScope.launch { app.themeStore.setDockPosition(v) } },
 onSetMapSplitRatio = { v -> lifecycleScope.launch { app.themeStore.setMapSplitRatio(v) } },
 onSetWidgetRatio = { v -> lifecycleScope.launch { app.themeStore.setWidgetRatio(v) } },
-onSetSwapMapMedia = { v -> lifecycleScope.launch { app.themeStore.setSwapMapMedia(v) } }
+onSetSwapMapMedia = { v -> lifecycleScope.launch { app.themeStore.setSwapMapMedia(v) } },
+onSetCarUiScale = { v -> lifecycleScope.launch { app.themeStore.setCarUiScale(v) } },
+onSetFontScale = { v -> lifecycleScope.launch { app.themeStore.setFontScale(v) } }
 )
 if (ota.totalUpdatesCount > 0 && !dismissOtaBanner) {
 val p = com.amni.drive.ui.LocalAmni.current

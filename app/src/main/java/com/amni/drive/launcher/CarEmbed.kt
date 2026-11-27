@@ -26,20 +26,34 @@ object CarEmbed {
     private const val SURFACE = 4
     private const val GONE = 5
     private const val LOCATION = 6
+    private const val TEXT = 7
+    private const val VOICE_REQ = 8
+    private const val KB_REQ = 9
     private const val TAG = "Amni.Embed"
     data class Shown(val pkg: String, val label: String, val displayId: Int, val at: Long, val front: Boolean = true, val mirror: Boolean = false, val slot: String? = null)
     val shown = MutableStateFlow<Shown?>(null)
+    val voicePulse = MutableStateFlow(0L)
+    val kbPulse = MutableStateFlow(0L)
     private var remote: Messenger? = null
     private var conn: ServiceConnection? = null
     private var bound: Context? = null
     private var target = 0
     private var frame: Bundle? = null
+    private var pendingQuery: Bundle? = null
     @Volatile var overlayBlocking: Boolean = false
+    @Volatile var tileKeyboardBlocking: Boolean = false
     private var area: IntArray? = null
     private val main = Handler(Looper.getMainLooper())
     private val ipcThread = android.os.HandlerThread("amni-embed-ipc").apply { isDaemon = true; start() }
     private val ipc = Handler(ipcThread.looper)
-    private val inbox = Messenger(Handler(Looper.getMainLooper()) { m -> if (m.what == GONE && shown.value?.let { SystemClock.uptimeMillis() - it.at > 777 } == true) { Log.i(TAG, "app asked to go back home"); home() }; true })
+    private val inbox = Messenger(Handler(Looper.getMainLooper()) { m ->
+        when (m.what) {
+            GONE -> if (shown.value?.let { SystemClock.uptimeMillis() - it.at > 777 } == true) { Log.i(TAG, "app asked to go back home"); home() }
+            VOICE_REQ -> voicePulse.value = SystemClock.uptimeMillis()
+            KB_REQ -> kbPulse.value = SystemClock.uptimeMillis()
+        }
+        true
+    })
     fun supports(ctx: Context, pkg: String): Boolean = runCatching { ctx.packageManager.resolveService(Intent(ACTION).setPackage(pkg), 0) != null }.getOrDefault(false)
     fun up(s: Shown?, displayId: Int?): Boolean = s != null && s.front && displayId != null && s.displayId == displayId
     fun on(displayId: Int?): Shown? = shown.value?.takeIf { up(it, displayId) }
@@ -63,12 +77,12 @@ object CarEmbed {
     fun attach(ctx: Context, pkg: String) { if (conn == null) bind(ctx.applicationContext, pkg) }
     fun full(pkg: String, displayId: Int, mirror: Boolean) { shown.value = Shown(pkg, pkg, displayId, SystemClock.uptimeMillis(), mirror = mirror) }
     fun home() { shown.value = shown.value?.copy(front = false); target = 0 }
-    fun drop(displayId: Int) { shown.value = null; target = 0; area = null; overlayBlocking = false; CarMirror.area = null; CarApps.drop(); unbind() }
+    fun drop(displayId: Int) { shown.value = null; target = 0; area = null; overlayBlocking = false; tileKeyboardBlocking = false; CarMirror.area = null; CarApps.drop(); unbind() }
     fun surface(s: Surface?, w: Int, h: Int, dpi: Int) { frame = Bundle().apply { putParcelable("s", s); putInt("w", w); putInt("h", h); putInt("dpi", dpi) }; sendFrame() }
     fun area(a: IntArray?) { area = a }
     private fun hit(a: IntArray?, ev: MotionEvent): Boolean = a != null && ev.x >= a[0] && ev.x < a[2] && ev.y >= a[1] && ev.y < a[3]
     fun route(root: View, ev: MotionEvent, displayId: Int): Boolean {
-        if (overlayBlocking) {
+        if (overlayBlocking || tileKeyboardBlocking) {
             target = 0
             return root.dispatchTouchEvent(ev)
         }
@@ -102,6 +116,11 @@ object CarEmbed {
         send(Message.obtain(null, KEY).apply { obj = down })
         send(Message.obtain(null, KEY).apply { obj = up })
     }
+    fun sendQuery(text: String, submit: Boolean = false, autoGo: Boolean = false) {
+        val b = Bundle().apply { putString("q", text); putBoolean("go", submit); putBoolean("autoGo", autoGo) }
+        pendingQuery = b
+        if (remote != null) send(Message.obtain(null, TEXT).apply { data = Bundle(b) })
+    }
     fun sendText(text: String) {
         if (text.isEmpty()) return
         ipc.post {
@@ -133,6 +152,7 @@ object CarEmbed {
                 remote = Messenger(service).also { r -> runCatching { r.send(Message.obtain(null, HELLO).apply { replyTo = inbox }) } }
                 sendFrame()
                 latestLoc?.let { l -> send(Message.obtain(null, LOCATION).apply { obj = android.location.Location(l) }) }
+                pendingQuery?.let { q -> send(Message.obtain(null, TEXT).apply { data = Bundle(q) }); pendingQuery = null }
             }
             override fun onServiceDisconnected(name: ComponentName) { remote = null; main.post { if (shown.value?.mirror != true) shown.value = null; target = 0 } }
         }
